@@ -35,9 +35,10 @@
   const LDetectionMargin = {
     en_us: ['Normal', 'Sparse', 'Maximum'],
   };
-  const LFirefoxNotSupported = $derived(
+  const LUnsupported = $derived(
     {
-      en_us: 'Sorry, Firefox broswer is not supported. Please use Chromium browser.',
+      en_us:
+        'On-screen recognition needs a desktop Chromium browser (Chrome or Edge). You can still add gems manually below.',
     }[locale]
   );
   const LSupportedClient = $derived(
@@ -50,6 +51,14 @@
       en_us: 'Prevent Screen Sharing Crash',
     }[locale]
   );
+  // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
+  // MediaStreamTrackProcessor (Chromium-only). Detect once; gate the UI when missing so
+  // mobile/Safari/Firefox users get a clear message instead of a button that throws.
+  const captureSupported =
+    typeof navigator !== 'undefined' &&
+    typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
+    typeof (window as any).MediaStreamTrackProcessor === 'function';
+
   let debugCanvas: HTMLCanvasElement | null;
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
@@ -170,11 +179,8 @@
   }
 
   async function startGemCapture() {
-    const isFirefox = typeof (window as any).InstallTrigger !== 'undefined';
-    if (isFirefox) {
-      window.alert(LFirefoxNotSupported);
-      return;
-    }
+    // The button is hidden when unsupported; guard defensively anyway.
+    if (!captureSupported) return;
     // Start gem capture
     const controller = await getCaptureController();
     // Lock the UI
@@ -242,14 +248,23 @@
 
 <div class="panel">
   {#if isLoading}
-    <div class="overlay">
+    <div class="overlay" role="status" aria-label="Loading recognition engine">
       <div class="spinner"></div>
+      <span class="overlay-text">Loading recognition engine… first use can take a few seconds.</span
+      >
     </div>
   {/if}
   <div class="title">
     <span>{LTitle[locale]}</span>
-    <div class="status-dot" class:online={isRecording} class:offline={!isRecording}></div>
-    <span class="tooltip">
+    <div
+      class="status-dot"
+      class:online={isRecording}
+      class:offline={!isRecording}
+      role="status"
+      aria-label={isRecording ? 'Recognition active' : 'Recognition stopped'}
+    ></div>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <span class="tooltip" tabindex="0">
       <i class="fa-solid fa-circle-info info-icon"></i>
       <span class="tooltip-text">
         {LSupportedClient}
@@ -268,22 +283,26 @@
   >
     <div class="buttons">
       <div class="left">
-        {#if !isRecording}
-          <button onclick={startGemCapture}>🖥️ {LStartCapture[locale]}</button>
+        {#if !captureSupported}
+          <p class="unsupported-note">{LUnsupported}</p>
         {:else}
-          <button onclick={stopGemCapture}>🖥️ {LStopCapture[locale]}</button>
+          {#if !isRecording}
+            <button onclick={startGemCapture}>🖥️ {LStartCapture[locale]}</button>
+          {:else}
+            <button onclick={stopGemCapture}>🖥️ {LStopCapture[locale]}</button>
+          {/if}
+          <button class:active={isDebugging} onclick={toggleDrawDebug}>
+            🔨 {isDebugging ? LHideScreen[locale] : LShowScreen[locale]}
+          </button>
+          <button onclick={toggleDeferredScreenSharingInit}>
+            {LControllerLazyLoading}
+            <i
+              class="fa-solid"
+              class:fa-circle-dot={appConfig.current.uiConfig.deferredScreenSharingInit}
+              class:fa-circle={!appConfig.current.uiConfig.deferredScreenSharingInit}
+            ></i>
+          </button>
         {/if}
-        <button class:active={isDebugging} onclick={toggleDrawDebug}>
-          🔨 {isDebugging ? LHideScreen[locale] : LShowScreen[locale]}
-        </button>
-        <button onclick={toggleDeferredScreenSharingInit}>
-          {LControllerLazyLoading}
-          <i
-            class="fa-solid"
-            class:fa-circle-dot={appConfig.current.uiConfig.deferredScreenSharingInit}
-            class:fa-circle={!appConfig.current.uiConfig.deferredScreenSharingInit}
-          ></i>
-        </button>
       </div>
       <div class="right"></div>
     </div>
@@ -364,6 +383,28 @@
     background-color: #9ca3af; /* gray */
   }
 
+  /* Stack the spinner and its status text; give the text legibility over the dim overlay. */
+  .overlay {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .overlay-text {
+    color: #fff;
+    font-weight: 600;
+    text-align: center;
+    max-width: 22rem;
+    padding: 0 1rem;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  }
+
+  .unsupported-note {
+    margin: 0;
+    color: var(--text);
+    opacity: 0.85;
+    max-width: 36rem;
+    line-height: 1.4;
+  }
+
   .panel > .content {
     /* Stack inner elements vertically */
     display: flex;
@@ -395,7 +436,9 @@
     justify-content: center;
   }
   .debug-screen > canvas {
-    width: auto;
+    max-width: 100%;
+    height: auto;
+    display: block;
   }
   .debug-screen > .threshold-controller {
     display: flex;

@@ -362,7 +362,8 @@
       {/if}
       <div class="optimize-hint">
         {LOptimizeHint}
-        <span class="tooltip">
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <span class="tooltip" tabindex="0">
           <i class="fa-solid fa-circle-info info-icon"></i>
           <span class="tooltip-text">{LOptimizeTooltip}</span>
         </span>

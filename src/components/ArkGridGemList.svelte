@@ -60,7 +60,7 @@
 
 <div class="gems" bind:this={container}>
   {#if gems.length > 0}
-    {#each gems as gem}
+    {#each gems as gem (gem)}
       <ArkGridGemDetail {gem} {showDeleteButton} />
     {/each}
   {:else}

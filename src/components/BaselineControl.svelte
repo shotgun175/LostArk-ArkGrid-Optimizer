@@ -193,4 +193,14 @@
     opacity: 0.75;
     text-align: center;
   }
+  /* Give the baseline ticks a 44px-tall tap zone on touch screens. The slider above
+     already covers the full range, so this just makes precise taps less fiddly. */
+  @media (max-width: 767px) {
+    .slider-tick {
+      min-height: 2.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
 </style>

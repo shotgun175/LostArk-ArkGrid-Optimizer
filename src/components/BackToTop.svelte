@@ -32,8 +32,9 @@
 <style>
   .back-to-top {
     position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
+    /* Keep clear of the iPhone home-bar / side safe areas. */
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    right: calc(1.5rem + env(safe-area-inset-right, 0px));
     z-index: 1000;
     width: auto;
     min-width: 0;
@@ -46,14 +47,16 @@
     border: 1px solid rgba(184, 134, 11, 0.6);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   }
-  .back-to-top:hover {
-    background: rgba(184, 134, 11, 0.12);
+  @media (hover: hover) and (pointer: fine) {
+    .back-to-top:hover {
+      background: rgba(184, 134, 11, 0.12);
+    }
+    :global(.dark-mode) .back-to-top:hover {
+      background: rgba(240, 192, 64, 0.14);
+    }
   }
   :global(.dark-mode) .back-to-top {
     color: #f0c040;
     border-color: rgba(240, 192, 64, 0.6);
-  }
-  :global(.dark-mode) .back-to-top:hover {
-    background: rgba(240, 192, 64, 0.14);
   }
 </style>

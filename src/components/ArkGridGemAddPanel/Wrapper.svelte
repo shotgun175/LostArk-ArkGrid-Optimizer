@@ -79,7 +79,13 @@
 </script>
 
 <button onclick={open}>{LButtonTitle[locale]}</button>
-<dialog bind:this={dialog}>
+<dialog
+  bind:this={dialog}
+  aria-label="Add Astrogem"
+  onclick={(e) => {
+    if (e.target === dialog) close();
+  }}
+>
   <div class="container">
     <div class="gem-add-style-panel">
       <input id="a" type="radio" bind:group={newGemAddStyle} value={false} />

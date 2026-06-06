@@ -172,9 +172,10 @@
   }
   .nav-toggle {
     position: fixed;
-    /* Bottom-left, paired with Back-to-top (bottom-right) and within easy thumb reach. */
-    bottom: 1.5rem;
-    left: 1.5rem;
+    /* Bottom-left, paired with Back-to-top (bottom-right) and within easy thumb reach.
+       Offset by the safe-area so it clears the iPhone home-bar. */
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    left: calc(1.5rem + env(safe-area-inset-left, 0px));
     z-index: 1002;
     width: auto;
     min-width: 0;
@@ -189,8 +190,10 @@
     border: 1px solid rgba(184, 134, 11, 0.6);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   }
-  .nav-toggle:hover {
-    background: rgba(184, 134, 11, 0.12);
+  @media (hover: hover) and (pointer: fine) {
+    .nav-toggle:hover {
+      background: rgba(184, 134, 11, 0.12);
+    }
   }
   .nav-toggle-icon {
     font-size: 1rem;
@@ -200,8 +203,10 @@
     color: #f0c040;
     border-color: rgba(240, 192, 64, 0.6);
   }
-  :global(.dark-mode) .nav-toggle:hover {
-    background: rgba(240, 192, 64, 0.14);
+  @media (hover: hover) and (pointer: fine) {
+    :global(.dark-mode) .nav-toggle:hover {
+      background: rgba(240, 192, 64, 0.14);
+    }
   }
 
   /* Below the dual-panel breakpoint there's no room for a side rail, so the nav
@@ -227,8 +232,8 @@
       display: none;
       position: fixed;
       top: auto;
-      bottom: 4rem;
-      left: 1.5rem;
+      bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+      left: calc(1.5rem + env(safe-area-inset-left, 0px));
       z-index: 1002;
       flex: none;
       width: min(15rem, calc(100vw - 3rem));

@@ -72,7 +72,8 @@
         <div class="dot"></div>
       </div>
       <div>{LCurrent}</div>
-      <span class="tooltip">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span class="tooltip" tabindex="0">
         <i class="fa-solid fa-circle-info info-icon"></i>
         <span class="tooltip-text">
           {LCurrentDesc}
@@ -85,7 +86,8 @@
         <div class="bar"></div>
       </div>
       <div>{LMaximum}</div>
-      <span class="tooltip">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span class="tooltip" tabindex="0">
         <i class="fa-solid fa-circle-info info-icon"></i>
         <span class="tooltip-text">
           {LMaxDesc}
@@ -96,7 +98,8 @@
 
   <div>
     <span class="total-score">{LTotalScore} {(totalScore * 100).toFixed(2)}</span>
-    <span class="tooltip">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <span class="tooltip" tabindex="0">
       <i class="fa-solid fa-circle-info info-icon"></i>
       <span class="tooltip-text">
         {LTotalScoreDesc}

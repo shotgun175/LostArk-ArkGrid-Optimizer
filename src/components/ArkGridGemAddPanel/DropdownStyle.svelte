@@ -189,5 +189,6 @@
 
   input[type='number'] {
     width: 2rem;
+    min-height: 2.75rem;
   }
 </style>

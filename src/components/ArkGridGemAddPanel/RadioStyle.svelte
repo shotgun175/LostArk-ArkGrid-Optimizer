@@ -86,7 +86,7 @@
   <!-- Willpower -->
   <fieldset class="grid small">
     <div class="card">
-      <img src={imgWillPower} alt="Points" />
+      <img src={imgWillPower} alt="Willpower" />
     </div>
     {#each [3, 4, 5, 6, 7, 8, 9] as willPower}
       <label class="radio-card">
@@ -145,7 +145,11 @@
 
 <style>
   .root {
-    width: 40rem;
+    /* Cap to the viewport, leaving room for the dialog's own padding/border so the
+       whole modal (not just this body) fits a phone screen. */
+    width: min(40rem, 100vw - 4rem);
+    max-width: 100%;
+    overflow-x: auto;
     user-select: none;
   }
   /* Hide the radio button */
@@ -207,5 +211,12 @@
     font-weight: bold;
     background: transparent;
     border: none;
+  }
+
+  /* On narrow phones, let the wide (text) grids drop to two columns so cards fit. */
+  @media (max-width: 480px) {
+    fieldset.grid.large {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 </style>

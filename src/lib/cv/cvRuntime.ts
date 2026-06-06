@@ -18,7 +18,7 @@ export async function initOpenCv(): Promise<void> {
   }
   // Not yet ready: wait for the runtime-initialized callback.
   // NOTE: do NOT `await cvModule` — its default export exposes a non-resolving `then`,
-  // so awaiting it hangs forever (see cvLoader.ts for the same hard-won note).
+  // so awaiting it hangs forever.
   await new Promise<void>((resolve) => {
     cvModule.onRuntimeInitialized = resolve;
   });
