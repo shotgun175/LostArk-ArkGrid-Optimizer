@@ -254,12 +254,27 @@
     </div>
 
     {#if role === 'support'}
-      <div class="support-note">
-        Single-cut odds + sim-projected scores - relative guidance, not budget-aware. ArkGrid
-        overstates support value (~2×); treat as relative.
-      </div>
-      {#if supportPlan.ranks.length > 0}
+      {#if supportPlan.ranks.length === 0}
+        <div class="window-note">
+          Baseline {baseline} is past where support cuts reliably beat your grid - it's already very
+          strong.
+        </div>
+      {:else if dps.kind === 'below-window'}
+        <div class="window-note">
+          This gold budget is overkill for baseline {baseline} - pick a cheaper bracket (this bracket
+          starts at baseline {dps.minBaseline}).
+        </div>
+      {:else if dps.kind === 'above-window'}
+        <div class="window-note">
+          Baseline {baseline} is above this budget's efficient range (this bracket tops out at baseline
+          {dps.maxBaseline}) - pick a richer bracket.
+        </div>
+      {:else}
         {@const s = supportPlan.summary}
+        <div class="support-note">
+          Single-cut odds + sim-projected scores - relative guidance, not budget-aware. ArkGrid
+          overstates support value (~2×); treat as relative.
+        </div>
         <div class="gems-grid">
           {#each supportPlan.ranks as r, i}
             <div class="gem-card" data-rarity={rarityOf(r.archetype)} class:top={i === 0}>
@@ -326,11 +341,6 @@
               : ''} (single cut ~{s.bestPct}% to beat baseline {baseline}).
           </div>
         {/if}
-      {:else}
-        <div class="window-note">
-          Baseline {baseline} is past where support cuts reliably beat your grid - it's already very
-          strong.
-        </div>
       {/if}
     {:else if dps.kind === 'ok'}
       {@const gl = goldLines(dps.row.pipeline.gold)}
