@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+
+# AI tooling / session artifacts
+.claude/
+.playwright-mcp/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Reference material — kept on disk as the source inputs for the build, not tracked.
+# Provisional: revisit when Phase 1 scaffolds the app (track, move to /reference, or drop after porting).
+Reference Projects/
+
+# Design/session docs (specs, plans) — kept on disk, not part of the published release.
+docs/superpowers/
+
+# Dev-only CV harness — not part of the app build; kept on disk, not shipped.
+harness.html
+src/harness.ts

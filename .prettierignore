@@ -1,0 +1,22 @@
+# Ignore everything by default
+*
+
+# Re-allow the source directories first (order matters)
+!src/
+!scripts/
+
+# Re-allow all files inside them
+!src/**
+!scripts/**
+
+# Re-allow one root file
+!index.html
+
+# Safety net
+node_modules
+dist
+build
+
+# Generated, minified data modules — keep them compact, don't reformat
+src/lib/cutplan/pipelineTable.json
+src/lib/cutplan/supportCutQuality.json

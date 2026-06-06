@@ -1,0 +1,295 @@
+:root {
+  /* tailwindcss */
+  --color-blue-50: oklch(0.97 0.014 254.604);
+  --color-blue-100: oklch(0.932 0.032 255.585);
+  --color-blue-200: oklch(0.882 0.059 254.128);
+  --color-blue-300: oklch(0.809 0.105 251.813);
+  --color-blue-400: oklch(0.707 0.165 254.624);
+  --color-blue-500: oklch(0.623 0.214 259.815);
+  --color-blue-600: oklch(0.546 0.245 262.881);
+  --color-blue-700: oklch(0.488 0.243 264.376);
+  --color-blue-800: oklch(0.424 0.199 265.638);
+  --color-blue-900: oklch(0.379 0.146 265.522);
+  --color-blue-950: oklch(0.282 0.091 267.935);
+
+  --color-gray-50: oklch(0.985 0.002 247.839);
+  --color-gray-100: oklch(0.967 0.003 264.542);
+  --color-gray-200: oklch(0.928 0.006 264.531);
+  --color-gray-300: oklch(0.872 0.01 258.338);
+  --color-gray-400: oklch(0.707 0.022 261.325);
+  --color-gray-500: oklch(0.551 0.027 264.364);
+  --color-gray-600: oklch(0.446 0.03 256.802);
+  --color-gray-700: oklch(0.373 0.034 259.733);
+  --color-gray-800: oklch(0.278 0.033 256.848);
+  --color-gray-900: oklch(0.21 0.034 264.665);
+  --color-gray-950: oklch(0.13 0.028 261.692);
+
+  --color-slate-50: oklch(0.984 0.003 247.858);
+  --color-slate-100: oklch(0.968 0.007 247.896);
+  --color-slate-200: oklch(0.929 0.013 255.508);
+  --color-slate-300: oklch(0.869 0.022 252.894);
+  --color-slate-400: oklch(0.704 0.04 256.788);
+  --color-slate-500: oklch(0.554 0.046 257.417);
+  --color-slate-600: oklch(0.446 0.043 257.281);
+  --color-slate-700: oklch(0.372 0.044 257.287);
+  --color-slate-800: oklch(0.279 0.041 260.031);
+  --color-slate-900: oklch(0.208 0.042 265.755);
+  --color-slate-950: oklch(0.129 0.042 264.695);
+}
+
+:root {
+  --global-gap: clamp(1rem, 2vw, 2rem);
+}
+
+/* Dark mode */
+:root {
+  --bg: var(--color-slate-50);
+  --anti-bg: var(--color-slate-950);
+  --card: #ffffff;
+  --card-inner: var(--color-slate-50);
+  --border: var(--color-slate-200);
+  --text: var(--color-slate-800);
+  --muted: var(--color-slate-100);
+  --primary: var(--color-blue-500);
+  --title-shadow: var(--color-slate-100);
+}
+
+:root.dark-mode {
+  --bg: var(--color-slate-950);
+  --anti-bg: var(--color-slate-50);
+  --card: var(--color-slate-900);
+  --card-inner: var(--color-slate-800);
+  --border: var(--color-slate-800);
+  --text: var(--color-slate-200);
+  --muted: var(--color-slate-800);
+  --primary: var(--color-blue-400);
+  --title-shadow: var(--color-slate-950);
+}
+
+button,
+input,
+select,
+textarea,
+option {
+  color: var(--text);
+  background-color: var(--card-inner);
+  border: 1px solid var(--border);
+  font-family: inherit;
+}
+
+input,
+select,
+option,
+img,
+button,
+dialog {
+  user-select: none;
+}
+
+dialog {
+  color: var(--text);
+  background-color: var(--card);
+  border-radius: 8px;
+  border: 1px var(--border) solid;
+}
+
+html {
+  font-size: 16px;
+  min-width: 360px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+body {
+  background: var(--bg);
+}
+
+#app {
+  background: var(--bg);
+  color: var(--text);
+  min-width: 344px;
+  /* Full width; the content column inside is capped + centered by the layout grid, so wide screens
+     get dead space in the margins rather than stretched panels. */
+  margin: 0;
+  user-select: none;
+}
+
+.panel {
+  /* Appearance */
+  box-sizing: border-box;
+  height: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+
+  /* padding: distance between inner elements and the border */
+  padding: clamp(1rem, 2vw, 2rem);
+
+  /* Stack inner elements vertically */
+  display: flex;
+  flex-direction: column;
+
+  /* Vertical spacing between elements inside the panel */
+  gap: 0.7rem;
+  overflow-y: hidden;
+
+  /* Not draggable */
+  user-select: none;
+}
+@media (max-width: 767px) {
+  .panel {
+    padding: 0.5rem;
+    border: none;
+  }
+}
+
+.dual-panel {
+  gap: var(--global-gap);
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  align-items: stretch;
+}
+
+/* Section-nav scroll targets: leave a little breathing room above when jumped to. */
+[id^='sec-'] {
+  scroll-margin-top: 1rem;
+}
+
+/* Switch to vertical layout when the screen narrows to 960px or less */
+@media (max-width: 960px) {
+  .dual-panel {
+    grid-template-columns: 1fr;
+    /* One per row */
+  }
+}
+
+button {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  font-weight: 500;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  user-select: none;
+}
+
+button:hover {
+  background-color: var(--card);
+}
+
+button:disabled {
+  /* Not-allowed cursor */
+  cursor: not-allowed;
+  /* Dimmed appearance */
+  opacity: 0.6;
+  /* Block all mouse events such as hover and click */
+  pointer-events: none;
+  background: var(--muted);
+}
+
+.panel > .title {
+  font-weight: 700;
+  font-size: 1.4rem;
+}
+
+/* Collapsible section header: title on the left, fold button pinned right. */
+.section-title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* The dual-role view switch floats centered in the header, independent of the title/fold. */
+.section-title .build-view-switch {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.fold-button {
+  margin-left: auto;
+  width: auto;
+  min-width: 0;
+  padding: 0 0.4rem;
+  border: none;
+  background: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+.fold-button:hover {
+  background: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+/* Simple spinner */
+.spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 0.4rem solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+input[type='radio']:disabled {
+  filter: brightness(65%);
+}
+
+/* info */
+.info-icon {
+  cursor: pointer;
+  font-style: normal;
+}
+
+.tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip-text {
+  width: 22rem;
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  color: var(--font);
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  transition: opacity 0.2s ease;
+  z-index: 2000;
+}
+
+.tooltip:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
