@@ -17,6 +17,11 @@
   let dialog = $state<HTMLDialogElement>();
   type Footers = 'credit' | 'policy' | 'terms';
   let currentFooter = $state<Footers | null>(null);
+  const footerLabels: Record<Footers, string> = {
+    credit: 'Credits',
+    policy: 'Privacy Policy',
+    terms: 'Terms',
+  };
 
   const openDialong = (component: Footers) => {
     currentFooter = component;
@@ -32,6 +37,8 @@
 <dialog
   class="footer-dialog"
   bind:this={dialog}
+  aria-label={currentFooter ? footerLabels[currentFooter] : undefined}
+  onclose={closeDialog}
   onclick={(e) => {
     if (e.target === dialog) closeDialog();
   }}

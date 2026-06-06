@@ -23,38 +23,6 @@ function minMaxLocOf(cv: ReturnType<typeof getCv>, src: CvMat): MinMaxLoc {
   return (cv.minMaxLoc as unknown as (s: CvMat) => MinMaxLoc)(src);
 }
 
-export function getBestMatchAtlas<K extends string>(
-  frame: CvMat,
-  matchingAtlas: MatchingAtlas<K>,
-  roi?: CvRect
-): MatchingResult<K> {
-  const cv = getCv();
-  const targetFrame = roi ? frame.roi(roi) : frame;
-  if (targetFrame.cols > matchingAtlas.atlas.cols || targetFrame.rows > matchingAtlas.atlas.rows) {
-    throw Error(
-      `Input matrix(${targetFrame.cols}x${targetFrame.rows}) is larger than atlas(${matchingAtlas.atlas.cols}x${matchingAtlas.atlas.rows})`
-    );
-  }
-  const { atlas, entries } = matchingAtlas;
-  const result = new cv.Mat();
-  cv.matchTemplate(frame, atlas, result, cv.TM_CCOEFF_NORMED);
-  const mm = minMaxLocOf(cv, result);
-  for (const key of Object.keys(entries) as K[]) {
-    const e = entries[key];
-    if (mm.maxLoc.x > e.x && mm.maxLoc.x < e.x + e.width) {
-      if (roi) targetFrame.delete();
-      return {
-        key,
-        score: mm.maxVal,
-        loc: mm.maxLoc,
-        template: e.template,
-      };
-    }
-  }
-  if (roi) targetFrame.delete();
-  throw Error('never reached');
-}
-
 export function getBestMatch<K extends string>(
   frame: CvMat,
   matchingAtlas: MatchingAtlas<K>,
@@ -118,26 +86,6 @@ export function getBestMatch<K extends string>(
       roi ? roi.y + bestMm.maxLoc.y : bestMm.maxLoc.y
     ),
     template: matchingAtlas.entries[bestKey].template,
-  };
-}
-
-export function findLocation(frame: CvMat, template: CvMat, roi?: CvRect) {
-  const cv = getCv();
-  const targetFrame = roi ? frame.roi(roi) : frame;
-
-  const result = new cv.Mat();
-  cv.matchTemplate(targetFrame, template, result, cv.TM_CCOEFF_NORMED);
-  const mm = minMaxLocOf(cv, result);
-  if (roi) targetFrame.delete();
-
-  return {
-    key: '',
-    score: mm.maxVal,
-    loc: new cv.Point(
-      roi ? roi.x + mm.maxLoc.x : mm.maxLoc.x,
-      roi ? roi.y + mm.maxLoc.y : mm.maxLoc.y
-    ),
-    template: template,
   };
 }
 

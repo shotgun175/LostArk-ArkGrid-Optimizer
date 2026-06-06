@@ -152,7 +152,8 @@
   }
   .contents .title {
     font-weight: 700;
-    font-size: 3rem;
+    /* Scale down on phones so the title doesn't eat the first viewport. */
+    font-size: clamp(1.5rem, 5.5vw, 3rem);
     text-align: center;
     word-break: keep-all;
     overflow-wrap: break-word;

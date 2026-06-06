@@ -95,7 +95,7 @@
         {#if profile.characterName !== DEFAULT_PROFILE_NAME}
           <img
             src={profile.activeBuild === 'support' ? imgRoleSupporter : imgRoleCombat}
-            alt="role"
+            alt={profile.activeBuild === 'support' ? 'Support role' : 'DPS role'}
           />
         {/if}
       </button>

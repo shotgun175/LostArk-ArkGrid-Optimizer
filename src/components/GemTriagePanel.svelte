@@ -47,7 +47,6 @@
     score: number;
     tier: GemTier;
     action: TriageAction;
-    factors: ScoreFactor[];
   };
 
   let worstFirst = $state(true);
@@ -96,7 +95,7 @@
         });
         result = reconcileDualBuild(result, oResult, oRole);
       }
-      return { gem, score, tier, action: result.action, factors: explainGemScore(gem, role) };
+      return { gem, score, tier, action: result.action };
     });
     scored.sort((a, b) => (worstFirst ? a.score - b.score : b.score - a.score));
     return scored;
@@ -266,7 +265,9 @@
               <ArkGridGemDetail gem={row.gem} showDeleteButton={false} />
             </div>
             <div class="badges">
-              <span class="score" title={scoreTitle(row.factors, row.score)}>{r1(row.score)}</span>
+              <span class="score" title={scoreTitle(explainGemScore(row.gem, role), row.score)}
+                >{r1(row.score)}</span
+              >
               <span class="tier" data-tier={row.tier}>{row.tier}</span>
               <span class="action" data-action={row.action}>{ACTION_LABEL[row.action]}</span>
             </div>

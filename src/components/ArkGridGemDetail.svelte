@@ -27,7 +27,7 @@
 
     <div class="willPower gem-spec">
       <div class="text">{gem.req}</div>
-      <img src={imgWillPower} alt="W" />
+      <img src={imgWillPower} alt="Willpower" />
     </div>
 
     <div class="vl"></div>
@@ -45,7 +45,7 @@
       <div class="text">
         {gem.point}
       </div>
-      <img src={imgCorePoint} alt="P" />
+      <img src={imgCorePoint} alt="Core Points" />
     </div>
 
     <div class="option2 gem-spec">

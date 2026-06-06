@@ -91,11 +91,13 @@ dialog {
   background-color: var(--card);
   border-radius: 8px;
   border: 1px var(--border) solid;
+  /* Never let a modal exceed the viewport (protects narrow phones). */
+  max-width: calc(100vw - 1rem);
 }
 
 html {
   font-size: 16px;
-  min-width: 360px;
+  min-width: 320px;
 }
 
 * {
@@ -110,11 +112,10 @@ body {
 #app {
   background: var(--bg);
   color: var(--text);
-  min-width: 344px;
+  min-width: 320px;
   /* Full width; the content column inside is capped + centered by the layout grid, so wide screens
      get dead space in the margins rather than stretched panels. */
   margin: 0;
-  user-select: none;
 }
 
 .panel {
@@ -136,9 +137,6 @@ body {
   /* Vertical spacing between elements inside the panel */
   gap: 0.7rem;
   overflow-y: hidden;
-
-  /* Not draggable */
-  user-select: none;
 }
 @media (max-width: 767px) {
   .panel {
@@ -178,7 +176,14 @@ button {
   user-select: none;
 }
 
-button:hover {
+/* Only apply hover styling on real hover-capable pointers, so the highlight doesn't
+   "stick" after a tap on touchscreens; give touch a press state via :active instead. */
+@media (hover: hover) and (pointer: fine) {
+  button:hover {
+    background-color: var(--card);
+  }
+}
+button:active {
   background-color: var(--card);
 }
 
@@ -211,10 +216,23 @@ button:disabled {
   top: 50%;
   transform: translate(-50%, -50%);
 }
+/* On phones, drop it onto its own row so it can't overlap the title or Glossary pill. */
+@media (max-width: 767px) {
+  .section-title .build-view-switch {
+    position: static;
+    transform: none;
+    order: 99;
+    flex-basis: 100%;
+    display: flex;
+    justify-content: center;
+  }
+}
 .fold-button {
   margin-left: auto;
   width: auto;
-  min-width: 0;
+  /* 44px min touch target without enlarging the glyph. */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0 0.4rem;
   border: none;
   background: none;
@@ -267,7 +285,8 @@ input[type='radio']:disabled {
 }
 
 .tooltip-text {
-  width: 22rem;
+  width: min(22rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   visibility: hidden;
   opacity: 0;
   position: absolute;
@@ -289,7 +308,32 @@ input[type='radio']:disabled {
   z-index: 2000;
 }
 
-.tooltip:hover .tooltip-text {
+.tooltip:hover .tooltip-text,
+.tooltip:focus-within .tooltip-text,
+.tooltip:focus .tooltip-text {
   visibility: visible;
   opacity: 1;
+}
+
+/* Visible keyboard-focus indicator (the UA default ring is weak on themed buttons). */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Honour the OS "Reduce Motion" setting (iOS/Android/desktop). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
