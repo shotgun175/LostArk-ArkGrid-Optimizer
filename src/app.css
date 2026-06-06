@@ -315,6 +315,26 @@ input[type='radio']:disabled {
   opacity: 1;
 }
 
+/* On phones, a tooltip centered on its trigger can hang off the screen edge — and because
+   .panel has overflow-y:hidden (which makes overflow-x compute to auto), that off-edge
+   (even while hidden) turns the panel into a sideways-swipe area. Pin tooltips to the
+   viewport as a fixed popover instead: keeps them fully readable AND removes them from the
+   panel's layout, so nothing overflows and there's nothing to scroll. */
+@media (max-width: 767px) {
+  .tooltip-text {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    bottom: 5rem;
+    top: auto;
+    width: auto;
+    max-width: none;
+    max-height: 50vh;
+    overflow-y: auto;
+    transform: none;
+  }
+}
+
 /* Visible keyboard-focus indicator (the UA default ring is weak on themed buttons). */
 button:focus-visible,
 a:focus-visible,

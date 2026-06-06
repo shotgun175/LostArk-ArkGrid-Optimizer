@@ -362,6 +362,13 @@
   .title .tooltip-text {
     bottom: -200%;
   }
+  /* On phones the tooltip is a viewport-pinned popover (see app.css); the -200% above would
+     push it off-screen, so reset it to match the fixed-popover anchor. */
+  @media (max-width: 767px) {
+    .title .tooltip-text {
+      bottom: 5rem;
+    }
+  }
   .panel > .title > .fold-button {
     flex-grow: 1;
     text-align: right;
