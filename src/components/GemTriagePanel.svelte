@@ -289,6 +289,8 @@
   .help-toggle {
     width: auto;
     min-width: 0;
+    /* Don't let a long section title squeeze the pill — wrap the title instead. */
+    flex-shrink: 0;
     margin-left: auto;
     display: inline-flex;
     align-items: center;
@@ -304,6 +306,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     width: 1.1rem;
     height: 1.1rem;
     border-radius: 50%;

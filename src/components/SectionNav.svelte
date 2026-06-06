@@ -14,9 +14,12 @@
   ];
 
   let active = $state<string>(sections[0].id);
+  // Mobile only: the rail collapses into a hamburger dropdown.
+  let menuOpen = $state(false);
 
   function go(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    menuOpen = false;
   }
 
   onMount(() => {
@@ -37,7 +40,26 @@
   });
 </script>
 
-<nav class="section-nav" aria-label="Section navigation">
+<!-- Mobile-only hamburger toggle; hidden on desktop where the side rail shows. -->
+<button
+  class="nav-toggle"
+  aria-label={menuOpen ? 'Close section navigation' : 'Open section navigation'}
+  aria-expanded={menuOpen}
+  onclick={() => (menuOpen = !menuOpen)}
+>
+  <span class="nav-toggle-icon" aria-hidden="true">{menuOpen ? '✕' : '☰'}</span> Sections
+</button>
+
+{#if menuOpen}
+  <!-- Tap outside the dropdown to dismiss it. -->
+  <button
+    class="nav-backdrop"
+    aria-label="Close section navigation"
+    onclick={() => (menuOpen = false)}
+  ></button>
+{/if}
+
+<nav class="section-nav" class:open={menuOpen} aria-label="Section navigation">
   <div class="nav-heading">Sections</div>
   {#each sections as s, i}
     <button class="nav-link" class:active={active === s.id} onclick={() => go(s.id)}>
@@ -143,10 +165,77 @@
     border-left-color: #5aa1ff;
     background: rgba(90, 161, 255, 0.22);
   }
-  /* Below the dual-panel breakpoint there's no room for a side rail. */
+  /* Hamburger toggle + backdrop are desktop-hidden; the media query below reveals them. */
+  .nav-toggle,
+  .nav-backdrop {
+    display: none;
+  }
+  .nav-toggle {
+    position: fixed;
+    /* Bottom-left, paired with Back-to-top (bottom-right) and within easy thumb reach. */
+    bottom: 1.5rem;
+    left: 1.5rem;
+    z-index: 1002;
+    width: auto;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.9rem;
+    border-radius: 2rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #b8860b;
+    background: var(--card);
+    border: 1px solid rgba(184, 134, 11, 0.6);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
+  .nav-toggle:hover {
+    background: rgba(184, 134, 11, 0.12);
+  }
+  .nav-toggle-icon {
+    font-size: 1rem;
+    line-height: 1;
+  }
+  :global(.dark-mode) .nav-toggle {
+    color: #f0c040;
+    border-color: rgba(240, 192, 64, 0.6);
+  }
+  :global(.dark-mode) .nav-toggle:hover {
+    background: rgba(240, 192, 64, 0.14);
+  }
+
+  /* Below the dual-panel breakpoint there's no room for a side rail, so the nav
+     collapses into a fixed hamburger dropdown anchored under the toggle. */
   @media (max-width: 960px) {
+    .nav-toggle {
+      display: inline-flex;
+    }
+    .nav-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      /* Above Back-to-top (z 1000) so it dims too; below the toggle/menu. */
+      z-index: 1001;
+      border: none;
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.35);
+    }
     .section-nav {
+      /* Hidden until the toggle opens it; opens upward from above the bottom-left toggle.
+         Release the desktop rail's top anchor so only `bottom` applies and the panel
+         grows up from the hamburger instead of hanging from the top. */
       display: none;
+      position: fixed;
+      top: auto;
+      bottom: 4rem;
+      left: 1.5rem;
+      z-index: 1002;
+      flex: none;
+      width: min(15rem, calc(100vw - 3rem));
+      max-height: calc(100vh - 6rem);
+    }
+    .section-nav.open {
+      display: flex;
     }
   }
 </style>
