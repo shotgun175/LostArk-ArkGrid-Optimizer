@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { LocalizationName } from '../../lib/constants/enums';
-  import { appConfig, toggleUI } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
 
   const guideAssets = import.meta.glob<string>('/src/assets/guide/*', {
@@ -16,11 +15,8 @@
 <div class="guide">
   <div class="title">
     <span>🎓️ {LTitle[locale]}</span>
-    <button class="fold-button" onclick={() => toggleUI('showGemRecognitionGuide')}
-      >{appConfig.current.uiConfig.showGemRecognitionGuide ? '▲' : '▼'}</button
-    >
   </div>
-  <div class="content" hidden={!appConfig.current.uiConfig.showGemRecognitionGuide}>
+  <div class="content">
     {#if true}
       <div class="content">
         <p>
@@ -84,7 +80,6 @@
     font-weight: 700;
     font-size: 1.4rem;
     display: flex;
-    justify-content: space-between;
     align-items: center;
     gap: 0.4rem;
   }
@@ -93,10 +88,4 @@
     height: auto;
     display: block;
   } */
-  .fold-button {
-    flex: 1;
-    text-align: right;
-    border: none;
-    background: none;
-  }
 </style>
