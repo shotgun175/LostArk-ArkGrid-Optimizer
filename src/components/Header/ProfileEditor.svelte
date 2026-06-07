@@ -93,10 +93,17 @@
           ? L_DEFAULT_PROFILE_NAME[locale]
           : profile.characterName}
         {#if profile.characterName !== DEFAULT_PROFILE_NAME}
-          <img
-            src={profile.activeBuild === 'support' ? imgRoleSupporter : imgRoleCombat}
-            alt={profile.activeBuild === 'support' ? 'Support role' : 'DPS role'}
-          />
+          {#if profile.dualRole}
+            <span class="role-both" aria-label="DPS and Support (Both) role">
+              <img src={imgRoleCombat} alt="" />
+              <img src={imgRoleSupporter} alt="" />
+            </span>
+          {:else}
+            <img
+              src={profile.activeBuild === 'support' ? imgRoleSupporter : imgRoleCombat}
+              alt={profile.activeBuild === 'support' ? 'Support role' : 'DPS role'}
+            />
+          {/if}
         {/if}
       </button>
     {/each}
@@ -221,6 +228,18 @@
   .profile-select-button > img {
     height: 1.2rem;
     box-sizing: border-box;
+  }
+  /* 'Both' role: the two icons overlapped slightly so it reads as one blended marker. */
+  .role-both {
+    display: inline-flex;
+    align-items: center;
+  }
+  .role-both > img {
+    height: 1.2rem;
+    box-sizing: border-box;
+  }
+  .role-both > img:last-child {
+    margin-left: -0.35rem;
   }
   .buttons {
     display: flex;

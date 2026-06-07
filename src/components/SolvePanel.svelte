@@ -5,6 +5,7 @@
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import { gemFingerprint } from '../lib/models/arkGridGems';
+  import { DPS_NODE_COEFF } from '../lib/scoring/gemScore';
   import { solveInputSignature } from '../lib/solver/solveSignature';
   import { SolverController } from '../lib/solver/solverController';
   import type { SolverProgress, SolverProgressStage } from '../lib/solver/types';
@@ -69,7 +70,8 @@
   );
   const LFailed = $derived(
     {
-      en_us: 'Please adjust the minimum core points.',
+      en_us:
+        "These minimum points can't be reached with your current astrogems — each astrogem adds at most 5 points to one core, and a core needs enough astrogems to meet its minimum. Lower the minimums or add more astrogems.",
     }[locale]
   );
   const LOrderFailed = $derived(
@@ -108,6 +110,16 @@
       chaos: solveAfter.solveAnswer?.gemSetPackTuple.gsp2 === null && !allChaosCoresNull,
     };
   });
+
+  // Support-stat astrogems contribute 0 combat power to a DPS build, so the solver leaves them
+  // off the Chaos cores. Flag it so the user understands why their support gems aren't placed.
+  let hasUnusedSupportChaosGem = $derived(
+    profile.activeBuild !== 'support' &&
+      profile.gems.chaosGems.some(
+        (g) =>
+          DPS_NODE_COEFF[g.option1.optionType] === 0 && DPS_NODE_COEFF[g.option2.optionType] === 0
+      )
+  );
 
   const solverController = new SolverController();
   let isSolving = $state(false);
@@ -278,6 +290,17 @@
     });
   }
 
+  function resetMinPoints() {
+    // Set every core's minimum back to 0 for the active build (a quick undo for over-set minimums).
+    const cores = profile.builds[profile.activeBuild].cores;
+    for (const attr of Object.values(ArkGridAttrs)) {
+      for (const ctype of Object.values(ArkGridCoreTypes)) {
+        const c = cores[attr][ctype];
+        if (c) c.goalPoint = 0;
+      }
+    }
+  }
+
   async function runSolve() {
     if (isSolving) return;
 
@@ -327,7 +350,10 @@
   {#if appConfig.current.uiConfig.showOptimization}
     <div class="container">
       <div class="core-solve-goal-edit">
-        <div class="title">{LSubtitle}</div>
+        <div class="title goal-title">
+          <span>{LSubtitle}</span>
+          <button class="reset-goals" onclick={resetMinPoints}>↺ Reset</button>
+        </div>
         <div class="container">
           {#each Object.values(ArkGridAttrs) as attr}
             {#each Object.values(ArkGridCoreTypes) as ctype}
@@ -392,6 +418,13 @@
               <div class="progress-log-entry">{entry.text}</div>
             {/each}
           </div>
+        </div>
+      {/if}
+
+      {#if hasUnusedSupportChaosGem}
+        <div class="support-note">
+          Support-stat astrogems (Brand Power, Ally Attack/Damage Enh.) add 0 combat power to a DPS
+          build, so the optimizer leaves them off the Chaos cores — they only help a Support build.
         </div>
       {/if}
 
@@ -493,6 +526,24 @@
     align-items: center;
     gap: 1rem;
   }
+  /* Centered (non-stretched) flex children size to content, not the panel — clamp them so a
+     wide child (e.g. a long failure message) can't push the panel into sideways scroll. */
+  .panel > .container > * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .support-note {
+    align-self: center;
+    max-width: 32rem;
+    text-align: center;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.4rem;
+    color: var(--text);
+    background: var(--muted);
+    border: 1px solid var(--border);
+  }
 
   .core-solve-goal-edit {
     display: flex;
@@ -503,6 +554,22 @@
   .core-solve-goal-edit > .title {
     font-size: 1.4rem;
     font-weight: 500;
+  }
+  .goal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .reset-goals {
+    width: auto;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
   }
   .core-solve-goal-edit > .container {
     display: flex;

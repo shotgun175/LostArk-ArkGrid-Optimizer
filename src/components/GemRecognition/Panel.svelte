@@ -8,6 +8,7 @@
     appConfig,
     toggleDeferredScreenSharingInit,
     toggleUI,
+    updateUI,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import GemRecognitionGemList from './GemList.svelte';
@@ -58,6 +59,14 @@
     typeof navigator !== 'undefined' &&
     typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
     typeof (window as any).MediaStreamTrackProcessor === 'function';
+
+  // On devices that can't screen-capture, the recognition Guide and the Recognized Astrogems list
+  // (both only meaningful for the desktop capture flow) are irrelevant — collapse them by default
+  // so they don't dominate the mobile view.
+  if (!captureSupported) {
+    updateUI('showGemRecognitionGuide', false);
+    updateUI('showRecognizedGems', false);
+  }
 
   let debugCanvas: HTMLCanvasElement | null;
   let totalOrderGems = $state<ArkGridGem[]>([]);
@@ -361,6 +370,13 @@
 
   .title .tooltip-text {
     bottom: -200%;
+  }
+  /* On phones the tooltip is a viewport-pinned popover (see app.css); the -200% above would
+     push it off-screen, so reset it to match the fixed-popover anchor. */
+  @media (max-width: 767px) {
+    .title .tooltip-text {
+      bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    }
   }
   .panel > .title > .fold-button {
     flex-grow: 1;
