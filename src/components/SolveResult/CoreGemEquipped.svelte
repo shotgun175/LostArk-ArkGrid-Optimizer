@@ -68,7 +68,10 @@
 
 <style>
   .root {
-    width: 18rem;
+    /* Stretch to fill the grid track (>= 18rem, set by CoreGemEquippedList) instead of a fixed
+       width — a fixed width overflowed and overlapped neighbours when the track was narrower. */
+    width: 100%;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     padding: 0.5rem;
