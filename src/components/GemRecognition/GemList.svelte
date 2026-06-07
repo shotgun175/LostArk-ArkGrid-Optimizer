@@ -4,7 +4,6 @@
 
   import { type LocalizationName } from '../../lib/constants/enums';
   import { LChaos, LOrder } from '../../lib/constants/localization';
-  import { appConfig, toggleUI } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import {
     type AllGems,
@@ -106,17 +105,8 @@
 <div class="panel">
   <div class="title rec-title">
     <span>{LTitle[locale]}</span>
-    <button
-      class="fold-button"
-      aria-label={appConfig.current.uiConfig.showRecognizedGems
-        ? 'Collapse section'
-        : 'Expand section'}
-      onclick={() => toggleUI('showRecognizedGems')}
-    >
-      {appConfig.current.uiConfig.showRecognizedGems ? '▲' : '▼'}
-    </button>
   </div>
-  <div class="rec-content" hidden={!appConfig.current.uiConfig.showRecognizedGems}>
+  <div class="rec-content">
     <div class="tab-container">
       {#each tabs as tab, i}
         <button class="tab {activeTab === i ? 'active' : ''}" onclick={() => selectTab(i)}>

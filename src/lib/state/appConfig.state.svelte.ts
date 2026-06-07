@@ -5,8 +5,6 @@ import { type CharacterProfile, initNewProfile, migrateProfile } from './profile
 
 interface UIConfig {
   showGemRecognitionPanel: boolean;
-  showGemRecognitionGuide: boolean;
-  showRecognizedGems: boolean;
   showCoreCoeff: boolean;
   debugMode: boolean;
   darkMode: boolean;
@@ -19,8 +17,6 @@ interface UIConfig {
 }
 const defaultUIConfig: UIConfig = {
   showGemRecognitionPanel: true,
-  showGemRecognitionGuide: true,
-  showRecognizedGems: true,
   showCoreCoeff: false,
   debugMode: false,
   darkMode: false,
@@ -69,10 +65,6 @@ export function migrateAppConfig(appConfig: Partial<AppConfig>) {
   // newGemAddStyle
   if (appConfig.uiConfig && appConfig.uiConfig.newGemAddStyle === undefined) {
     appConfig.uiConfig.newGemAddStyle = false;
-  }
-  // showRecognizedGems
-  if (appConfig.uiConfig && appConfig.uiConfig.showRecognizedGems === undefined) {
-    appConfig.uiConfig.showRecognizedGems = true;
   }
   // Collapse markers always start expanded on each page load (collapsed state is not persisted).
   if (appConfig.uiConfig) {

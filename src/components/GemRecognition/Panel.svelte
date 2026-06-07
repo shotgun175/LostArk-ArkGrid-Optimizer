@@ -60,12 +60,11 @@
     typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
     typeof (window as any).MediaStreamTrackProcessor === 'function';
 
-  // On devices that can't screen-capture, the recognition Guide and the Recognized Astrogems list
-  // (both only meaningful for the desktop capture flow) are irrelevant — collapse them by default
-  // so they don't dominate the mobile view.
+  // On devices that can't screen-capture, the whole recognition section is irrelevant (it only
+  // drives the desktop capture flow) — collapse it by default so it doesn't dominate the view.
+  // The unsupported note still shows on the collapsed bar so the user knows why.
   if (!captureSupported) {
-    updateUI('showGemRecognitionGuide', false);
-    updateUI('showRecognizedGems', false);
+    updateUI('showGemRecognitionPanel', false);
   }
 
   let debugCanvas: HTMLCanvasElement | null;
@@ -286,15 +285,16 @@
       >{appConfig.current.uiConfig.showGemRecognitionPanel ? '▼' : '▲'}</button
     >
   </div>
+  {#if !captureSupported}
+    <p class="unsupported-note">{LUnsupported}</p>
+  {/if}
   <div
     class="content"
     style:display={!appConfig.current.uiConfig.showGemRecognitionPanel ? 'none' : 'flex'}
   >
     <div class="buttons">
       <div class="left">
-        {#if !captureSupported}
-          <p class="unsupported-note">{LUnsupported}</p>
-        {:else}
+        {#if captureSupported}
           {#if !isRecording}
             <button onclick={startGemCapture}>🖥️ {LStartCapture[locale]}</button>
           {:else}
