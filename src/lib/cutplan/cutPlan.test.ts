@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { actionLabel, bracketLabel, getDpsPlan, getSupportPlan, weeksBand } from './cutPlan';
+import {
+  actionLabel,
+  bracketLabel,
+  getDpsPlan,
+  getSupportPlan,
+  supportBucketAction,
+  weeksBand,
+} from './cutPlan';
 import type { PipelineTable } from './types';
 import type { SupportCutQuality } from './types';
 
@@ -77,12 +84,12 @@ describe('getSupportPlan', () => {
     const plan = getSupportPlan(support, 10);
     expect(plan.ranks.map((r) => r.archetype)).toEqual(['E9', 'UC8']);
     expect(plan.ranks[0].best).toBe(50);
-    expect(plan.ranks[0].buckets['2D']).toBe(50); // per-bucket % extracted for the cards
+    expect(plan.ranks[0].buckets['2D']?.pct).toBe(50); // per-bucket {pct, avg} for the cards + EV
+    expect(plan.ranks[0].buckets['2D']?.avg).toBe(13.5);
   });
   it('computes the summary tiles from the best-chance target', () => {
     const { summary } = getSupportPlan(support, 10);
     expect(summary.bestPct).toBe(50);
-    expect(summary.cutsPerHit).toBe(2); // round(100 / 50)
     expect(summary.bestTarget).toEqual({ archetype: 'E9', bucket: '2D' });
     expect(summary.avgScore).toBe(13.5);
     expect(summary.totalScore).toBe(Math.round(13.5 * 24)); // avg × grid slots
@@ -92,6 +99,32 @@ describe('getSupportPlan', () => {
     expect(plan.ranks).toEqual([]);
     expect(plan.summary.bestPct).toBe(0);
     expect(plan.summary.avgScore).toBeNull();
-    expect(plan.summary.cutsPerHit).toBeNull();
+    expect(plan.summary.totalScore).toBeNull();
+  });
+});
+
+describe('supportBucketAction (EV-based)', () => {
+  // goldPerScore = goldPerDamage / 27 (× SUPPORT_VALUE_RATE = 1.0).
+  // goldEV = (pct/100) × max(0, avg − baseline) × goldPerScore − 900.
+  const RICH = 2_500_000; // goldPerScore ≈ 92,593
+  const POOR = 500_000; //   goldPerScore ≈ 18,519
+  it('mirrors the DPS fuse recommendation regardless of EV', () => {
+    expect(supportBucketAction(90, 18, 10, RICH, 'fuse')).toBe('fuse');
+    expect(supportBucketAction(0, null, 10, RICH, 'fuse')).toBe('fuse');
+  });
+  it("returns don't-cut with no chance, no data, or no surplus", () => {
+    expect(supportBucketAction(0, null, 10, RICH)).toBe('dont-cut');
+    expect(supportBucketAction(null, null, 10, RICH)).toBe('dont-cut');
+    expect(supportBucketAction(50, 10, 10, RICH)).toBe('dont-cut'); // avg == baseline → 0 surplus
+  });
+  it('thresholds goldEV against the reset cost (20k) and the cut floor (>0)', () => {
+    // strong gem at a rich bracket → large EV → cut-reset
+    expect(supportBucketAction(80, 15, 10, RICH)).toBe('cut-reset');
+    // poor bracket, pct 20 / surplus 1: gain 0.2×1×18519 = 3704, goldEV 2804 → cut
+    expect(supportBucketAction(20, 11, 10, POOR)).toBe('cut');
+    // poor bracket, pct 2 / surplus 1: gain 370, goldEV −530 → dont-cut
+    expect(supportBucketAction(2, 11, 10, POOR)).toBe('dont-cut');
+    // a non-fuse DPS action does not override the EV calc
+    expect(supportBucketAction(80, 15, 10, RICH, 'cut')).toBe('cut-reset');
   });
 });
