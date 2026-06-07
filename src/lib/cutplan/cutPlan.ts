@@ -57,6 +57,20 @@ const RESET_COST = 20_000; // gold for one retry; the DPS table's cut-reset thre
 // support exactly like DPS. Raise toward ~1.6 to honor the ally-vs-personal-damage gap if desired.
 export const SUPPORT_VALUE_RATE = 1.0;
 
+// Expected gold value of one support cut at this cell: P(above baseline) × value of the surplus −
+// cut cost. Drives both the action and the per-archetype header EV (mirrors the DPS headerEV).
+export function supportGoldEV(
+  pct: number | null | undefined,
+  avg: number | null | undefined,
+  baseline: number,
+  goldPerDamage: number
+): number {
+  if (pct == null || avg == null) return -CUT_COST;
+  const goldPerScore = (goldPerDamage / SCORE_PER_DMG_PCT) * SUPPORT_VALUE_RATE;
+  const expectedGain = (pct / 100) * Math.max(0, avg - baseline) * goldPerScore;
+  return expectedGain - CUT_COST;
+}
+
 export function supportBucketAction(
   pct: number | null | undefined,
   avg: number | null | undefined,
@@ -65,10 +79,7 @@ export function supportBucketAction(
   dpsAction?: CutAction
 ): CutAction {
   if (dpsAction === 'fuse') return 'fuse';
-  if (pct == null || avg == null) return 'dont-cut';
-  const goldPerScore = (goldPerDamage / SCORE_PER_DMG_PCT) * SUPPORT_VALUE_RATE;
-  const expectedGain = (pct / 100) * Math.max(0, avg - baseline) * goldPerScore;
-  const goldEV = expectedGain - CUT_COST;
+  const goldEV = supportGoldEV(pct, avg, baseline, goldPerDamage);
   if (goldEV >= RESET_COST) return 'cut-reset';
   if (goldEV > 0) return 'cut';
   return 'dont-cut';
@@ -88,7 +99,15 @@ export function weeksBand(weeks: number): 'fast' | 'med' | 'slow' {
 const GRID_SLOTS = 24;
 
 function emptySupportSummary(): SupportSummary {
-  return { bestPct: 0, cutsPerHit: null, bestTarget: null, avgScore: null, totalScore: null };
+  return {
+    bestPct: 0,
+    cutsPerHit: null,
+    goldPerGem: null,
+    goldToFill: null,
+    bestTarget: null,
+    avgScore: null,
+    totalScore: null,
+  };
 }
 
 /**
@@ -124,9 +143,15 @@ export function getSupportPlan(data: SupportCutQuality, baseline: number): Suppo
   }
   ranks.sort((a, b) => b.best - a.best);
 
+  // Gold economics from the cut cost (role-agnostic 900g): how much gold to land one above-baseline
+  // gem at the best target, and to fill the full grid at that rate. Mirrors the DPS gold tiles.
+  const cutsPerHit = bestPct > 0 ? Math.round(100 / bestPct) : null;
+  const goldPerGem = cutsPerHit != null ? cutsPerHit * CUT_COST : null;
   const summary: SupportSummary = {
     bestPct,
-    cutsPerHit: bestPct > 0 ? Math.round(100 / bestPct) : null,
+    cutsPerHit,
+    goldPerGem,
+    goldToFill: goldPerGem != null ? goldPerGem * GRID_SLOTS : null,
     bestTarget,
     avgScore: bestAvg,
     totalScore: bestAvg != null ? Math.round(bestAvg * GRID_SLOTS) : null,

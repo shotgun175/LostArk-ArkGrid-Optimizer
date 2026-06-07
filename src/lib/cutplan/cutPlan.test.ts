@@ -91,6 +91,8 @@ describe('getSupportPlan', () => {
     const { summary } = getSupportPlan(support, 10);
     expect(summary.bestPct).toBe(50);
     expect(summary.cutsPerHit).toBe(2); // round(100 / 50)
+    expect(summary.goldPerGem).toBe(2 * 900); // cuts/hit × 900g cut cost
+    expect(summary.goldToFill).toBe(2 * 900 * 24); // gold/gem × 24 slots
     expect(summary.bestTarget).toEqual({ archetype: 'E9', bucket: '2D' });
     expect(summary.avgScore).toBe(13.5);
     expect(summary.totalScore).toBe(Math.round(13.5 * 24)); // avg × grid slots

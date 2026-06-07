@@ -75,10 +75,12 @@ export interface SupportArchetypeRank {
   buckets: Partial<Record<Bucket, { pct: number; avg: number | null }>>;
 }
 
-// Relative summary tiles, mirroring the DPS pipeline stats but odds/score based (no economics).
+// Summary tiles mirroring the DPS pipeline stats, now with EV-derived gold economics for support.
 export interface SupportSummary {
   bestPct: number; // best single-cut chance across all archetypes/buckets
   cutsPerHit: number | null; // expected cuts to land one above-baseline gem (round(100/bestPct))
+  goldPerGem: number | null; // gold to land one above-baseline gem (cutsPerHit × cut cost)
+  goldToFill: number | null; // rough gold to fill all grid slots (goldPerGem × slots)
   bestTarget: { archetype: Archetype; bucket: Bucket } | null;
   avgScore: number | null; // best target's E[score | above baseline]
   totalScore: number | null; // avgScore × grid slots (projected full grid)

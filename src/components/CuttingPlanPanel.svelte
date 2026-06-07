@@ -5,6 +5,7 @@
     getDpsPlan,
     getSupportPlan,
     supportBucketAction,
+    supportGoldEV,
     weeksBand,
   } from '../lib/cutplan/cutPlan';
   import {
@@ -18,6 +19,7 @@
     GOLD_PER_DAMAGE,
     type GoldBracket,
     type PipelineTable,
+    type SupportArchetypeRank,
     type SupportCutQuality,
   } from '../lib/cutplan/types';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
@@ -116,6 +118,16 @@
   // role-neutral abbreviations. The glossary swaps "damage" -> "support" via statWord.
   let statWord = $derived(role === 'support' ? 'support' : 'damage');
   const bucketLabel = (bkt: Bucket) => (role === 'support' && bkt === '2D' ? '2S' : bkt);
+  // Per-archetype EV for the support card header (best bucket's gold EV, clamped at 0) so support
+  // cards read like the DPS cards (EV: <gold>).
+  const supportHeaderEV = (r: SupportArchetypeRank) =>
+    Math.max(
+      0,
+      ...BUCKETS.map((bkt) => {
+        const c = r.buckets[bkt];
+        return c ? supportGoldEV(c.pct, c.avg, baseline, goldPerDamage) : 0;
+      })
+    );
 
   // Pipeline stat tiles (DPS). Tooltips explain each metric.
   const STAT_TIPS = {
@@ -256,6 +268,14 @@
                       gem (100 / best chance)
                     </li>
                     <li>
+                      <strong>Gold / Gem</strong> - gold to land one above-baseline gem (cuts/hit ×
+                      900g per cut)
+                    </li>
+                    <li>
+                      <strong>Gold to Fill</strong> - rough gold to fill all 24 slots at that rate
+                      (gold/gem × 24)
+                    </li>
+                    <li>
                       <strong>Avg Gem Score</strong> - expected score of an above-baseline gem from
                       the best target
                     </li>
@@ -375,11 +395,12 @@
             <span class="act" data-action="dont-cut">Don't cut</span>
           </div>
           <div class="gems-grid">
-            {#each supportPlan.ranks as r, i}
-              <div class="gem-card" data-rarity={rarityOf(r.archetype)} class:top={i === 0}>
+            {#each supportPlan.ranks as r}
+              {@const headerEV = supportHeaderEV(r)}
+              <div class="gem-card" data-rarity={rarityOf(r.archetype)}>
                 <div class="gem-header">
                   <span class="gem-title">{archLabel(r.archetype)}</span>
-                  <span class="gem-ev">best {r.best}%</span>
+                  <span class="gem-ev">EV: {fmtGold(headerEV)}</span>
                 </div>
                 <div class="gem-buckets">
                   {#each BUCKETS as bkt}
@@ -417,6 +438,20 @@
             >
               <div class="stat-label">Cuts / Hit</div>
               <div class="stat-value">{s.cutsPerHit ?? '-'}</div>
+            </div>
+            <div
+              class="stat-box"
+              title="Gold to land one above-baseline gem at the best target (cuts/hit × 900g per cut)."
+            >
+              <div class="stat-label">Gold / Gem</div>
+              <div class="stat-value">{s.goldPerGem != null ? fmtGold(s.goldPerGem) : '-'}</div>
+            </div>
+            <div
+              class="stat-box"
+              title="Rough gold to fill all 24 grid slots at this rate (gold/gem × 24 slots)."
+            >
+              <div class="stat-label">Gold to Fill</div>
+              <div class="stat-value">{s.goldToFill != null ? fmtGold(s.goldToFill) : '-'}</div>
             </div>
             <div
               class="stat-box"
