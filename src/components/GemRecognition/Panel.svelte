@@ -371,11 +371,11 @@
   .title .tooltip-text {
     bottom: -200%;
   }
-  /* On phones the tooltip is a viewport-pinned popover (see app.css); the -200% above would
-     push it off-screen, so reset it to match the fixed-popover anchor. */
+  /* On phones the tooltip is a centered card (see app.css); clear the desktop -200% anchor so the
+     card's top/transform centering applies instead of being pushed off-screen. */
   @media (max-width: 767px) {
     .title .tooltip-text {
-      bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+      bottom: auto;
     }
   }
   .panel > .title > .fold-button {

@@ -15,6 +15,7 @@
   import { appConfig, enableDarkMode, toggleUI } from './lib/state/appConfig.state.svelte';
   import { appLocale, setLocale } from './lib/state/locale.state.svelte';
   import { type CharacterProfile, getCurrentProfile } from './lib/state/profile.state.svelte';
+  import { initTooltipModal } from './lib/ui/tooltipModal';
 
   let locale = $derived(appLocale.current);
   const LTitle: LocalizationName = {
@@ -44,6 +45,9 @@
 
     // English-only UI.
     setLocale('en_us');
+
+    // Mobile tooltips: dimmed/blurred backdrop + tap-outside / Escape dismissal.
+    return initTooltipModal();
   });
   const pageTitle = $derived(
     {
@@ -148,6 +152,14 @@
   @media (max-width: 767px) {
     .contents {
       padding: 0rem;
+    }
+  }
+  /* The fixed Sections / Back-to-top buttons sit at 1.5rem + safe-area from the bottom. Reserve
+     room beneath the footer on small screens (where both buttons live) so they can't cover the
+     last content or the footer links when scrolled to the bottom. */
+  @media (max-width: 960px) {
+    footer {
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
     }
   }
   .contents .title {

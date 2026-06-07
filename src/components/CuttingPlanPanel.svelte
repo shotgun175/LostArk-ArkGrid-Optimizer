@@ -4,17 +4,22 @@
     bracketLabel,
     getDpsPlan,
     getSupportPlan,
+    supportBucketAction,
+    supportGoldEV,
     weeksBand,
   } from '../lib/cutplan/cutPlan';
   import {
     ARCHETYPES,
     type Archetype,
+    type Bucket,
     BUCKETS,
     type BindingMode,
     type CutAction,
     GOLD_BRACKETS,
+    GOLD_PER_DAMAGE,
     type GoldBracket,
     type PipelineTable,
+    type SupportArchetypeRank,
     type SupportCutQuality,
   } from '../lib/cutplan/types';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
@@ -67,6 +72,7 @@
   // baseline is an integer score; round once here so both integer-keyed lookups stay consistent.
   let baseline = $derived(Math.round(effectiveBaseline(auto, build.baselineOverride)));
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
+  let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');
 
   let dps = $derived(table ? getDpsPlan(table, bracket, binding, baseline) : null);
@@ -101,6 +107,27 @@
   const archLabel = (a: Archetype) => `${RARITY_NAME[rarityKey(a)]} (${a.replace(/\D/g, '')})`;
   // Compact action label for the in-card pills ("Cut + reset" → "↻ Reset").
   const pillLabel = (a: CutAction) => (a === 'cut-reset' ? '↻ Reset' : actionLabel(a));
+  // The DPS table's action for a given archetype+bucket (at the current bracket/binding/baseline),
+  // used to mirror the "Fuse first" recommendation onto the support cards. Undefined when there's
+  // no DPS row for this window.
+  const dpsActionFor = (arch: Archetype, bkt: Bucket): CutAction | undefined =>
+    dps && dps.kind === 'ok' ? dps.row.archetypes[arch]?.buckets[bkt]?.action : undefined;
+
+  // Lens-aware copy/labels (DPS vs support view). The buckets count role-relevant lines, so the
+  // DPS-named "2D" (two Damage) reads as "2S" (two Support) in the support view; Op/Sub/No are
+  // role-neutral abbreviations. The glossary swaps "damage" -> "support" via statWord.
+  let statWord = $derived(role === 'support' ? 'support' : 'damage');
+  const bucketLabel = (bkt: Bucket) => (role === 'support' && bkt === '2D' ? '2S' : bkt);
+  // Per-archetype EV for the support card header (best bucket's gold EV, clamped at 0) so support
+  // cards read like the DPS cards (EV: <gold>).
+  const supportHeaderEV = (r: SupportArchetypeRank) =>
+    Math.max(
+      0,
+      ...BUCKETS.map((bkt) => {
+        const c = r.buckets[bkt];
+        return c ? supportGoldEV(c.pct, c.avg, baseline, goldPerDamage) : 0;
+      })
+    );
 
   // Pipeline stat tiles (DPS). Tooltips explain each metric.
   const STAT_TIPS = {
@@ -155,15 +182,17 @@
                   <strong>Willpower</strong> = (4 - level) × 2.4 · <strong>Chaos Points</strong> =
                   (level - 4) × 5.14 · <strong>Options</strong> = level × coefficient.
                 </p>
-                <p>
-                  DPS coefficients: <strong>Boss Dmg</strong> ×2.55 · <strong>Add. Dmg</strong>
-                  ×1.85 ·
-                  <strong>Atk</strong> ×1.
-                </p>
-                <p>
-                  Support coefficients: <strong>Ally Atk Enh</strong> ×1.95 · <strong>Brand</strong>
-                  ×1.36 · <strong>Ally Dmg Enh</strong> ×0.76.
-                </p>
+                {#if role === 'support'}
+                  <p>
+                    Support coefficients: <strong>Ally Atk Enh</strong> ×1.95 ·
+                    <strong>Brand</strong> ×1.36 · <strong>Ally Dmg Enh</strong> ×0.76.
+                  </p>
+                {:else}
+                  <p>
+                    DPS coefficients: <strong>Boss Dmg</strong> ×2.55 · <strong>Add. Dmg</strong>
+                    ×1.85 · <strong>Atk</strong> ×1.
+                  </p>
+                {/if}
               </section>
               <section>
                 <h4>Archetype cards</h4>
@@ -172,12 +201,19 @@
                   header shows its expected gold value (EV). The four rows are the cut outcomes:
                 </p>
                 <ul>
-                  <li><strong>2D</strong> - two damage stats</li>
-                  <li><strong>Op</strong> - best single damage stat</li>
-                  <li><strong>Sub</strong> - weaker single damage stat</li>
-                  <li><strong>No</strong> - no damage stat</li>
+                  <li><strong>{role === 'support' ? '2S' : '2D'}</strong> - two {statWord} stats</li>
+                  <li><strong>Op</strong> - best single {statWord} stat</li>
+                  <li><strong>Sub</strong> - weaker single {statWord} stat</li>
+                  <li><strong>No</strong> - no {statWord} stat</li>
                 </ul>
-                <p>Each row's % is the chance a cut clears your baseline.</p>
+                {#if role === 'support'}
+                  <p>Each row's % is the chance a single cut clears your baseline.</p>
+                {:else}
+                  <p>
+                    Each row's % is a gold-budget yield - how productive cutting this gem is at your
+                    Gold / 1% bracket (it rises with budget), not a single-cut chance.
+                  </p>
+                {/if}
               </section>
               <section>
                 <h4>Actions</h4>
@@ -207,53 +243,88 @@
                     Set your <strong>baseline</strong> (auto = weakest equipped, or drag the slider).
                   </li>
                   <li>
-                    Read each row and follow its action. The pipeline stats estimate weekly output
-                    and time to fill all 24 slots.
+                    Read each row and follow its action.
+                    {#if role === 'support'}
+                      Actions are EV-based - each cut is weighed against your Gold / 1% damage
+                      budget.
+                    {:else}
+                      The pipeline stats estimate weekly output and time to fill all 24 slots.
+                    {/if}
                   </li>
                 </ol>
               </section>
             </div>
             <div class="ch-col">
-              <section>
-                <h4>Pipeline stats</h4>
-                <ul>
-                  <li>
-                    <strong>Weeks to Fill</strong> - weeks to fill all 24 slots at this budget
-                  </li>
-                  <li><strong>Direct / wk</strong> - above-baseline gems per week from cutting</li>
-                  <li><strong>Fusion / wk</strong> - above-baseline gems per week from fusion</li>
-                  <li><strong>Total Gems / wk</strong> - direct + fusion</li>
-                  <li><strong>Gold / wk</strong> - gold spent per week</li>
-                  <li><strong>Avg Gem Score</strong> - mean score of the gems produced</li>
-                  <li><strong>Total Score</strong> - summed score across all 24 slots</li>
-                  <li><strong>CP% Gain</strong> - combat-power % gain once complete</li>
-                </ul>
-              </section>
-              <section>
-                <h4>Pre-cut Fusion</h4>
-                <p>
-                  <strong>3 UC, same cost</strong> → 85% UC / 13.5% Rare / 1.5% Epic. 500g, 50% RB.
-                </p>
-                <p>
-                  <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50% RB.
-                </p>
-                <p>Purple "Fuse first" cells indicate when fusing beats cutting directly.</p>
-              </section>
-              <section>
-                <h4>Post-cut Fusion (500g each)</h4>
-                <p>
-                  <strong>A + 2L</strong> → 35L / 40R / 25A · <strong>R + 2L</strong> → 73L / 25R /
-                  2A ·
-                  <strong>3L</strong> → 99L / 1R.
-                </p>
-                <p>Priority: A+2L, then R+2L, then 3L. Below-baseline outputs are recycled.</p>
-              </section>
+              {#if role === 'support'}
+                <section>
+                  <h4>Pipeline stats</h4>
+                  <p>
+                    The weekly-rate tiles - <strong>Weeks to Fill</strong>,
+                    <strong>Direct / wk</strong>, <strong>Fusion / wk</strong>,
+                    <strong>Total Gems / wk</strong>, <strong>Gold / wk</strong> - estimate your
+                    weekly gem output and gold spend at this budget.
+                  </p>
+                  <p>
+                    <strong>Avg Gem Score</strong>, <strong>Total Score</strong>, and
+                    <strong>CP% Gain</strong> use your support coefficients.
+                  </p>
+                </section>
+                <section>
+                  <h4>Fusion</h4>
+                  <p>
+                    Purple <strong>"Fuse first"</strong> cells mean fusing lower gems up first beats
+                    cutting that archetype directly.
+                  </p>
+                  <p>
+                    Cut / reset / don't-cut are EV-based - your Gold / 1% damage budget × the gem's
+                    expected score gain, minus the cut cost.
+                  </p>
+                </section>
+              {:else}
+                <section>
+                  <h4>Pipeline stats</h4>
+                  <ul>
+                    <li>
+                      <strong>Weeks to Fill</strong> - weeks to fill all 24 slots at this budget
+                    </li>
+                    <li><strong>Direct / wk</strong> - above-baseline gems per week from cutting</li>
+                    <li><strong>Fusion / wk</strong> - above-baseline gems per week from fusion</li>
+                    <li><strong>Total Gems / wk</strong> - direct + fusion</li>
+                    <li><strong>Gold / wk</strong> - gold spent per week</li>
+                    <li><strong>Avg Gem Score</strong> - mean score of the gems produced</li>
+                    <li><strong>Total Score</strong> - summed score across all 24 slots</li>
+                    <li><strong>CP% Gain</strong> - combat-power % gain once complete</li>
+                  </ul>
+                </section>
+                <section>
+                  <h4>Pre-cut Fusion</h4>
+                  <p>
+                    <strong>3 UC, same cost</strong> → 85% UC / 13.5% Rare / 1.5% Epic. 500g, 50% RB.
+                  </p>
+                  <p>
+                    <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50%
+                    RB.
+                  </p>
+                  <p>Purple "Fuse first" cells indicate when fusing beats cutting directly.</p>
+                </section>
+                <section>
+                  <h4>Post-cut Fusion (500g each)</h4>
+                  <p>
+                    <strong>A + 2L</strong> → 35L / 40R / 25A · <strong>R + 2L</strong> → 73L / 25R /
+                    2A ·
+                    <strong>3L</strong> → 99L / 1R.
+                  </p>
+                  <p>Priority: A+2L, then R+2L, then 3L. Below-baseline outputs are recycled.</p>
+                </section>
+              {/if}
             </div>
           </div>
-          <p class="ch-note">
-            Week estimates assume vendor + dailies only - not events, paradise, or the F4 shop.
-            Hover any pipeline stat for its definition.
-          </p>
+          {#if role !== 'support'}
+            <p class="ch-note">
+              Week estimates assume vendor + dailies only - not events, paradise, or the F4 shop.
+              Hover any pipeline stat for its definition.
+            </p>
+          {/if}
         </div>
       {/if}
       <div class="controls">
@@ -295,22 +366,38 @@
         {:else}
           {@const s = supportPlan.summary}
           <div class="support-note">
-            Single-cut odds + sim-projected scores - relative guidance, not budget-aware. ArkGrid
-            overstates support value (~2×); treat as relative.
+            Cut actions are EV-based - each cut's odds and projected score gain are weighed against
+            your Gold / 1% damage budget. Odds and scores are sim-projected.
+          </div>
+          <div class="legend">
+            <span class="act" data-action="cut-reset">↻ Reset</span>
+            <span class="act" data-action="cut">Cut</span>
+            <span class="act" data-action="fuse">Fuse first</span>
+            <span class="act" data-action="dont-cut">Don't cut</span>
           </div>
           <div class="gems-grid">
-            {#each supportPlan.ranks as r, i}
-              <div class="gem-card" data-rarity={rarityOf(r.archetype)} class:top={i === 0}>
+            {#each supportPlan.ranks as r}
+              {@const headerEV = supportHeaderEV(r)}
+              <div class="gem-card" data-rarity={rarityOf(r.archetype)}>
                 <div class="gem-header">
                   <span class="gem-title">{archLabel(r.archetype)}</span>
-                  <span class="gem-ev">best {r.best}%</span>
+                  <span class="gem-ev">EV: {fmtGold(headerEV)}</span>
                 </div>
                 <div class="gem-buckets">
                   {#each BUCKETS as bkt}
-                    {#if r.buckets[bkt] != null}
-                      <div class="bucket-row">
-                        <span class="bucket-label">{bkt}</span>
-                        <span class="bucket-pct">{r.buckets[bkt]}%</span>
+                    {@const cell = r.buckets[bkt]}
+                    {#if cell != null}
+                      {@const act = supportBucketAction(
+                        cell.pct,
+                        cell.avg,
+                        baseline,
+                        goldPerDamage,
+                        dpsActionFor(r.archetype, bkt)
+                      )}
+                      <div class="bucket-row" data-action={act}>
+                        <span class="bucket-label">{bucketLabel(bkt)}</span>
+                        <span class="bucket-pct">{cell.pct}%</span>
+                        <span class="bucket-action" data-action={act}>{pillLabel(act)}</span>
                       </div>
                     {/if}
                   {/each}
@@ -318,32 +405,38 @@
               </div>
             {/each}
           </div>
+          {@const dpsRow = dps.kind === 'ok' ? dps.row : null}
+          {@const gl = dpsRow ? goldLines(dpsRow.pipeline.gold) : (['-', ''] as [string, string])}
           <div class="summary-grid">
-            <div
-              class="stat-box"
-              title="Highest single-cut chance to beat your baseline, across all archetypes."
-            >
-              <div class="stat-label">Best Cut Chance</div>
-              <div class="stat-value">{s.bestPct}%</div>
+            <div class="stat-box" title={STAT_TIPS.weeks}>
+              <div class="stat-label">Weeks to Fill</div>
+              <div class="stat-value {dpsRow ? weeksBand(parseFloat(dpsRow.pipeline.weeks)) : ''}">
+                {dpsRow?.pipeline.weeks ?? '-'}
+              </div>
             </div>
-            <div
-              class="stat-box"
-              title="Roughly how many cuts to land one above-baseline gem (100 / best chance)."
-            >
-              <div class="stat-label">Cuts / Hit</div>
-              <div class="stat-value">{s.cutsPerHit ?? '-'}</div>
+            <div class="stat-box" title={STAT_TIPS.directWk}>
+              <div class="stat-label">Direct / wk</div>
+              <div class="stat-value">{dpsRow?.pipeline.directWk ?? '-'}</div>
             </div>
-            <div
-              class="stat-box"
-              title="Expected score of an above-baseline gem from the best target."
-            >
+            <div class="stat-box" title={STAT_TIPS.fuseWk}>
+              <div class="stat-label">Fusion / wk</div>
+              <div class="stat-value">{dpsRow?.pipeline.fuseWk ?? '-'}</div>
+            </div>
+            <div class="stat-box" title={STAT_TIPS.totalWk}>
+              <div class="stat-label">Total Gems / wk</div>
+              <div class="stat-value">{dpsRow?.pipeline.totalWk ?? '-'}</div>
+            </div>
+            <div class="stat-box" title={STAT_TIPS.gold}>
+              <div class="stat-label">Gold / wk</div>
+              <div class="stat-value gold">
+                {gl[0]}{#if gl[1]}<br /><span class="gold-total">{gl[1]}</span>{/if}
+              </div>
+            </div>
+            <div class="stat-box" title={STAT_TIPS.avgScore}>
               <div class="stat-label">Avg Gem Score</div>
               <div class="stat-value">{s.avgScore ?? '-'}</div>
             </div>
-            <div
-              class="stat-box"
-              title="Projected full-grid astrogem score (avg gem score × 24 slots)."
-            >
+            <div class="stat-box" title={STAT_TIPS.totalScore}>
               <div class="stat-label">Total Score</div>
               <div class="stat-value">{s.totalScore ?? '-'}</div>
             </div>
@@ -351,7 +444,7 @@
               class="stat-box"
               title="Combat power still available from better gems, from the optimizer (max achievable − current). Run the optimizer to populate it."
             >
-              <div class="stat-label">CP% Headroom</div>
+              <div class="stat-label">CP% Gain</div>
               <div class="stat-value highlight">
                 {cpHeadroom != null ? `+${cpHeadroom.toFixed(2)}%` : 'run optimizer'}
               </div>

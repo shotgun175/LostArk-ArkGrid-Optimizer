@@ -163,14 +163,23 @@
         </ul>
         <table class="sh-coeff">
           <thead>
-            <tr><th>Option</th><th>DPS</th><th>Support</th></tr>
+            {#if role === 'support'}
+              <tr><th>Option</th><th class="active-lens">Support</th><th>DPS</th></tr>
+            {:else}
+              <tr><th>Option</th><th class="active-lens">DPS</th><th>Support</th></tr>
+            {/if}
           </thead>
           <tbody>
             {#each ArkGridGemOptionNames as opt}
               <tr>
                 <td>{ArkGridGemOptionTypes[opt].name.en_us}</td>
-                <td>{DPS_NODE_COEFF[opt]}</td>
-                <td>{SUPPORT_NODE_COEFF[opt]}</td>
+                {#if role === 'support'}
+                  <td class="active-lens">{SUPPORT_NODE_COEFF[opt]}</td>
+                  <td>{DPS_NODE_COEFF[opt]}</td>
+                {:else}
+                  <td class="active-lens">{DPS_NODE_COEFF[opt]}</td>
+                  <td>{SUPPORT_NODE_COEFF[opt]}</td>
+                {/if}
               </tr>
             {/each}
           </tbody>
@@ -406,6 +415,14 @@
   .sh-coeff th:not(:first-child),
   .sh-coeff td:not(:first-child) {
     text-align: right;
+  }
+  /* The active lens's column (shown first) is bolded + tinted so it reads as "your role". */
+  .sh-coeff .active-lens {
+    font-weight: 700;
+    background: rgba(184, 134, 11, 0.18);
+  }
+  :global(.dark-mode) .sh-coeff .active-lens {
+    background: rgba(240, 192, 64, 0.18);
   }
   .sh-tiers {
     display: flex;
