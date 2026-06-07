@@ -60,9 +60,13 @@
     typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
     typeof (window as any).MediaStreamTrackProcessor === 'function';
 
-  // On devices that can't screen-capture, the recognition Guide (entirely about screen sharing)
-  // is irrelevant — collapse it by default so it doesn't dominate the mobile view.
-  if (!captureSupported) updateUI('showGemRecognitionGuide', false);
+  // On devices that can't screen-capture, the recognition Guide and the Recognized Astrogems list
+  // (both only meaningful for the desktop capture flow) are irrelevant — collapse them by default
+  // so they don't dominate the mobile view.
+  if (!captureSupported) {
+    updateUI('showGemRecognitionGuide', false);
+    updateUI('showRecognizedGems', false);
+  }
 
   let debugCanvas: HTMLCanvasElement | null;
   let totalOrderGems = $state<ArkGridGem[]>([]);

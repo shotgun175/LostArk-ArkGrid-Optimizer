@@ -4,6 +4,7 @@
 
   import { type LocalizationName } from '../../lib/constants/enums';
   import { LChaos, LOrder } from '../../lib/constants/localization';
+  import { appConfig, toggleUI } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import {
     type AllGems,
@@ -103,67 +104,84 @@
 </script>
 
 <div class="panel">
-  <div class="title">{LTitle[locale]}</div>
-  <div class="tab-container">
-    {#each tabs as tab, i}
-      <button class="tab {activeTab === i ? 'active' : ''}" onclick={() => selectTab(i)}>
-        {#if activeTab === i}
-          &gt
-        {/if}
-        {tab}
-      </button>
-    {/each}
+  <div class="title rec-title">
+    <span>{LTitle[locale]}</span>
+    <button
+      class="fold-button"
+      aria-label={appConfig.current.uiConfig.showRecognizedGems
+        ? 'Collapse section'
+        : 'Expand section'}
+      onclick={() => toggleUI('showRecognizedGems')}
+    >
+      {appConfig.current.uiConfig.showRecognizedGems ? '▲' : '▼'}
+    </button>
   </div>
-  <ArkGridGemList
-    gems={currentGems}
-    showDeleteButton={false}
-    emptyDescription={LEmpty[locale]}
-    bind:this={container}
-  ></ArkGridGemList>
-  <div class="gem-count">
-    {@html LGemTotalCount[locale]}
-  </div>
-  <div class="buttons">
-    <div>
-      <button
-        disabled={orderGems.length == 0 && chaosGems.length == 0}
-        onclick={() => {
-          // Warn once if Chaos gems were not recognized
-          // if (chaosGems.length == 0) {
-          //   if (
-          //     !window.confirm(
-          //       'Chaos gems were not recognized. Do you want to continue?'
-          //     )
-          //   )
-          //     return;
-          // }
-
-          // If the current profile already has gems, ask whether to overwrite.
-          const profile = getCurrentProfile();
-          let overrideGem = true;
-
-          if (profile.gems.orderGems.length > 0 || profile.gems.chaosGems.length > 0) {
-            overrideGem = window.confirm(LWarning[locale]);
-          }
-          if (applyGemList(overrideGem)) toast.push(LConfirm[locale]);
-        }}
-      >
-        ✅ {LApply[locale]}
-      </button>
+  <div class="rec-content" hidden={!appConfig.current.uiConfig.showRecognizedGems}>
+    <div class="tab-container">
+      {#each tabs as tab, i}
+        <button class="tab {activeTab === i ? 'active' : ''}" onclick={() => selectTab(i)}>
+          {#if activeTab === i}
+            &gt
+          {/if}
+          {tab}
+        </button>
+      {/each}
     </div>
-    <div>
-      <button
-        disabled={orderGems.length == 0 && chaosGems.length == 0}
-        onclick={() => {
-          orderGems.length = 0;
-          chaosGems.length = 0;
-        }}>{LReset[locale]}</button
-      >
+    <ArkGridGemList
+      gems={currentGems}
+      showDeleteButton={false}
+      emptyDescription={LEmpty[locale]}
+      bind:this={container}
+    ></ArkGridGemList>
+    <div class="gem-count">
+      {@html LGemTotalCount[locale]}
+    </div>
+    <div class="buttons">
+      <div>
+        <button
+          disabled={orderGems.length == 0 && chaosGems.length == 0}
+          onclick={() => {
+            // Warn once if Chaos gems were not recognized
+            // if (chaosGems.length == 0) {
+            //   if (
+            //     !window.confirm(
+            //       'Chaos gems were not recognized. Do you want to continue?'
+            //     )
+            //   )
+            //     return;
+            // }
+
+            // If the current profile already has gems, ask whether to overwrite.
+            const profile = getCurrentProfile();
+            let overrideGem = true;
+
+            if (profile.gems.orderGems.length > 0 || profile.gems.chaosGems.length > 0) {
+              overrideGem = window.confirm(LWarning[locale]);
+            }
+            if (applyGemList(overrideGem)) toast.push(LConfirm[locale]);
+          }}
+        >
+          ✅ {LApply[locale]}
+        </button>
+      </div>
+      <div>
+        <button
+          disabled={orderGems.length == 0 && chaosGems.length == 0}
+          onclick={() => {
+            orderGems.length = 0;
+            chaosGems.length = 0;
+          }}>{LReset[locale]}</button
+        >
+      </div>
     </div>
   </div>
 </div>
 
 <style>
+  .rec-title {
+    display: flex;
+    align-items: center;
+  }
   .tab-container {
     display: flex;
     gap: 0.3em;
