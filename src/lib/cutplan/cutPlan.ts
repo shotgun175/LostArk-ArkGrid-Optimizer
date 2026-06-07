@@ -41,23 +41,36 @@ export function actionLabel(action: CutAction): string {
   return ACTION_LABELS[action];
 }
 
-// Support gets the same four action pills as the DPS view. There's no gold/EV model for support
-// (only relative single-cut odds), so the mapping is:
-//   - "Fuse first" is mirrored from the DPS table wherever it recommends fuse for the same
-//     archetype+bucket — fusing lower gems up is an acquisition strategy that doesn't depend on role.
-//   - the other three follow the support single-cut % (thresholds are tunable):
-//       >= 50%  Cut + reset  (better-than-coinflip cut; re-roll sub-baseline results)
-//       >= 15%  Cut          (lands within ~7 cuts on average; don't reset)
-//       else    Don't cut    (poor odds / no chance)
-export const SUPPORT_CUT_RESET_MIN = 50;
-export const SUPPORT_CUT_MIN = 15;
+// Support uses the SAME EV-based cut rule as the DPS view. The author's gem-value formula
+// (shizukaziye/ark-grid-solver: calculateGemValue) is role-agnostic in form — a gem's gold value is
+// (score - baseline) x gold-per-score — and the app scores support on the SAME scale as DPS
+// (gemScore.ts: shared willpower/point base, same tiers), so the support coefficients already make
+// the score damage-equivalent. Per cut:
+//   goldEV = E[gold gain of one cut] - cut cost
+//          = (pct/100) x max(0, avg - baseline) x goldPerScore  -  CUT_COST
+// Actions match the DPS table: goldEV >= RESET_COST -> Cut + reset ; > 0 -> Cut ; <= 0 -> Don't cut.
+// "Fuse first" is still mirrored from the DPS table (a role-agnostic acquisition strategy).
+const SCORE_PER_DMG_PCT = 27; // author's score -> %damage normalization (goldPerScore = goldPerDmg/27)
+const CUT_COST = 900; // gold per cut attempt
+const RESET_COST = 20_000; // gold for one retry; the DPS table's cut-reset threshold
+// Tunable: gold value of one SUPPORT score point relative to one DPS score point. 1.0 = value
+// support exactly like DPS. Raise toward ~1.6 to honor the ally-vs-personal-damage gap if desired.
+export const SUPPORT_VALUE_RATE = 1.0;
+
 export function supportBucketAction(
   pct: number | null | undefined,
+  avg: number | null | undefined,
+  baseline: number,
+  goldPerDamage: number,
   dpsAction?: CutAction
 ): CutAction {
   if (dpsAction === 'fuse') return 'fuse';
-  if (pct != null && pct >= SUPPORT_CUT_RESET_MIN) return 'cut-reset';
-  if (pct != null && pct >= SUPPORT_CUT_MIN) return 'cut';
+  if (pct == null || avg == null) return 'dont-cut';
+  const goldPerScore = (goldPerDamage / SCORE_PER_DMG_PCT) * SUPPORT_VALUE_RATE;
+  const expectedGain = (pct / 100) * Math.max(0, avg - baseline) * goldPerScore;
+  const goldEV = expectedGain - CUT_COST;
+  if (goldEV >= RESET_COST) return 'cut-reset';
+  if (goldEV > 0) return 'cut';
   return 'dont-cut';
 }
 
@@ -94,12 +107,12 @@ export function getSupportPlan(data: SupportCutQuality, baseline: number): Suppo
 
   for (const [archetypeStr, buckets] of Object.entries(atBaseline)) {
     const archetype = archetypeStr as Archetype;
-    const pctByBucket: Partial<Record<Bucket, number>> = {};
+    const bucketCells: Partial<Record<Bucket, { pct: number; avg: number | null }>> = {};
     let best = 0;
     for (const [bktStr, cell] of Object.entries(buckets)) {
       if (!cell) continue;
       const bkt = bktStr as Bucket;
-      pctByBucket[bkt] = cell.pct;
+      bucketCells[bkt] = { pct: cell.pct, avg: cell.avg };
       if (cell.pct > best) best = cell.pct;
       if (cell.pct > bestPct) {
         bestPct = cell.pct;
@@ -107,7 +120,7 @@ export function getSupportPlan(data: SupportCutQuality, baseline: number): Suppo
         bestAvg = cell.avg;
       }
     }
-    ranks.push({ archetype, best, buckets: pctByBucket });
+    ranks.push({ archetype, best, buckets: bucketCells });
   }
   ranks.sort((a, b) => b.best - a.best);
 

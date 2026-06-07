@@ -15,6 +15,7 @@
     type BindingMode,
     type CutAction,
     GOLD_BRACKETS,
+    GOLD_PER_DAMAGE,
     type GoldBracket,
     type PipelineTable,
     type SupportCutQuality,
@@ -69,6 +70,7 @@
   // baseline is an integer score; round once here so both integer-keyed lookups stay consistent.
   let baseline = $derived(Math.round(effectiveBaseline(auto, build.baselineOverride)));
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
+  let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');
 
   let dps = $derived(table ? getDpsPlan(table, bracket, binding, baseline) : null);
@@ -231,8 +233,8 @@
                   <li>
                     Read each row and follow its action.
                     {#if role === 'support'}
-                      The summary tiles show single-cut odds and projected grid score - relative
-                      guidance, not gold-budget-aware.
+                      Actions are EV-based on your Gold / 1% damage budget (the same model the DPS
+                      view uses); the summary tiles show single-cut odds and projected grid score.
                     {:else}
                       The pipeline stats estimate weekly output and time to fill all 24 slots.
                     {/if}
@@ -271,8 +273,9 @@
                     lower gems up before cutting is the same regardless of role.
                   </p>
                   <p>
-                    Support has no gold / weeks model, so there are no budget stats - the odds and
-                    scores are relative guidance only.
+                    Cut / reset / don't-cut use the same gold-EV rule as DPS (your Gold / 1% damage
+                    budget × the gem's expected score gain). There are no weekly pipeline stats for
+                    support - the tiles are single-cut odds and projected scores.
                   </p>
                 </section>
               {:else}
@@ -361,8 +364,9 @@
         {:else}
           {@const s = supportPlan.summary}
           <div class="support-note">
-            Single-cut odds + sim-projected scores - relative guidance, not budget-aware. ArkGrid
-            overstates support value (~2×); treat as relative.
+            Cut actions are EV-based - each cut's odds and projected score gain are weighed against
+            your Gold / 1% damage budget, the same model the DPS view uses. Odds and scores are
+            sim-projected.
           </div>
           <div class="legend">
             <span class="act" data-action="cut-reset">↻ Reset</span>
@@ -379,11 +383,18 @@
                 </div>
                 <div class="gem-buckets">
                   {#each BUCKETS as bkt}
-                    {#if r.buckets[bkt] != null}
-                      {@const act = supportBucketAction(r.buckets[bkt], dpsActionFor(r.archetype, bkt))}
+                    {@const cell = r.buckets[bkt]}
+                    {#if cell != null}
+                      {@const act = supportBucketAction(
+                        cell.pct,
+                        cell.avg,
+                        baseline,
+                        goldPerDamage,
+                        dpsActionFor(r.archetype, bkt)
+                      )}
                       <div class="bucket-row" data-action={act}>
                         <span class="bucket-label">{bucketLabel(bkt)}</span>
-                        <span class="bucket-pct">{r.buckets[bkt]}%</span>
+                        <span class="bucket-pct">{cell.pct}%</span>
                         <span class="bucket-action" data-action={act}>{pillLabel(act)}</span>
                       </div>
                     {/if}
