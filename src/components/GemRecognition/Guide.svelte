@@ -2,10 +2,6 @@
   import type { LocalizationName } from '../../lib/constants/enums';
   import { appLocale } from '../../lib/state/locale.state.svelte';
 
-  const guideAssets = import.meta.glob<string>('/src/assets/guide/*', {
-    eager: true,
-    import: 'default',
-  });
   const LTitle: LocalizationName = {
     en_us: 'Guide',
   };
