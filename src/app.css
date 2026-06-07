@@ -322,23 +322,39 @@ input[type='radio']:disabled {
 
 /* On phones, a tooltip centered on its trigger can hang off the screen edge — and because
    .panel has overflow-y:hidden (which makes overflow-x compute to auto), that off-edge
-   (even while hidden) turns the panel into a sideways-swipe area. Pin tooltips to the
-   viewport as a fixed popover instead: keeps them fully readable AND removes them from the
-   panel's layout, so nothing overflows and there's nothing to scroll. */
+   (even while hidden) turns the panel into a sideways-swipe area. Show tooltips as a centered
+   card over a dimmed/blurred backdrop instead: fully readable, removed from the panel's layout
+   (so nothing overflows), and dismissable by tapping the backdrop or pressing Escape (the
+   backdrop + dismissal are wired up in initTooltipModal). */
 @media (max-width: 767px) {
   .tooltip-text {
     position: fixed;
-    left: 1rem;
-    right: 1rem;
-    /* clear the fixed nav toggle / back-to-top, which sit at 1.5rem + safe-area */
-    bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
-    top: auto;
-    width: auto;
-    max-width: none;
-    max-height: 50vh;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    width: min(24rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    max-height: 70vh;
     overflow-y: auto;
-    transform: none;
+    z-index: 2000;
   }
+}
+
+/* Dimmed/blurred backdrop behind the centered mobile tooltip card. Created and toggled by
+   initTooltipModal() (touch devices only); sits just under the card (z 2000). */
+.tooltip-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.tooltip-backdrop.show {
+  display: block;
 }
 
 /* Visible keyboard-focus indicator (the UA default ring is weak on themed buttons). */

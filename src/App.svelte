@@ -15,6 +15,7 @@
   import { appConfig, enableDarkMode, toggleUI } from './lib/state/appConfig.state.svelte';
   import { appLocale, setLocale } from './lib/state/locale.state.svelte';
   import { type CharacterProfile, getCurrentProfile } from './lib/state/profile.state.svelte';
+  import { initTooltipModal } from './lib/ui/tooltipModal';
 
   let locale = $derived(appLocale.current);
   const LTitle: LocalizationName = {
@@ -44,6 +45,9 @@
 
     // English-only UI.
     setLocale('en_us');
+
+    // Mobile tooltips: dimmed/blurred backdrop + tap-outside / Escape dismissal.
+    return initTooltipModal();
   });
   const pageTitle = $derived(
     {
