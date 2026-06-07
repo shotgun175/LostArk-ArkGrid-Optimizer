@@ -290,6 +290,17 @@
     });
   }
 
+  function resetMinPoints() {
+    // Set every core's minimum back to 0 for the active build (a quick undo for over-set minimums).
+    const cores = profile.builds[profile.activeBuild].cores;
+    for (const attr of Object.values(ArkGridAttrs)) {
+      for (const ctype of Object.values(ArkGridCoreTypes)) {
+        const c = cores[attr][ctype];
+        if (c) c.goalPoint = 0;
+      }
+    }
+  }
+
   async function runSolve() {
     if (isSolving) return;
 
@@ -339,7 +350,10 @@
   {#if appConfig.current.uiConfig.showOptimization}
     <div class="container">
       <div class="core-solve-goal-edit">
-        <div class="title">{LSubtitle}</div>
+        <div class="title goal-title">
+          <span>{LSubtitle}</span>
+          <button class="reset-goals" onclick={resetMinPoints}>↺ Reset</button>
+        </div>
         <div class="container">
           {#each Object.values(ArkGridAttrs) as attr}
             {#each Object.values(ArkGridCoreTypes) as ctype}
@@ -540,6 +554,22 @@
   .core-solve-goal-edit > .title {
     font-size: 1.4rem;
     font-weight: 500;
+  }
+  .goal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .reset-goals {
+    width: auto;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
   }
   .core-solve-goal-edit > .container {
     display: flex;

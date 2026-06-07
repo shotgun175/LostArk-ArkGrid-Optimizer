@@ -216,8 +216,13 @@ button:disabled {
   top: 50%;
   transform: translate(-50%, -50%);
 }
-/* On phones, drop it onto its own row so it can't overlap the title or Glossary pill. */
+/* On phones, drop it onto its own row so it can't overlap the title or Glossary pill.
+   flex-wrap is required for flex-basis:100% + order to actually wrap to a new line — without it
+   the switch just goes greedy in the single row and shoves the title/Glossary/fold around. */
 @media (max-width: 767px) {
+  .section-title {
+    flex-wrap: wrap;
+  }
   .section-title .build-view-switch {
     position: static;
     transform: none;
