@@ -158,6 +158,14 @@
     flex-direction: row;
     gap: 1rem;
   }
+  /* On phones the three fixed-width columns can't fit the modal side-by-side, so the
+     options column gets clipped off the right edge. Stack them vertically instead, which
+     also lets the auto-sized dialog shrink back within the viewport. */
+  @media (max-width: 767px) {
+    .content {
+      flex-direction: column;
+    }
+  }
   .col {
     display: flex;
     flex-direction: column;
