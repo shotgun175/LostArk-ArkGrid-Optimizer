@@ -8,6 +8,7 @@
     appConfig,
     toggleDeferredScreenSharingInit,
     toggleUI,
+    updateUI,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import GemRecognitionGemList from './GemList.svelte';
@@ -58,6 +59,10 @@
     typeof navigator !== 'undefined' &&
     typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
     typeof (window as any).MediaStreamTrackProcessor === 'function';
+
+  // On devices that can't screen-capture, the recognition Guide (entirely about screen sharing)
+  // is irrelevant — collapse it by default so it doesn't dominate the mobile view.
+  if (!captureSupported) updateUI('showGemRecognitionGuide', false);
 
   let debugCanvas: HTMLCanvasElement | null;
   let totalOrderGems = $state<ArkGridGem[]>([]);
@@ -366,7 +371,7 @@
      push it off-screen, so reset it to match the fixed-popover anchor. */
   @media (max-width: 767px) {
     .title .tooltip-text {
-      bottom: 5rem;
+      bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
     }
   }
   .panel > .title > .fold-button {

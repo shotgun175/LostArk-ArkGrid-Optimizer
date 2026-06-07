@@ -325,7 +325,8 @@ input[type='radio']:disabled {
     position: fixed;
     left: 1rem;
     right: 1rem;
-    bottom: 5rem;
+    /* clear the fixed nav toggle / back-to-top, which sit at 1.5rem + safe-area */
+    bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
     top: auto;
     width: auto;
     max-width: none;

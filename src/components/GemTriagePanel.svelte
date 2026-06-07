@@ -255,6 +255,7 @@
     {#if rows.length > 0}
       <div class="rows">
         {#each rows as row (row.gem)}
+          {@const factors = explainGemScore(row.gem, role)}
           <div
             class="triage-row"
             class:equipped={row.action === 'equipped'}
@@ -265,9 +266,22 @@
               <ArkGridGemDetail gem={row.gem} showDeleteButton={false} />
             </div>
             <div class="badges">
-              <span class="score" title={scoreTitle(explainGemScore(row.gem, role), row.score)}
-                >{r1(row.score)}</span
-              >
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <span class="score-pop" tabindex="0" title={scoreTitle(factors, row.score)}>
+                <span class="score">{r1(row.score)}</span>
+                <span class="tooltip-text score-breakdown">
+                  {#each factors as f}
+                    <span class="sf">
+                      <span>{f.label}</span>
+                      <span>{f.detail} = {f.value >= 0 ? '+' : ''}{r1(f.value)}</span>
+                    </span>
+                  {/each}
+                  <span class="sf sf-total">
+                    <span>Total</span>
+                    <span>{r1(row.score)}</span>
+                  </span>
+                </span>
+              </span>
               <span class="tier" data-tier={row.tier}>{row.tier}</span>
               <span class="action" data-action={row.action}>{ACTION_LABEL[row.action]}</span>
             </div>
@@ -567,5 +581,36 @@
     align-self: center;
     opacity: 0.7;
     padding: 1.5rem 0;
+  }
+  .score-pop {
+    position: relative;
+    display: inline-block;
+  }
+  .score-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+  }
+  .score-breakdown .sf {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.25rem;
+  }
+  .score-breakdown .sf-total {
+    border-top: 1px solid var(--border);
+    margin-top: 0.15rem;
+    padding-top: 0.25rem;
+    font-weight: 700;
+  }
+  /* Desktop keeps the native hover title; the styled breakdown popover is for touch (tap to focus).
+     Scoped to hover:none so it never double-shows alongside the native title on desktop. */
+  @media (hover: none) {
+    .score-pop:focus-within .tooltip-text,
+    .score-pop:focus .tooltip-text {
+      visibility: visible;
+      opacity: 1;
+    }
   }
 </style>

@@ -5,6 +5,7 @@
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import { gemFingerprint } from '../lib/models/arkGridGems';
+  import { DPS_NODE_COEFF } from '../lib/scoring/gemScore';
   import { solveInputSignature } from '../lib/solver/solveSignature';
   import { SolverController } from '../lib/solver/solverController';
   import type { SolverProgress, SolverProgressStage } from '../lib/solver/types';
@@ -69,7 +70,8 @@
   );
   const LFailed = $derived(
     {
-      en_us: 'Please adjust the minimum core points.',
+      en_us:
+        "These minimum points can't be reached with your current astrogems — each astrogem adds at most 5 points to one core, and a core needs enough astrogems to meet its minimum. Lower the minimums or add more astrogems.",
     }[locale]
   );
   const LOrderFailed = $derived(
@@ -108,6 +110,16 @@
       chaos: solveAfter.solveAnswer?.gemSetPackTuple.gsp2 === null && !allChaosCoresNull,
     };
   });
+
+  // Support-stat astrogems contribute 0 combat power to a DPS build, so the solver leaves them
+  // off the Chaos cores. Flag it so the user understands why their support gems aren't placed.
+  let hasUnusedSupportChaosGem = $derived(
+    profile.activeBuild !== 'support' &&
+      profile.gems.chaosGems.some(
+        (g) =>
+          DPS_NODE_COEFF[g.option1.optionType] === 0 && DPS_NODE_COEFF[g.option2.optionType] === 0
+      )
+  );
 
   const solverController = new SolverController();
   let isSolving = $state(false);
@@ -395,6 +407,13 @@
         </div>
       {/if}
 
+      {#if hasUnusedSupportChaosGem}
+        <div class="support-note">
+          Support-stat astrogems (Brand Power, Ally Attack/Damage Enh.) add 0 combat power to a DPS
+          build, so the optimizer leaves them off the Chaos cores — they only help a Support build.
+        </div>
+      {/if}
+
       {#if solveAfter}
         <SolveResult {solveAfter}></SolveResult>
       {/if}
@@ -492,6 +511,24 @@
     flex-direction: column;
     align-items: center;
     gap: 1rem;
+  }
+  /* Centered (non-stretched) flex children size to content, not the panel — clamp them so a
+     wide child (e.g. a long failure message) can't push the panel into sideways scroll. */
+  .panel > .container > * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .support-note {
+    align-self: center;
+    max-width: 32rem;
+    text-align: center;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.4rem;
+    color: var(--text);
+    background: var(--muted);
+    border: 1px solid var(--border);
   }
 
   .core-solve-goal-edit {
