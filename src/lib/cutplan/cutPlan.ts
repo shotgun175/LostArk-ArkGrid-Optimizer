@@ -41,6 +41,26 @@ export function actionLabel(action: CutAction): string {
   return ACTION_LABELS[action];
 }
 
+// Support gets the same four action pills as the DPS view. There's no gold/EV model for support
+// (only relative single-cut odds), so the mapping is:
+//   - "Fuse first" is mirrored from the DPS table wherever it recommends fuse for the same
+//     archetype+bucket — fusing lower gems up is an acquisition strategy that doesn't depend on role.
+//   - the other three follow the support single-cut % (thresholds are tunable):
+//       >= 50%  Cut + reset  (better-than-coinflip cut; re-roll sub-baseline results)
+//       >= 15%  Cut          (lands within ~7 cuts on average; don't reset)
+//       else    Don't cut    (poor odds / no chance)
+export const SUPPORT_CUT_RESET_MIN = 50;
+export const SUPPORT_CUT_MIN = 15;
+export function supportBucketAction(
+  pct: number | null | undefined,
+  dpsAction?: CutAction
+): CutAction {
+  if (dpsAction === 'fuse') return 'fuse';
+  if (pct != null && pct >= SUPPORT_CUT_RESET_MIN) return 'cut-reset';
+  if (pct != null && pct >= SUPPORT_CUT_MIN) return 'cut';
+  return 'dont-cut';
+}
+
 export function bracketLabel(bracket: GoldBracket): string {
   return bracket.replace('_', '.');
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { actionLabel, bracketLabel, getDpsPlan, getSupportPlan, weeksBand } from './cutPlan';
+import {
+  actionLabel,
+  bracketLabel,
+  getDpsPlan,
+  getSupportPlan,
+  supportBucketAction,
+  weeksBand,
+} from './cutPlan';
 import type { PipelineTable } from './types';
 import type { SupportCutQuality } from './types';
 
@@ -93,5 +100,22 @@ describe('getSupportPlan', () => {
     expect(plan.summary.bestPct).toBe(0);
     expect(plan.summary.avgScore).toBeNull();
     expect(plan.summary.cutsPerHit).toBeNull();
+  });
+});
+
+describe('supportBucketAction', () => {
+  it('mirrors the DPS fuse recommendation regardless of the support odds', () => {
+    expect(supportBucketAction(90, 'fuse')).toBe('fuse');
+    expect(supportBucketAction(0, 'fuse')).toBe('fuse');
+  });
+  it('maps the single-cut % to reset/cut/dont-cut when the DPS action is not fuse', () => {
+    expect(supportBucketAction(50)).toBe('cut-reset'); // >= 50
+    expect(supportBucketAction(80, 'cut')).toBe('cut-reset'); // non-fuse DPS action does not override
+    expect(supportBucketAction(15)).toBe('cut'); // >= 15
+    expect(supportBucketAction(49.9)).toBe('cut');
+    expect(supportBucketAction(14.9)).toBe('dont-cut');
+    expect(supportBucketAction(0)).toBe('dont-cut');
+    expect(supportBucketAction(null)).toBe('dont-cut');
+    expect(supportBucketAction(undefined)).toBe('dont-cut');
   });
 });

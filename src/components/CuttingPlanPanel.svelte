@@ -4,11 +4,13 @@
     bracketLabel,
     getDpsPlan,
     getSupportPlan,
+    supportBucketAction,
     weeksBand,
   } from '../lib/cutplan/cutPlan';
   import {
     ARCHETYPES,
     type Archetype,
+    type Bucket,
     BUCKETS,
     type BindingMode,
     type CutAction,
@@ -101,6 +103,11 @@
   const archLabel = (a: Archetype) => `${RARITY_NAME[rarityKey(a)]} (${a.replace(/\D/g, '')})`;
   // Compact action label for the in-card pills ("Cut + reset" → "↻ Reset").
   const pillLabel = (a: CutAction) => (a === 'cut-reset' ? '↻ Reset' : actionLabel(a));
+  // The DPS table's action for a given archetype+bucket (at the current bracket/binding/baseline),
+  // used to mirror the "Fuse first" recommendation onto the support cards. Undefined when there's
+  // no DPS row for this window.
+  const dpsActionFor = (arch: Archetype, bkt: Bucket): CutAction | undefined =>
+    dps && dps.kind === 'ok' ? dps.row.archetypes[arch]?.buckets[bkt]?.action : undefined;
 
   // Pipeline stat tiles (DPS). Tooltips explain each metric.
   const STAT_TIPS = {
@@ -298,6 +305,12 @@
             Single-cut odds + sim-projected scores - relative guidance, not budget-aware. ArkGrid
             overstates support value (~2×); treat as relative.
           </div>
+          <div class="legend">
+            <span class="act" data-action="cut-reset">↻ Reset</span>
+            <span class="act" data-action="cut">Cut</span>
+            <span class="act" data-action="fuse">Fuse first</span>
+            <span class="act" data-action="dont-cut">Don't cut</span>
+          </div>
           <div class="gems-grid">
             {#each supportPlan.ranks as r, i}
               <div class="gem-card" data-rarity={rarityOf(r.archetype)} class:top={i === 0}>
@@ -308,9 +321,11 @@
                 <div class="gem-buckets">
                   {#each BUCKETS as bkt}
                     {#if r.buckets[bkt] != null}
-                      <div class="bucket-row">
+                      {@const act = supportBucketAction(r.buckets[bkt], dpsActionFor(r.archetype, bkt))}
+                      <div class="bucket-row" data-action={act}>
                         <span class="bucket-label">{bkt}</span>
                         <span class="bucket-pct">{r.buckets[bkt]}%</span>
+                        <span class="bucket-action" data-action={act}>{pillLabel(act)}</span>
                       </div>
                     {/if}
                   {/each}
