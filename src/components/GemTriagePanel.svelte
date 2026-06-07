@@ -26,7 +26,7 @@
     reconcileDualBuild,
     triageGem,
   } from '../lib/scoring/triage';
-  import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
+  import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
     type CharacterProfile,
     activeBuildState,
@@ -136,14 +136,14 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={appConfig.current.uiConfig.showGemTriage ? 'Collapse section' : 'Expand section'}
-      onclick={() => toggleUI('showGemTriage')}
+      aria-label={sectionUI.showGemTriage ? 'Collapse section' : 'Expand section'}
+      onclick={() => toggleSection('showGemTriage')}
     >
-      {appConfig.current.uiConfig.showGemTriage ? '▼' : '▲'}
+      {sectionUI.showGemTriage ? '▼' : '▲'}
     </button>
   </div>
 
-  {#if appConfig.current.uiConfig.showGemTriage}
+  {#if sectionUI.showGemTriage}
     {#if showHelp}
       <div class="score-help">
         <div class="sh-title">How the score is calculated</div>

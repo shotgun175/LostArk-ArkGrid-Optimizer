@@ -25,7 +25,7 @@
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import { type GemRole } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
-  import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
+  import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
     type CharacterProfile,
     activeBuildState,
@@ -58,7 +58,7 @@
     supportTable = s.default as unknown as SupportCutQuality;
   }
   $effect(() => {
-    if (appConfig.current.uiConfig.showCuttingPlan) void loadCutplanTables();
+    if (sectionUI.showCuttingPlan) void loadCutplanTables();
   });
 
   let showHelp = $state(false);
@@ -156,16 +156,16 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={appConfig.current.uiConfig.showCuttingPlan
+      aria-label={sectionUI.showCuttingPlan
         ? 'Collapse section'
         : 'Expand section'}
-      onclick={() => toggleUI('showCuttingPlan')}
+      onclick={() => toggleSection('showCuttingPlan')}
     >
-      {appConfig.current.uiConfig.showCuttingPlan ? '▼' : '▲'}
+      {sectionUI.showCuttingPlan ? '▼' : '▲'}
     </button>
   </div>
 
-  {#if appConfig.current.uiConfig.showCuttingPlan}
+  {#if sectionUI.showCuttingPlan}
     {#if dps && supportPlan}
       {#if showHelp}
         <div class="cutplan-help">

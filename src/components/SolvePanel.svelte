@@ -8,7 +8,7 @@
   import { solveInputSignature } from '../lib/solver/solveSignature';
   import { SolverController } from '../lib/solver/solverController';
   import type { SolverProgress, SolverProgressStage } from '../lib/solver/types';
-  import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
+  import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import { appLocale } from '../lib/state/locale.state.svelte';
   import {
     type BuildRole,
@@ -322,21 +322,21 @@
   }
 </script>
 
-<div class="panel" class:collapsed={!appConfig.current.uiConfig.showOptimization}>
+<div class="panel" class:collapsed={!sectionUI.showOptimization}>
   <div class="title section-title">
     {LTitle}
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={appConfig.current.uiConfig.showOptimization
+      aria-label={sectionUI.showOptimization
         ? 'Collapse section'
         : 'Expand section'}
-      onclick={() => toggleUI('showOptimization')}
+      onclick={() => toggleSection('showOptimization')}
     >
-      {appConfig.current.uiConfig.showOptimization ? '▼' : '▲'}
+      {sectionUI.showOptimization ? '▼' : '▲'}
     </button>
   </div>
-  {#if appConfig.current.uiConfig.showOptimization}
+  {#if sectionUI.showOptimization}
     <div class="container">
       <div class="core-solve-goal-edit">
         <div class="title goal-title">
