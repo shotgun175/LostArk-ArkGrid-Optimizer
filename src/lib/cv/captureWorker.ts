@@ -41,6 +41,11 @@ class FrameProcessor {
     anchorLoc: { x: number; y: number };
     resolutionScale: number;
   } | null = null;
+  // The measured UI scale is fixed for a whole screen-share session (the captured surface can't
+  // change resolution mid-session). Cache it independently of previousInfo so that losing the
+  // anchor for a frame (Order<->Chaos switch, fast scroll) does NOT re-trigger the expensive
+  // multi-scale sweep — we just re-find the anchor LOCATION at the already-known scale.
+  private cachedResolutionScale: number | null = null;
   private thresholdSet = {
     anchor: 0.95,
     gemAttr: 0.8,
@@ -74,6 +79,7 @@ class FrameProcessor {
       if (!this.loadedAsset) {
         this.loadedAsset = await loadGemAsset();
       }
+      this.warmUpCv();
     })();
 
     try {
@@ -84,8 +90,40 @@ class FrameProcessor {
   }
 
   resetDetection() {
-    // Clear cached anchor location + scale so the next frame is measured fresh.
+    // Clear the cached anchor LOCATION so the next frame re-finds it (e.g. after the on-screen
+    // view changes). The measured resolution scale is preserved (cachedResolutionScale) — it
+    // doesn't change mid-session, so we never re-pay the multi-scale sweep just to re-lock.
     this.previousInfo = null;
+  }
+
+  resetSession() {
+    // Full reset for a NEW screen-share session: also forget the measured scale, so a freshly
+    // shared window (possibly a different resolution) gets re-measured once.
+    this.previousInfo = null;
+    this.cachedResolutionScale = null;
+  }
+
+  // Run the hot OpenCV ops once on tiny dummy mats so their WASM code is JIT-compiled before the
+  // first real frame. Without this the first-frame anchor sweep runs on cold WASM and takes
+  // seconds; the original base felt instant because its first frame did almost no OpenCV work.
+  private warmUpCv() {
+    const cv = this.cv;
+    if (!cv) return;
+    try {
+      const img = new cv.Mat(64, 64, cv.CV_8UC1);
+      const tpl = new cv.Mat(16, 16, cv.CV_8UC1);
+      const res = new cv.Mat();
+      const resized = new cv.Mat();
+      cv.matchTemplate(img, tpl, res, cv.TM_CCOEFF_NORMED);
+      (cv.minMaxLoc as unknown as (m: CvMat) => unknown)(res);
+      cv.resize(img, resized, new cv.Size(32, 32), 0, 0, cv.INTER_AREA);
+      img.delete();
+      tpl.delete();
+      res.delete();
+      resized.delete();
+    } catch {
+      // best-effort JIT warm-up; never block init on it.
+    }
   }
 
   findBest<K extends string>(
@@ -136,6 +174,11 @@ class FrameProcessor {
       let resolutionScale: number;
       if (this.previousInfo) {
         resolutionScale = this.previousInfo.resolutionScale;
+      } else if (this.cachedResolutionScale !== null) {
+        // Re-lock path: the anchor was lost for a frame but the resolution is unchanged, so reuse
+        // the scale we already measured and skip the multi-scale sweep. The anchor LOCATION is
+        // re-found cheaply below (full-frame single-scale match at this scale).
+        resolutionScale = this.cachedResolutionScale;
       } else {
         const measured = multiScaleAnchorMatch(
           cv,
@@ -161,6 +204,8 @@ class FrameProcessor {
         // ~1-2% biased by font rendering, and that error compounds with anchor-relative
         // distance and breaks the small gem-row templates (verified on real QHD frames).
         resolutionScale = snapResolutionScale(rawScaleToResolutionScale(measured.scale));
+        // Measured once for this session; every later re-lock reuses it (branch above).
+        this.cachedResolutionScale = resolutionScale;
       }
 
       // Normalize the frame to FHD scale so the existing offsets/templates line up.
@@ -456,7 +501,9 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
   const data = e.data;
   switch (data.type) {
     case 'init':
-      // Init request
+      // Init request. The worker is re-used across sessions, so forget the previously measured
+      // scale here — a new share may be a different-resolution window.
+      processor.resetSession();
       try {
         await processor.init();
         postToMain({ type: 'init:done' });
