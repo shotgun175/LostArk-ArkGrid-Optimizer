@@ -245,8 +245,8 @@
                   <li>
                     Read each row and follow its action.
                     {#if role === 'support'}
-                      Actions are EV-based on your Gold / 1% damage budget (the same model the DPS
-                      view uses); the summary tiles show single-cut odds and projected grid score.
+                      Actions are EV-based - each cut is weighed against your Gold / 1% damage
+                      budget.
                     {:else}
                       The pipeline stats estimate weekly output and time to fill all 24 slots.
                     {/if}
@@ -257,45 +257,27 @@
             <div class="ch-col">
               {#if role === 'support'}
                 <section>
-                  <h4>Summary tiles</h4>
-                  <ul>
-                    <li>
-                      <strong>Best Cut Chance</strong> - highest single-cut chance to beat baseline,
-                      across all archetypes
-                    </li>
-                    <li>
-                      <strong>Cuts / Hit</strong> - roughly how many cuts to land one above-baseline
-                      gem (100 / best chance)
-                    </li>
-                    <li>
-                      <strong>Gold / Gem</strong> - gold to land one above-baseline gem (cuts/hit ×
-                      900g per cut)
-                    </li>
-                    <li>
-                      <strong>Gold to Fill</strong> - rough gold to fill all 24 slots at that rate
-                      (gold/gem × 24)
-                    </li>
-                    <li>
-                      <strong>Avg Gem Score</strong> - expected score of an above-baseline gem from
-                      the best target
-                    </li>
-                    <li><strong>Total Score</strong> - projected full-grid score (avg × 24 slots)</li>
-                    <li>
-                      <strong>CP% Headroom</strong> - combat-power % still available from better gems
-                      (from the optimizer)
-                    </li>
-                  </ul>
+                  <h4>Pipeline stats</h4>
+                  <p>
+                    The weekly-rate tiles - <strong>Weeks to Fill</strong>,
+                    <strong>Direct / wk</strong>, <strong>Fusion / wk</strong>,
+                    <strong>Total Gems / wk</strong>, <strong>Gold / wk</strong> - estimate your
+                    weekly gem output and gold spend at this budget.
+                  </p>
+                  <p>
+                    <strong>Avg Gem Score</strong>, <strong>Total Score</strong>, and
+                    <strong>CP% Gain</strong> use your support coefficients.
+                  </p>
                 </section>
                 <section>
                   <h4>Fusion</h4>
                   <p>
-                    Purple <strong>"Fuse first"</strong> cells reuse the DPS fusion guidance - fusing
-                    lower gems up before cutting is the same regardless of role.
+                    Purple <strong>"Fuse first"</strong> cells mean fusing lower gems up first beats
+                    cutting that archetype directly.
                   </p>
                   <p>
-                    Cut / reset / don't-cut use the same gold-EV rule as DPS (your Gold / 1% damage
-                    budget × the gem's expected score gain). There are no weekly pipeline stats for
-                    support - the tiles are single-cut odds and projected scores.
+                    Cut / reset / don't-cut are EV-based - your Gold / 1% damage budget × the gem's
+                    expected score gain, minus the cut cost.
                   </p>
                 </section>
               {:else}
@@ -385,8 +367,7 @@
           {@const s = supportPlan.summary}
           <div class="support-note">
             Cut actions are EV-based - each cut's odds and projected score gain are weighed against
-            your Gold / 1% damage budget, the same model the DPS view uses. Odds and scores are
-            sim-projected.
+            your Gold / 1% damage budget. Odds and scores are sim-projected.
           </div>
           <div class="legend">
             <span class="act" data-action="cut-reset">↻ Reset</span>
@@ -424,46 +405,38 @@
               </div>
             {/each}
           </div>
+          {@const dpsRow = dps.kind === 'ok' ? dps.row : null}
+          {@const gl = dpsRow ? goldLines(dpsRow.pipeline.gold) : (['-', ''] as [string, string])}
           <div class="summary-grid">
-            <div
-              class="stat-box"
-              title="Highest single-cut chance to beat your baseline, across all archetypes."
-            >
-              <div class="stat-label">Best Cut Chance</div>
-              <div class="stat-value">{s.bestPct}%</div>
+            <div class="stat-box" title={STAT_TIPS.weeks}>
+              <div class="stat-label">Weeks to Fill</div>
+              <div class="stat-value {dpsRow ? weeksBand(parseFloat(dpsRow.pipeline.weeks)) : ''}">
+                {dpsRow?.pipeline.weeks ?? '-'}
+              </div>
             </div>
-            <div
-              class="stat-box"
-              title="Roughly how many cuts to land one above-baseline gem (100 / best chance)."
-            >
-              <div class="stat-label">Cuts / Hit</div>
-              <div class="stat-value">{s.cutsPerHit ?? '-'}</div>
+            <div class="stat-box" title={STAT_TIPS.directWk}>
+              <div class="stat-label">Direct / wk</div>
+              <div class="stat-value">{dpsRow?.pipeline.directWk ?? '-'}</div>
             </div>
-            <div
-              class="stat-box"
-              title="Gold to land one above-baseline gem at the best target (cuts/hit × 900g per cut)."
-            >
-              <div class="stat-label">Gold / Gem</div>
-              <div class="stat-value">{s.goldPerGem != null ? fmtGold(s.goldPerGem) : '-'}</div>
+            <div class="stat-box" title={STAT_TIPS.fuseWk}>
+              <div class="stat-label">Fusion / wk</div>
+              <div class="stat-value">{dpsRow?.pipeline.fuseWk ?? '-'}</div>
             </div>
-            <div
-              class="stat-box"
-              title="Rough gold to fill all 24 grid slots at this rate (gold/gem × 24 slots)."
-            >
-              <div class="stat-label">Gold to Fill</div>
-              <div class="stat-value">{s.goldToFill != null ? fmtGold(s.goldToFill) : '-'}</div>
+            <div class="stat-box" title={STAT_TIPS.totalWk}>
+              <div class="stat-label">Total Gems / wk</div>
+              <div class="stat-value">{dpsRow?.pipeline.totalWk ?? '-'}</div>
             </div>
-            <div
-              class="stat-box"
-              title="Expected score of an above-baseline gem from the best target."
-            >
+            <div class="stat-box" title={STAT_TIPS.gold}>
+              <div class="stat-label">Gold / wk</div>
+              <div class="stat-value gold">
+                {gl[0]}{#if gl[1]}<br /><span class="gold-total">{gl[1]}</span>{/if}
+              </div>
+            </div>
+            <div class="stat-box" title={STAT_TIPS.avgScore}>
               <div class="stat-label">Avg Gem Score</div>
               <div class="stat-value">{s.avgScore ?? '-'}</div>
             </div>
-            <div
-              class="stat-box"
-              title="Projected full-grid astrogem score (avg gem score × 24 slots)."
-            >
+            <div class="stat-box" title={STAT_TIPS.totalScore}>
               <div class="stat-label">Total Score</div>
               <div class="stat-value">{s.totalScore ?? '-'}</div>
             </div>
@@ -471,7 +444,7 @@
               class="stat-box"
               title="Combat power still available from better gems, from the optimizer (max achievable − current). Run the optimizer to populate it."
             >
-              <div class="stat-label">CP% Headroom</div>
+              <div class="stat-label">CP% Gain</div>
               <div class="stat-value highlight">
                 {cpHeadroom != null ? `+${cpHeadroom.toFixed(2)}%` : 'run optimizer'}
               </div>

@@ -99,15 +99,7 @@ export function weeksBand(weeks: number): 'fast' | 'med' | 'slow' {
 const GRID_SLOTS = 24;
 
 function emptySupportSummary(): SupportSummary {
-  return {
-    bestPct: 0,
-    cutsPerHit: null,
-    goldPerGem: null,
-    goldToFill: null,
-    bestTarget: null,
-    avgScore: null,
-    totalScore: null,
-  };
+  return { bestPct: 0, bestTarget: null, avgScore: null, totalScore: null };
 }
 
 /**
@@ -143,15 +135,8 @@ export function getSupportPlan(data: SupportCutQuality, baseline: number): Suppo
   }
   ranks.sort((a, b) => b.best - a.best);
 
-  // Gold economics from the cut cost (role-agnostic 900g): how much gold to land one above-baseline
-  // gem at the best target, and to fill the full grid at that rate. Mirrors the DPS gold tiles.
-  const cutsPerHit = bestPct > 0 ? Math.round(100 / bestPct) : null;
-  const goldPerGem = cutsPerHit != null ? cutsPerHit * CUT_COST : null;
   const summary: SupportSummary = {
     bestPct,
-    cutsPerHit,
-    goldPerGem,
-    goldToFill: goldPerGem != null ? goldPerGem * GRID_SLOTS : null,
     bestTarget,
     avgScore: bestAvg,
     totalScore: bestAvg != null ? Math.round(bestAvg * GRID_SLOTS) : null,

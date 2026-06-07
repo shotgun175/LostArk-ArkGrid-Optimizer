@@ -75,12 +75,10 @@ export interface SupportArchetypeRank {
   buckets: Partial<Record<Bucket, { pct: number; avg: number | null }>>;
 }
 
-// Summary tiles mirroring the DPS pipeline stats, now with EV-derived gold economics for support.
+// Support summary values. The weekly-rate tiles are copied from the DPS pipeline (role-agnostic
+// acquisition/cutting); these are the support-scored values + the best-target headline.
 export interface SupportSummary {
-  bestPct: number; // best single-cut chance across all archetypes/buckets
-  cutsPerHit: number | null; // expected cuts to land one above-baseline gem (round(100/bestPct))
-  goldPerGem: number | null; // gold to land one above-baseline gem (cutsPerHit × cut cost)
-  goldToFill: number | null; // rough gold to fill all grid slots (goldPerGem × slots)
+  bestPct: number; // best single-cut chance across all archetypes/buckets (drives the best-target hint)
   bestTarget: { archetype: Archetype; bucket: Bucket } | null;
   avgScore: number | null; // best target's E[score | above baseline]
   totalScore: number | null; // avgScore × grid slots (projected full grid)
