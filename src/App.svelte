@@ -150,6 +150,14 @@
       padding: 0rem;
     }
   }
+  /* The fixed Sections / Back-to-top buttons sit at 1.5rem + safe-area from the bottom. Reserve
+     room beneath the footer on small screens (where both buttons live) so they can't cover the
+     last content or the footer links when scrolled to the bottom. */
+  @media (max-width: 960px) {
+    footer {
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
   .contents .title {
     font-weight: 700;
     /* Scale down on phones so the title doesn't eat the first viewport. */
