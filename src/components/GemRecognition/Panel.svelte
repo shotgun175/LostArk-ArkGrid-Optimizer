@@ -6,9 +6,10 @@
   import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
   import {
     appConfig,
+    sectionUI,
+    setSection,
     toggleDeferredScreenSharingInit,
-    toggleUI,
-    updateUI,
+    toggleSection,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import GemRecognitionGemList from './GemList.svelte';
@@ -64,7 +65,7 @@
   // drives the desktop capture flow) — collapse it by default so it doesn't dominate the view.
   // The unsupported note still shows on the collapsed bar so the user knows why.
   if (!captureSupported) {
-    updateUI('showGemRecognitionPanel', false);
+    setSection('showGemRecognitionPanel', false);
   }
 
   let debugCanvas: HTMLCanvasElement | null;
@@ -280,9 +281,9 @@
     </span>
     <button
       class="fold-button"
-      onclick={() => toggleUI('showGemRecognitionPanel')}
+      onclick={() => toggleSection('showGemRecognitionPanel')}
       disabled={isRecording}
-      >{appConfig.current.uiConfig.showGemRecognitionPanel ? '▼' : '▲'}</button
+      >{sectionUI.showGemRecognitionPanel ? '▼' : '▲'}</button
     >
   </div>
   {#if !captureSupported}
@@ -290,7 +291,7 @@
   {/if}
   <div
     class="content"
-    style:display={!appConfig.current.uiConfig.showGemRecognitionPanel ? 'none' : 'flex'}
+    style:display={!sectionUI.showGemRecognitionPanel ? 'none' : 'flex'}
   >
     <div class="buttons">
       <div class="left">

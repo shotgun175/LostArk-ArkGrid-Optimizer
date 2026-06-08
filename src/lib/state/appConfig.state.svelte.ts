@@ -4,28 +4,43 @@ import { DEFAULT_PROFILE_NAME } from '../constants/enums';
 import { type CharacterProfile, initNewProfile, migrateProfile } from './profile.state.svelte';
 
 interface UIConfig {
-  showGemRecognitionPanel: boolean;
   showCoreCoeff: boolean;
   debugMode: boolean;
   darkMode: boolean;
   deferredScreenSharingInit: boolean;
   newGemAddStyle: boolean;
-  // Per-section collapse state (true = expanded).
-  showGemTriage: boolean;
-  showCuttingPlan: boolean;
-  showOptimization: boolean;
 }
 const defaultUIConfig: UIConfig = {
-  showGemRecognitionPanel: true,
   showCoreCoeff: false,
   debugMode: false,
   darkMode: false,
   deferredScreenSharingInit: false,
   newGemAddStyle: false,
+};
+
+// Per-section collapse markers (true = expanded). Deliberately NOT part of the persisted appConfig:
+// persisting them meant a collapse wrote to localStorage, and svelte-persisted-state's cross-tab
+// `storage` sync re-applied the "always start expanded" reset on the receiving tab and echoed it
+// back — so with two tabs open a collapsed section snapped straight back open. Plain in-memory
+// $state keeps collapse per-tab, never written to storage, and expanded again on every page load.
+interface SectionVisibility {
+  showGemRecognitionPanel: boolean;
+  showGemTriage: boolean;
+  showCuttingPlan: boolean;
+  showOptimization: boolean;
+}
+export const sectionUI = $state<SectionVisibility>({
+  showGemRecognitionPanel: true,
   showGemTriage: true,
   showCuttingPlan: true,
   showOptimization: true,
-};
+});
+export function toggleSection(name: keyof SectionVisibility) {
+  sectionUI[name] = !sectionUI[name];
+}
+export function setSection(name: keyof SectionVisibility, value: boolean) {
+  sectionUI[name] = value;
+}
 
 interface AppConfig {
   characterProfiles: CharacterProfile[];
@@ -66,12 +81,14 @@ export function migrateAppConfig(appConfig: Partial<AppConfig>) {
   if (appConfig.uiConfig && appConfig.uiConfig.newGemAddStyle === undefined) {
     appConfig.uiConfig.newGemAddStyle = false;
   }
-  // Collapse markers always start expanded on each page load (collapsed state is not persisted).
+  // Section collapse markers moved out of the persisted config into the in-memory `sectionUI`
+  // $state above. Drop the now-unused keys so they don't linger in old localStorage payloads.
   if (appConfig.uiConfig) {
-    appConfig.uiConfig.showGemRecognitionPanel = true;
-    appConfig.uiConfig.showGemTriage = true;
-    appConfig.uiConfig.showCuttingPlan = true;
-    appConfig.uiConfig.showOptimization = true;
+    const ui = appConfig.uiConfig as unknown as Record<string, unknown>;
+    delete ui.showGemRecognitionPanel;
+    delete ui.showGemTriage;
+    delete ui.showCuttingPlan;
+    delete ui.showOptimization;
   }
 }
 
