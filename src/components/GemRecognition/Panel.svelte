@@ -31,7 +31,7 @@
     en_us: 'Hide Sharing Screen',
   };
   const LThreshold: LocalizationName = {
-    en_us: 'Recongition Tolerance Range',
+    en_us: 'Recognition Tolerance Range',
   };
   const LDetectionMargin = {
     en_us: ['Normal', 'Sparse', 'Maximum'],

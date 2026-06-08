@@ -290,6 +290,18 @@
     }
   }
 
+  // Only surface "Reset" when there's something to reset — i.e. the active build (DPS or Support
+  // lens) has at least one non-zero minimum. Re-evaluates on lens switch and on any min-point edit.
+  let goalsModified = $derived.by(() => {
+    const cores = profile.builds[profile.activeBuild].cores;
+    for (const attr of Object.values(ArkGridAttrs)) {
+      for (const ctype of Object.values(ArkGridCoreTypes)) {
+        if ((cores[attr][ctype]?.goalPoint ?? 0) > 0) return true;
+      }
+    }
+    return false;
+  });
+
   async function runSolve() {
     if (isSolving) return;
 
@@ -341,7 +353,9 @@
       <div class="core-solve-goal-edit">
         <div class="title goal-title">
           <span>{LSubtitle}</span>
-          <button class="reset-goals" onclick={resetMinPoints}>↺ Reset</button>
+          {#if goalsModified}
+            <button class="reset-goals" onclick={resetMinPoints}>↺ Reset</button>
+          {/if}
         </div>
         <div class="container">
           {#each Object.values(ArkGridAttrs) as attr}

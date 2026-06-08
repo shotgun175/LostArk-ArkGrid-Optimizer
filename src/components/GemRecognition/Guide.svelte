@@ -34,15 +34,23 @@
           A. Please use Chrome or Edge browser.
         </p>
         <p>
+          Q. The first recognition takes a few seconds.<br />
+          A. Unlike the original (which assumes 1920×1080), this tool auto-detects your screen
+          resolution before it locks on, so the initial lock is a few seconds slower. Once it locks,
+          scrolling and switching between Order and Chaos update quickly.
+        </p>
+        <p>
           Q. Astrogems are not being recognized.<br />
           A. Press the [🔨 Display Shared Screen] and check the following:
         </p>
         <ol>
           <li>Make sure the game screen is updating properly.</li>
           <li>
-            If the area used to extract astrogem options does not match the actual screen, set the
-            game resolution to "1920x1080 (16:9)" and switch to "windowed mode". If you are using
-            "Force 21:9 Aspect Ratio", please disable it.
+            If the area used to extract astrogem options does not match the actual screen, switch
+            the game to "windowed mode". Unlike the original, this tool auto-detects common 16:9
+            resolutions (1920×1080, 2560×1440, 3840×2160) and most in-between window sizes, so you
+            do not have to use 1920×1080 specifically — but if you are using "Force 21:9 Aspect
+            Ratio", please disable it.
           </li>
           <li>
             If parts of the extraction area are highlighted in red, try increasing the “Recognition
