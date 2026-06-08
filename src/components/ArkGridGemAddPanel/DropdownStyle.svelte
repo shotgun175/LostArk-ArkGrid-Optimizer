@@ -192,11 +192,19 @@
   option,
   select {
     font-size: 1rem;
-    width: 8.5rem;
+    /* Wide enough for the longest option label ("Additional Damage") to clear the dropdown caret
+       instead of running under it. */
+    width: 10.5rem;
   }
 
   input[type='number'] {
     width: 2rem;
+    min-height: 2.75rem;
+  }
+
+  /* Match the inputs' height so the option dropdowns sit on the same line as the willpower/points
+     rows instead of riding ~13px high at the top of their flex cell. */
+  select {
     min-height: 2.75rem;
   }
 </style>
