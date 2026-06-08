@@ -46,6 +46,15 @@ class FrameProcessor {
   // anchor for a frame (Order<->Chaos switch, fast scroll) does NOT re-trigger the expensive
   // multi-scale sweep — we just re-find the anchor LOCATION at the already-known scale.
   private cachedResolutionScale: number | null = null;
+  // Per-resolution UI scales measured in earlier sessions (persisted on the main thread, seeded via
+  // `init`). A hit lets the first frame skip the expensive multi-scale sweep — the single biggest
+  // first-capture cost — and reuse the known scale instead.
+  private scaleHints = new Map<string, number>();
+  // Consecutive frames the persisted scale failed to find the anchor. A lone miss is usually a
+  // startup/black frame before the gem screen is up; only abandon the hint after a sustained streak
+  // (which also recovers from a genuinely stale scale after an in-game UI-scale change).
+  private hintMissStreak = 0;
+  private static readonly HINT_MISS_LIMIT = 20;
   private thresholdSet = {
     anchor: 0.95,
     gemAttr: 0.8,
@@ -101,6 +110,13 @@ class FrameProcessor {
     // shared window (possibly a different resolution) gets re-measured once.
     this.previousInfo = null;
     this.cachedResolutionScale = null;
+    this.hintMissStreak = 0;
+  }
+
+  setScaleHints(hints: Record<string, number>) {
+    // Seed/replace the per-resolution scale hints from the persisted cache (sent on every init).
+    // NOT cleared by resetSession — a measured UI scale stays valid across screen-share sessions.
+    this.scaleHints = new Map(Object.entries(hints));
   }
 
   // Run the hot OpenCV ops once on tiny dummy mats so their WASM code is JIT-compiled before the
@@ -169,9 +185,11 @@ class FrameProcessor {
       const rawGray = cv.matFromImageData(rawImageData);
       cv.cvtColor(rawGray, rawGray, cv.COLOR_RGBA2GRAY);
 
-      // Determine the UI scale: reuse the cached scale, else measure it once by
+      // Determine the UI scale: reuse the cached/persisted scale, else measure it once by
       // multi-scale matching the anchor over the full raw frame.
+      const resKey = `${frame.displayWidth}x${frame.displayHeight}`;
       let resolutionScale: number;
+      let usingHint = false;
       if (this.previousInfo) {
         resolutionScale = this.previousInfo.resolutionScale;
       } else if (this.cachedResolutionScale !== null) {
@@ -179,6 +197,12 @@ class FrameProcessor {
         // the scale we already measured and skip the multi-scale sweep. The anchor LOCATION is
         // re-found cheaply below (full-frame single-scale match at this scale).
         resolutionScale = this.cachedResolutionScale;
+      } else if (this.scaleHints.has(resKey)) {
+        // Persisted fast path: a previous session already measured the UI scale for this exact
+        // resolution. Reuse it and skip the ~5s multi-scale sweep entirely. The anchor find below
+        // verifies it; if it fails (user changed UI scale / window mode) we drop it and re-measure.
+        resolutionScale = this.scaleHints.get(resKey)!;
+        usingHint = true;
       } else {
         const measured = multiScaleAnchorMatch(
           cv,
@@ -206,6 +230,9 @@ class FrameProcessor {
         resolutionScale = snapResolutionScale(rawScaleToResolutionScale(measured.scale));
         // Measured once for this session; every later re-lock reuses it (branch above).
         this.cachedResolutionScale = resolutionScale;
+        // Persist it (via the main thread) so future sessions at this resolution skip the sweep.
+        this.scaleHints.set(resKey, resolutionScale);
+        postToMain({ type: 'scale:measured', key: resKey, scale: resolutionScale });
       }
 
       // Normalize the frame to FHD scale so the existing offsets/templates line up.
@@ -291,6 +318,15 @@ class FrameProcessor {
       if (!anchor) {
         // Not found: reset so the next frame searches again
         this.previousInfo = null;
+        if (usingHint && ++this.hintMissStreak >= FrameProcessor.HINT_MISS_LIMIT) {
+          // The persisted scale has failed to locate the anchor for too many frames — it's stale
+          // (UI scale / window mode changed), not just a startup/black frame. Forget it locally +
+          // on disk so the next frame falls back to a fresh multi-scale measurement.
+          this.scaleHints.delete(resKey);
+          this.cachedResolutionScale = null;
+          this.hintMissStreak = 0;
+          postToMain({ type: 'scale:drop', key: resKey });
+        }
         return;
       } else {
         // Found: record it (also caching the measured scale)
@@ -302,6 +338,12 @@ class FrameProcessor {
           },
           resolutionScale,
         };
+        if (usingHint) {
+          // Persisted scale confirmed — promote it to the session cache so mid-session re-locks
+          // (Order<->Chaos switch, fast scroll) reuse it without re-measuring; clear the streak.
+          this.cachedResolutionScale = resolutionScale;
+          this.hintMissStreak = 0;
+        }
       }
 
       let currentLocale = this.previousInfo.locale;
@@ -502,8 +544,10 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
   switch (data.type) {
     case 'init':
       // Init request. The worker is re-used across sessions, so forget the previously measured
-      // scale here — a new share may be a different-resolution window.
+      // scale here — a new share may be a different-resolution window. Persisted per-resolution
+      // scales (sent from the main thread) are seeded so the first frame can skip the sweep.
       processor.resetSession();
+      if (data.scaleHints) processor.setScaleHints(data.scaleHints);
       try {
         await processor.init();
         postToMain({ type: 'init:done' });
