@@ -53,7 +53,6 @@
             interact with the astrogems.
           </li>
         </ol>
-        <p>Alternatively, you can contact us via Discord in the site footer.</p>
       </div>
     {/if}
   </div>

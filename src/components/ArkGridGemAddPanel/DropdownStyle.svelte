@@ -177,6 +177,7 @@
     display: flex;
     flex-direction: row;
     justify-content: space-between;
+    align-items: center;
     gap: 1rem;
   }
   .image-wrapper {
