@@ -9,7 +9,7 @@ export type CvPoint = CV.Point;
 
 // main → worker
 export type CaptureWorkerRequest =
-  | { type: 'init' } // init worker
+  | { type: 'init'; scaleHints?: Record<string, number> } // init worker (optionally seeded with persisted per-resolution UI scales)
   | { type: 'frame'; frame: VideoFrame; drawDebug: boolean; detectionMargin: number } // send frame
   | { type: 'reset' } // clear cached anchor location + scale (force fresh detection)
   | { type: 'stop' };
@@ -29,7 +29,9 @@ export type CaptureWorkerResponse =
         | undefined;
     }
   | { type: 'error'; error: WorkerError }
-  | { type: 'debug'; image?: ImageBitmap; message?: string };
+  | { type: 'debug'; image?: ImageBitmap; message?: string }
+  | { type: 'scale:measured'; key: string; scale: number } // a freshly measured per-resolution UI scale to persist
+  | { type: 'scale:drop'; key: string }; // a persisted scale that no longer locates the anchor; forget it
 
 export type WorkerError = {
   message: string;

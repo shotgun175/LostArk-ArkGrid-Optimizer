@@ -250,12 +250,6 @@
             flagged Remove (run the optimizer on both builds first).
           </span>
         {/if}
-        {#if role === 'support'}
-          <span class="note">
-            Note: ArkGrid combat power overstates support value (~2x). Treat tiers as relative, not
-            absolute.
-          </span>
-        {/if}
       </div>
       {#if rows.length > 0}
         <button class="sort-toggle" onclick={() => (worstFirst = !worstFirst)}>
