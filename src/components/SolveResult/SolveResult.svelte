@@ -47,6 +47,11 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+    /* The panel centers (align-items:center) its children, which would size this result to its
+       content and leave the core grid with an indefinite width — under which auto-fit can't reflow
+       and collapses to one column. Stretch to the panel width so the core grid has a definite width
+       to lay out 3 / 2 / 1 columns against as space allows. */
+    align-self: stretch;
   }
   .title {
     text-align: center;

@@ -202,12 +202,22 @@ button:disabled {
   font-size: 1.4rem;
 }
 
-/* Collapsible section header: title on the left, fold button pinned right. */
+/* Collapsible section header: title on the left, fold button pinned right.
+   container-type lets the centered-switch rule below react to the header's OWN width rather than the
+   viewport — the header is much narrower than the viewport when the section nav sits inline to its
+   left, which is exactly when the absolutely-centered switch used to collide with the title. */
 .section-title {
   position: relative;
   display: flex;
+  /* flex-wrap is load-bearing: when the switch drops out of absolute centering (narrow header — see
+     the @container rule below) it relies on wrap to land on its own line instead of squeezing the
+     title. It must live here on the base rule, not inside @container, because a container query can
+     only style a container's descendants, never the query container element itself. While the switch
+     is absolutely centered (wide header) it's out of flow, so wrap has no effect there. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  container-type: inline-size;
 }
 /* The dual-role view switch floats centered in the header, independent of the title/fold. */
 .section-title .build-view-switch {
@@ -216,13 +226,9 @@ button:disabled {
   top: 50%;
   transform: translate(-50%, -50%);
 }
-/* On phones, drop it onto its own row so it can't overlap the title or Glossary pill.
-   flex-wrap is required for flex-basis:100% + order to actually wrap to a new line — without it
-   the switch just goes greedy in the single row and shoves the title/Glossary/fold around. */
-@media (max-width: 767px) {
-  .section-title {
-    flex-wrap: wrap;
-  }
+/* Once the header itself (not the viewport) is too narrow to center the switch without it
+   overlapping the longest title or the Glossary pill, drop it onto its own centered row instead. */
+@container (max-width: 54rem) {
   .section-title .build-view-switch {
     position: static;
     transform: none;

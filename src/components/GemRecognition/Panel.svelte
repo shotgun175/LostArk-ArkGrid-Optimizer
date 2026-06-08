@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
   import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
   import {
     appConfig,
+    sectionUI,
+    setSection,
     toggleDeferredScreenSharingInit,
-    toggleUI,
-    updateUI,
+    toggleSection,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import GemRecognitionGemList from './GemList.svelte';
@@ -31,7 +32,7 @@
     en_us: 'Hide Sharing Screen',
   };
   const LThreshold: LocalizationName = {
-    en_us: 'Recongition Tolerance Range',
+    en_us: 'Recognition Tolerance Range',
   };
   const LDetectionMargin = {
     en_us: ['Normal', 'Sparse', 'Maximum'],
@@ -64,7 +65,7 @@
   // drives the desktop capture flow) — collapse it by default so it doesn't dominate the view.
   // The unsupported note still shows on the collapsed bar so the user knows why.
   if (!captureSupported) {
-    updateUI('showGemRecognitionPanel', false);
+    setSection('showGemRecognitionPanel', false);
   }
 
   let debugCanvas: HTMLCanvasElement | null;
@@ -248,6 +249,21 @@
     const controller = await getCaptureController();
     controller.detectionMargin = detectionMargin;
   }
+  // On desktop, warm the recognition worker (download + JIT-compile the OpenCV WASM) shortly after
+  // load so the first "Start Screen Sharing" doesn't pay the cold ~5s cost. Deferred to idle so it
+  // never competes with first paint; gated on captureSupported so mobile never fetches the 10.8MB
+  // CV chunk. startGemCapture() reuses the warmed worker.
+  onMount(() => {
+    if (!captureSupported) return;
+    const warm = () => void getCaptureController().then((c) => c.warmup());
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(warm, { timeout: 3000 });
+      return () => cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(warm, 1200);
+    return () => clearTimeout(id);
+  });
+
   onDestroy(async () => {
     const controller = await getCaptureController();
     await controller.stopCapture();
@@ -280,9 +296,9 @@
     </span>
     <button
       class="fold-button"
-      onclick={() => toggleUI('showGemRecognitionPanel')}
+      onclick={() => toggleSection('showGemRecognitionPanel')}
       disabled={isRecording}
-      >{appConfig.current.uiConfig.showGemRecognitionPanel ? '▼' : '▲'}</button
+      >{sectionUI.showGemRecognitionPanel ? '▼' : '▲'}</button
     >
   </div>
   {#if !captureSupported}
@@ -290,7 +306,7 @@
   {/if}
   <div
     class="content"
-    style:display={!appConfig.current.uiConfig.showGemRecognitionPanel ? 'none' : 'flex'}
+    style:display={!sectionUI.showGemRecognitionPanel ? 'none' : 'flex'}
   >
     <div class="buttons">
       <div class="left">

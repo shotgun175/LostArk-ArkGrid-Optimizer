@@ -29,10 +29,12 @@
 </div>
 
 <style>
-  /* Three columns: Order Sun/Moon/Star on the top row, Chaos Sun/Moon/Star on the bottom row. */
+  /* Three columns when there's room (Order Sun/Moon/Star on the top row, Chaos on the bottom), but
+     reflow to fewer columns as the column narrows. Each card needs ~18rem to stay readable; auto-fit
+     drops to 2 or 1 columns rather than letting fixed-width cards overflow and overlap each other. */
   .root {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
     gap: 1rem;
     align-items: start;
   }

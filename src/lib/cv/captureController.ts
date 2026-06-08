@@ -158,6 +158,28 @@ export class CaptureController {
     return 'unknown';
   }
 
+  /**
+   * Pre-create the worker and kick off the OpenCV WASM download + compile ahead of time, so the
+   * first {@link startCapture} doesn't pay the cold ~5s cost on the user's first "Start" click.
+   * Desktop-only caller — the 10.8MB CV chunk must never load on mobile. Fire-and-forget and
+   * idempotent: {@link startCapture} reuses the already-created worker. The resulting `init:done`
+   * is a harmless no-op here (no `awaitWorkerInitialization` is pending and `onLoad` isn't
+   * registered until a real capture starts).
+   */
+  warmup() {
+    if (this.worker) return;
+    try {
+      this.worker = new Worker(new URL('./captureWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+      this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      this.postMessage({ type: 'init' });
+    } catch {
+      // Best-effort; if worker creation fails here, startCapture() will try again normally.
+      this.worker = null;
+    }
+  }
+
   async startCapture(deferDisplayRequest: boolean = false) {
     // Only allowed from the idle state.
     // Starts recording.

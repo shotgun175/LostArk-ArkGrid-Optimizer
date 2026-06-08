@@ -40,9 +40,9 @@
         <ol>
           <li>Make sure the game screen is updating properly.</li>
           <li>
-            If the area used to extract astrogem options does not match the actual screen, set the
-            game resolution to "1920x1080 (16:9)" and switch to "windowed mode". If you are using
-            "Force 21:9 Aspect Ratio", please disable it.
+            If the area used to extract astrogem options does not match the actual screen, switch
+            the game to "windowed mode". This tool auto-detects common 16:9 resolutions (1920×1080,
+            2560×1440, 3840×2160) and most in-between window sizes.
           </li>
           <li>
             If parts of the extraction area are highlighted in red, try increasing the “Recognition

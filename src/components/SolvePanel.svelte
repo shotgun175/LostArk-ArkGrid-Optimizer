@@ -8,7 +8,7 @@
   import { solveInputSignature } from '../lib/solver/solveSignature';
   import { SolverController } from '../lib/solver/solverController';
   import type { SolverProgress, SolverProgressStage } from '../lib/solver/types';
-  import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
+  import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import { appLocale } from '../lib/state/locale.state.svelte';
   import {
     type BuildRole,
@@ -290,6 +290,18 @@
     }
   }
 
+  // Only surface "Reset" when there's something to reset — i.e. the active build (DPS or Support
+  // lens) has at least one non-zero minimum. Re-evaluates on lens switch and on any min-point edit.
+  let goalsModified = $derived.by(() => {
+    const cores = profile.builds[profile.activeBuild].cores;
+    for (const attr of Object.values(ArkGridAttrs)) {
+      for (const ctype of Object.values(ArkGridCoreTypes)) {
+        if ((cores[attr][ctype]?.goalPoint ?? 0) > 0) return true;
+      }
+    }
+    return false;
+  });
+
   async function runSolve() {
     if (isSolving) return;
 
@@ -322,26 +334,28 @@
   }
 </script>
 
-<div class="panel" class:collapsed={!appConfig.current.uiConfig.showOptimization}>
+<div class="panel" class:collapsed={!sectionUI.showOptimization}>
   <div class="title section-title">
     {LTitle}
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={appConfig.current.uiConfig.showOptimization
+      aria-label={sectionUI.showOptimization
         ? 'Collapse section'
         : 'Expand section'}
-      onclick={() => toggleUI('showOptimization')}
+      onclick={() => toggleSection('showOptimization')}
     >
-      {appConfig.current.uiConfig.showOptimization ? '▼' : '▲'}
+      {sectionUI.showOptimization ? '▼' : '▲'}
     </button>
   </div>
-  {#if appConfig.current.uiConfig.showOptimization}
+  {#if sectionUI.showOptimization}
     <div class="container">
       <div class="core-solve-goal-edit">
         <div class="title goal-title">
           <span>{LSubtitle}</span>
-          <button class="reset-goals" onclick={resetMinPoints}>↺ Reset</button>
+          {#if goalsModified}
+            <button class="reset-goals" onclick={resetMinPoints}>↺ Reset</button>
+          {/if}
         </div>
         <div class="container">
           {#each Object.values(ArkGridAttrs) as attr}

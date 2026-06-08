@@ -25,7 +25,7 @@
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import { type GemRole } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
-  import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
+  import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
     type CharacterProfile,
     activeBuildState,
@@ -58,7 +58,7 @@
     supportTable = s.default as unknown as SupportCutQuality;
   }
   $effect(() => {
-    if (appConfig.current.uiConfig.showCuttingPlan) void loadCutplanTables();
+    if (sectionUI.showCuttingPlan) void loadCutplanTables();
   });
 
   let showHelp = $state(false);
@@ -87,6 +87,30 @@
   }
   function onBinding() {
     updateBindingMode(binding === 'nrb' ? 'rb' : 'nrb');
+  }
+
+  function keepCutplanInView(node: HTMLElement) {
+    let timer: ReturnType<typeof setTimeout>;
+    const onChange = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('.build-view-switch, .baseline-group')) return;
+      // Switching the lens or moving the baseline re-renders the panels above this one (the
+      // Optimization result especially), which slides the Cutting Plan out from under the user's
+      // scroll position — they get "bounced" off the section. Once the new layout settles, bring the
+      // panel back to the top of the viewport so the table they're adjusting stays in view.
+      // Debounced so a baseline drag (a burst of input events) only scrolls once, at the end.
+      clearTimeout(timer);
+      timer = setTimeout(() => node.scrollIntoView({ block: 'start' }), 150);
+    };
+    node.addEventListener('click', onChange);
+    node.addEventListener('input', onChange);
+    return {
+      destroy() {
+        node.removeEventListener('click', onChange);
+        node.removeEventListener('input', onChange);
+        clearTimeout(timer);
+      },
+    };
   }
   const fmtGold = (g: number | null) =>
     g == null ? '-' : g >= 1000 ? `${(g / 1000).toFixed(1)}k` : String(g);
@@ -142,7 +166,7 @@
   };
 </script>
 
-<div class="panel cutplan-panel">
+<div class="panel cutplan-panel" use:keepCutplanInView>
   <div class="title section-title">
     Cutting Plan: What to Farm Next
     <button
@@ -156,16 +180,16 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={appConfig.current.uiConfig.showCuttingPlan
+      aria-label={sectionUI.showCuttingPlan
         ? 'Collapse section'
         : 'Expand section'}
-      onclick={() => toggleUI('showCuttingPlan')}
+      onclick={() => toggleSection('showCuttingPlan')}
     >
-      {appConfig.current.uiConfig.showCuttingPlan ? '▼' : '▲'}
+      {sectionUI.showCuttingPlan ? '▼' : '▲'}
     </button>
   </div>
 
-  {#if appConfig.current.uiConfig.showCuttingPlan}
+  {#if sectionUI.showCuttingPlan}
     {#if dps && supportPlan}
       {#if showHelp}
         <div class="cutplan-help">
@@ -255,76 +279,49 @@
               </section>
             </div>
             <div class="ch-col">
-              {#if role === 'support'}
-                <section>
-                  <h4>Pipeline stats</h4>
-                  <p>
-                    The weekly-rate tiles - <strong>Weeks to Fill</strong>,
-                    <strong>Direct / wk</strong>, <strong>Fusion / wk</strong>,
-                    <strong>Total Gems / wk</strong>, <strong>Gold / wk</strong> - estimate your
-                    weekly gem output and gold spend at this budget.
-                  </p>
-                  <p>
-                    <strong>Avg Gem Score</strong>, <strong>Total Score</strong>, and
-                    <strong>CP% Gain</strong> use your support coefficients.
-                  </p>
-                </section>
-                <section>
-                  <h4>Fusion</h4>
-                  <p>
-                    Purple <strong>"Fuse first"</strong> cells mean fusing lower gems up first beats
-                    cutting that archetype directly.
-                  </p>
-                  <p>
-                    Cut / reset / don't-cut are EV-based - your Gold / 1% damage budget × the gem's
-                    expected score gain, minus the cut cost.
-                  </p>
-                </section>
-              {:else}
-                <section>
-                  <h4>Pipeline stats</h4>
-                  <ul>
-                    <li>
-                      <strong>Weeks to Fill</strong> - weeks to fill all 24 slots at this budget
-                    </li>
-                    <li><strong>Direct / wk</strong> - above-baseline gems per week from cutting</li>
-                    <li><strong>Fusion / wk</strong> - above-baseline gems per week from fusion</li>
-                    <li><strong>Total Gems / wk</strong> - direct + fusion</li>
-                    <li><strong>Gold / wk</strong> - gold spent per week</li>
-                    <li><strong>Avg Gem Score</strong> - mean score of the gems produced</li>
-                    <li><strong>Total Score</strong> - summed score across all 24 slots</li>
-                    <li><strong>CP% Gain</strong> - combat-power % gain once complete</li>
-                  </ul>
-                </section>
-                <section>
-                  <h4>Pre-cut Fusion</h4>
-                  <p>
-                    <strong>3 UC, same cost</strong> → 85% UC / 13.5% Rare / 1.5% Epic. 500g, 50% RB.
-                  </p>
-                  <p>
-                    <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50%
-                    RB.
-                  </p>
-                  <p>Purple "Fuse first" cells indicate when fusing beats cutting directly.</p>
-                </section>
-                <section>
-                  <h4>Post-cut Fusion (500g each)</h4>
-                  <p>
-                    <strong>A + 2L</strong> → 35L / 40R / 25A · <strong>R + 2L</strong> → 73L / 25R /
-                    2A ·
-                    <strong>3L</strong> → 99L / 1R.
-                  </p>
-                  <p>Priority: A+2L, then R+2L, then 3L. Below-baseline outputs are recycled.</p>
-                </section>
-              {/if}
+              <!-- Pipeline-stat and fusion mechanics are identical in both lenses (the support view
+                   reuses the DPS weekly pipeline), so this column is intentionally role-neutral. -->
+              <section>
+                <h4>Pipeline stats</h4>
+                <ul>
+                  <li>
+                    <strong>Weeks to Fill</strong> - weeks to fill all 24 slots at this budget
+                  </li>
+                  <li><strong>Direct / wk</strong> - above-baseline gems per week from cutting</li>
+                  <li><strong>Fusion / wk</strong> - above-baseline gems per week from fusion</li>
+                  <li><strong>Total Gems / wk</strong> - direct + fusion</li>
+                  <li><strong>Gold / wk</strong> - gold spent per week</li>
+                  <li><strong>Avg Gem Score</strong> - mean score of the gems produced</li>
+                  <li><strong>Total Score</strong> - summed score across all 24 slots</li>
+                  <li><strong>CP% Gain</strong> - combat-power % gain once complete</li>
+                </ul>
+              </section>
+              <section>
+                <h4>Pre-cut Fusion</h4>
+                <p>
+                  <strong>3 UC, same cost</strong> → 85% UC / 13.5% Rare / 1.5% Epic. 500g, 50% RB.
+                </p>
+                <p>
+                  <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50%
+                  RB.
+                </p>
+                <p>Purple "Fuse first" cells indicate when fusing beats cutting directly.</p>
+              </section>
+              <section>
+                <h4>Post-cut Fusion (500g each)</h4>
+                <p>
+                  <strong>A + 2L</strong> → 35L / 40R / 25A · <strong>R + 2L</strong> → 73L / 25R /
+                  2A ·
+                  <strong>3L</strong> → 99L / 1R.
+                </p>
+                <p>Priority: A+2L, then R+2L, then 3L. Below-baseline outputs are recycled.</p>
+              </section>
             </div>
           </div>
-          {#if role !== 'support'}
-            <p class="ch-note">
-              Week estimates assume vendor + dailies only - not events, paradise, or the F4 shop.
-              Hover any pipeline stat for its definition.
-            </p>
-          {/if}
+          <p class="ch-note">
+            Week estimates assume vendor + dailies only - not events, paradise, or the F4 shop.
+            Hover any pipeline stat for its definition.
+          </p>
         </div>
       {/if}
       <div class="controls">

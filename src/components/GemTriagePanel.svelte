@@ -26,7 +26,7 @@
     reconcileDualBuild,
     triageGem,
   } from '../lib/scoring/triage';
-  import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
+  import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
     type CharacterProfile,
     activeBuildState,
@@ -136,14 +136,14 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={appConfig.current.uiConfig.showGemTriage ? 'Collapse section' : 'Expand section'}
-      onclick={() => toggleUI('showGemTriage')}
+      aria-label={sectionUI.showGemTriage ? 'Collapse section' : 'Expand section'}
+      onclick={() => toggleSection('showGemTriage')}
     >
-      {appConfig.current.uiConfig.showGemTriage ? '▼' : '▲'}
+      {sectionUI.showGemTriage ? '▼' : '▲'}
     </button>
   </div>
 
-  {#if appConfig.current.uiConfig.showGemTriage}
+  {#if sectionUI.showGemTriage}
     {#if showHelp}
       <div class="score-help">
         <div class="sh-title">How the score is calculated</div>
@@ -202,7 +202,10 @@
             <span class="t-range">≥ 15</span>
           </span>
         </div>
-        <p class="sh-hint">Tip: hover any score to see that gem's exact breakdown.</p>
+        <p class="sh-hint">
+          Tip: <span class="hint-hover">hover</span><span class="hint-tap">tap</span> any score to see
+          that gem's exact breakdown.
+        </p>
       </div>
     {/if}
     <div class="controls">
@@ -443,6 +446,19 @@
     opacity: 0.75;
     font-style: italic;
   }
+  /* The breakdown shows on hover on desktop and on tap (focus) on touch — word the tip to match the
+     device so phones don't read "hover". */
+  .hint-tap {
+    display: none;
+  }
+  @media (hover: none) {
+    .hint-hover {
+      display: none;
+    }
+    .hint-tap {
+      display: inline;
+    }
+  }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -522,7 +538,14 @@
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+    border: 1px solid var(--border);
     border-radius: 0.4rem;
+    padding: 0.3rem 0.6rem;
+  }
+  /* The whole row is the card here, so drop ArkGridGemDetail's own border so it doesn't read as a
+     box-in-box; the gem detail keeps its internal padding for the icon/text. */
+  .gem-cell :global(.gem-box) {
+    border: none;
   }
   .triage-row.equipped {
     background: rgba(21, 101, 192, 0.08);
