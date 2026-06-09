@@ -127,66 +127,35 @@ export function setDualRole(v: boolean) {
   getCurrentProfile().dualRole = v;
 }
 
+/**
+ * Merge a partial solve result into a build's solveInfo.after, creating the object on first write
+ * and preserving any fields not in `patch`. The updaters below are typed shorthands for one field
+ * each; they all target the active build.
+ */
+export function patchSolveAfter(build: BuildState, patch: Partial<SolveAfter>) {
+  build.solveInfo.after = { ...build.solveInfo.after, ...patch };
+}
+
 export function updateSolveAnswer(solveAnswer: SolveAnswer) {
-  // Set the solve answer in the active build's solve.after
-  const build = activeBuildState();
-  if (!build.solveInfo.after) {
-    build.solveInfo.after = {
-      solveAnswer: solveAnswer,
-    };
-  } else {
-    build.solveInfo.after.solveAnswer = solveAnswer;
-  }
+  patchSolveAfter(activeBuildState(), { solveAnswer });
 }
 
 export function updateScoreSet(scoreSet: SolveAnswerScoreSet) {
-  // Set the score set in the active build's solve.after
-  const build = activeBuildState();
-  if (!build.solveInfo.after) {
-    build.solveInfo.after = {
-      scoreSet: scoreSet,
-    };
-  } else {
-    build.solveInfo.after.scoreSet = scoreSet;
-  }
+  patchSolveAfter(activeBuildState(), { scoreSet });
 }
 
 export function updateAnswerCores(
   cores: Record<ArkGridAttr, Record<ArkGridCoreType, ArkGridCore | null>>
 ) {
-  // Set the answer cores in the active build's solve.after
-  const build = activeBuildState();
-  if (!build.solveInfo.after) {
-    build.solveInfo.after = {
-      answerCores: cores,
-    };
-  } else {
-    build.solveInfo.after.answerCores = cores;
-  }
+  patchSolveAfter(activeBuildState(), { answerCores: cores });
 }
 
 export function updateAdditionalGemResult(additionalGemResult: AdditionalGemResult) {
-  // Set additionalGemResult in the active build's solve.after
-  const build = activeBuildState();
-  if (!build.solveInfo.after) {
-    build.solveInfo.after = {
-      additionalGemResult: additionalGemResult,
-    };
-  } else {
-    build.solveInfo.after.additionalGemResult = additionalGemResult;
-  }
+  patchSolveAfter(activeBuildState(), { additionalGemResult });
 }
 
 export function updateNeedLauncherGem(needLauncherGem: NeedLauncherGem) {
-  // Set needLauncherGem in the active build's solve.after
-  const build = activeBuildState();
-  if (!build.solveInfo.after) {
-    build.solveInfo.after = {
-      needLauncherGem: needLauncherGem,
-    };
-  } else {
-    build.solveInfo.after.needLauncherGem = needLauncherGem;
-  }
+  patchSolveAfter(activeBuildState(), { needLauncherGem });
 }
 
 export function updateSolveAfter(data: SolveAfter) {
