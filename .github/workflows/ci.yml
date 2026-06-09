@@ -1,0 +1,36 @@
+name: CI
+
+# Type-check and run the test suite on every pull request and on pushes to main.
+# This is the regression gate that must pass before the Deploy workflow (deploy.yml)
+# publishes from main. Mirrors the local `npm run check` + `npm test` gate.
+#
+# Note on data-drift: the committed cutting-plan tables are produced by
+# `npm run generate:pipeline` and `npm run generate:support-cutquality`. A "regenerate +
+# git diff --exit-code" guard is intentionally NOT run here because the pipeline generator
+# reads `Reference Projects/astrogem-pipeline-table-main/index.html`, which is gitignored and
+# absent from a fresh CI checkout, so it cannot run. (The support generator is self-contained
+# and deterministic but is a ~30s Monte-Carlo; left out so the guard isn't half-applied.)
+# Regenerate locally and commit when the source tables change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel an in-progress run when a newer commit is pushed to the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22 # matches the Deploy workflow's build runtime
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
