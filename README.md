@@ -60,12 +60,9 @@ npm run generate:support-cutquality # Support single-cut quality data -> src/lib
 
 ## Deployment
 
-Deployed to GitHub Pages from the built `dist/`:
-
-```bash
-npm run build
-npm run deploy     # publishes dist/ to the gh-pages branch
-```
+Deployment is automated by GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
+every push to `main` builds the app from a fresh checkout and publishes `dist/` to GitHub Pages. It can
+also be triggered on demand from the repository's **Actions** tab. There is no manual publish step.
 
 The Vite `base` is `/LostArk-ArkGrid-Optimizer/` and must match the GitHub repository name, otherwise the
 published assets 404.
