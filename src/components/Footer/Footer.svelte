@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import HubBadge from '../../lib/HubBadge.svelte';
   import Credit from './Credit.svelte';
   import Policy from './Policy.svelte';
   import Terms from './Terms.svelte';
@@ -52,6 +53,8 @@
   {/if}
 </dialog>
 
+<div class="hub-badge-row"><HubBadge /></div>
+
 <div class="container">
   <a class="footer-link" href="#credits" onclick={() => openDialong('credit')}>Credits</a>
 
@@ -61,6 +64,11 @@
 </div>
 
 <style>
+  .hub-badge-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
   .container {
     font-size: 0.8rem;
     display: flex;
