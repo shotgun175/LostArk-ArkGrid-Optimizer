@@ -18,6 +18,14 @@ export function getMaxStat(gss: GemSet[], statType: 'att' | 'skill' | 'boss') {
   return result;
 }
 
+// Upper bound on the will-points a single astrogem can contribute. The game's gem-point domain is
+// 1-5: every "perfect" gem in solverWorker.ts uses point 5, and the launcher-gem simulation sweeps
+// gemPoint from 5 down to 1. getPossibleGemSets enumerates at most 4 gems per core (the i/j/k/m loop
+// nest), so after placing N gems the (4 - N) remaining slots can add at most (4 - N) * MAX_GEM_POINT
+// more points. The branch-and-bound below prunes a branch as soon as even that optimistic remainder
+// cannot reach the core's required `point`.
+const MAX_GEM_POINT = 5;
+
 export function getPossibleGemSets(core: Core, gems: Gem[]): GemSet[] {
   // Return all gem sets from the given gems that satisfy the required energy and point.
   const n = gems.length;
@@ -37,7 +45,7 @@ export function getPossibleGemSets(core: Core, gems: Gem[]): GemSet[] {
     if (pi >= point && ei >= 0) result.push(new GemSet([g[i]], core));
 
     if (ei < 3) break;
-    if (pi + 15 < point) continue;
+    if (pi + 3 * MAX_GEM_POINT < point) continue; // 3 slots (j,k,m) still open
 
     for (let j = i + 1; j < n; j++) {
       const ej = ei - g[j].req;
@@ -45,7 +53,7 @@ export function getPossibleGemSets(core: Core, gems: Gem[]): GemSet[] {
       if (pj >= point && ej >= 0) result.push(new GemSet([g[i], g[j]], core));
       if (ej < 0) break;
       if (ej < 3) continue;
-      if (pj + 10 < point) continue;
+      if (pj + 2 * MAX_GEM_POINT < point) continue; // 2 slots (k,m) still open
 
       for (let k = j + 1; k < n; k++) {
         const ek = ej - g[k].req;
@@ -53,7 +61,7 @@ export function getPossibleGemSets(core: Core, gems: Gem[]): GemSet[] {
         if (pk >= point && ek >= 0) result.push(new GemSet([g[i], g[j], g[k]], core));
         if (ek < 0) break;
         if (ek < 3) continue;
-        if (pk + 5 < point) continue;
+        if (pk + MAX_GEM_POINT < point) continue; // 1 slot (m) still open
         for (let m = k + 1; m < n; m++) {
           const el = ek - g[m].req;
           const pl = pk + g[m].point;

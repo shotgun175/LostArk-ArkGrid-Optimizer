@@ -5,6 +5,7 @@
   import BackToTop from './components/BackToTop.svelte';
   import CharacterProfileEditor from './components/CharacterProfileEditor.svelte';
   import CuttingPlanPanel from './components/CuttingPlanPanel.svelte';
+  import Assumptions from './components/Footer/Assumptions.svelte';
   import Footer from './components/Footer/Footer.svelte';
   import GemRecognitionPanel from './components/GemRecognition/Panel.svelte';
   import GemTriagePanel from './components/GemTriagePanel.svelte';
@@ -79,6 +80,7 @@
   <BackToTop />
 </main>
 <footer>
+  <Assumptions />
   <Footer></Footer>
 </footer>
 

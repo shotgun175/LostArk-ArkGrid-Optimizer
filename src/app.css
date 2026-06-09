@@ -1,5 +1,19 @@
+/* Self-hosted webfonts — no external CDN. Inter = UI text; JetBrains Mono = solver numerics/code.
+   Latin subset only (the app is English-only). Shipped via @fontsource (dev dependency). Per the CSS
+   spec, @import must precede every other rule, so these stay at the very top of the file. */
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/inter/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-600.css';
+
 :root {
-  /* tailwindcss */
+  /* Tailwind CSS v4 default color palette (oklch tokens), copied verbatim so the app can use these
+     as CSS variables without depending on Tailwind itself. Source: the Tailwind v4 default `@theme`
+     palette (the oklch ramps introduced in v4 — see node_modules/tailwindcss/theme.css in a v4
+     install, or the Tailwind color docs). To refresh: regenerate from a current Tailwind v4 release
+     and replace the ramps below. Only the blue / gray / slate ramps this app uses are kept. */
   --color-blue-50: oklch(0.97 0.014 254.604);
   --color-blue-100: oklch(0.932 0.032 255.585);
   --color-blue-200: oklch(0.882 0.059 254.128);
@@ -39,6 +53,9 @@
 
 :root {
   --global-gap: clamp(1rem, 2vw, 2rem);
+  /* Inter for UI text, JetBrains Mono for solver numerics (see @fontsource imports above). */
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 /* Dark mode */
@@ -100,6 +117,15 @@ html {
   min-width: 320px;
 }
 
+/* Monospace face for numeric / code-like readouts (opt in via the .mono class or these elements). */
+code,
+kbd,
+samp,
+pre,
+.mono {
+  font-family: var(--font-mono);
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border) var(--bg);
@@ -107,6 +133,7 @@ html {
 
 body {
   background: var(--bg);
+  font-family: var(--font-ui);
 }
 
 #app {
