@@ -127,41 +127,6 @@ export function setDualRole(v: boolean) {
   getCurrentProfile().dualRole = v;
 }
 
-/**
- * Merge a partial solve result into a build's solveInfo.after, creating the object on first write
- * and preserving any fields not in `patch`. The updaters below are typed shorthands for one field
- * each; they all target the active build.
- */
-export function patchSolveAfter(build: BuildState, patch: Partial<SolveAfter>) {
-  build.solveInfo.after = { ...build.solveInfo.after, ...patch };
-}
-
-export function updateSolveAnswer(solveAnswer: SolveAnswer) {
-  patchSolveAfter(activeBuildState(), { solveAnswer });
-}
-
-export function updateScoreSet(scoreSet: SolveAnswerScoreSet) {
-  patchSolveAfter(activeBuildState(), { scoreSet });
-}
-
-export function updateAnswerCores(
-  cores: Record<ArkGridAttr, Record<ArkGridCoreType, ArkGridCore | null>>
-) {
-  patchSolveAfter(activeBuildState(), { answerCores: cores });
-}
-
-export function updateAdditionalGemResult(additionalGemResult: AdditionalGemResult) {
-  patchSolveAfter(activeBuildState(), { additionalGemResult });
-}
-
-export function updateNeedLauncherGem(needLauncherGem: NeedLauncherGem) {
-  patchSolveAfter(activeBuildState(), { needLauncherGem });
-}
-
-export function updateSolveAfter(data: SolveAfter) {
-  activeBuildState().solveInfo.after = data;
-}
-
 /** Write a solve result into a specific build (used by solve-both for dual-role characters). */
 export function setBuildSolveAfter(role: BuildRole, data: SolveAfter) {
   buildState(role).solveInfo.after = data;
