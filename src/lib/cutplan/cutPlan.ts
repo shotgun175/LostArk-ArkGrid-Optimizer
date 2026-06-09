@@ -50,9 +50,9 @@ export function actionLabel(action: CutAction): string {
 //          = (pct/100) x max(0, avg - baseline) x goldPerScore  -  CUT_COST
 // Actions match the DPS table: goldEV >= RESET_COST -> Cut + reset ; > 0 -> Cut ; <= 0 -> Don't cut.
 // "Fuse first" is still mirrored from the DPS table (a role-agnostic acquisition strategy).
-const SCORE_PER_DMG_PCT = 27; // author's score -> %damage normalization (goldPerScore = goldPerDmg/27)
-const CUT_COST = 900; // gold per cut attempt
-const RESET_COST = 20_000; // gold for one retry; the DPS table's cut-reset threshold
+export const SCORE_PER_DMG_PCT = 27; // author's score -> %damage normalization (goldPerScore = goldPerDmg/27)
+export const CUT_COST = 900; // gold per cut attempt
+export const RESET_COST = 20_000; // gold for one retry; the DPS table's cut-reset threshold
 // Tunable: gold value of one SUPPORT score point relative to one DPS score point. 1.0 = value
 // support exactly like DPS. Raise toward ~1.6 to honor the ally-vs-personal-damage gap if desired.
 export const SUPPORT_VALUE_RATE = 1.0;
