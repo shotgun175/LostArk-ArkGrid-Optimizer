@@ -18,6 +18,8 @@
     "generate:support-cutquality": "node scripts/generate-support-cutquality.cjs"
   },
   "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@tsconfig/svelte": "^5.0.5",
