@@ -28,7 +28,7 @@ export function generateMatchingAtlas<const M extends Record<string, CvMat>>(mat
   const matVector = new cv.MatVector();
 
   for (const key of Object.keys(mats) as (keyof M)[]) {
-    let mat = mats[key];
+    const mat = mats[key];
     let padded: CvMat;
 
     // Add padding if the height differs

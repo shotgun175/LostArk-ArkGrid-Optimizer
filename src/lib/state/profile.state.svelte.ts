@@ -1,11 +1,6 @@
 import { persistedState } from 'svelte-persisted-state';
 
-import {
-  type ArkGridAttr,
-  ArkGridAttrs,
-  DEFAULT_PROFILE_NAME,
-  LostArkGrades,
-} from '../constants/enums';
+import { type ArkGridAttr, ArkGridAttrs, DEFAULT_PROFILE_NAME } from '../constants/enums';
 import {
   type ArkGridCore,
   type ArkGridCoreType,
@@ -26,7 +21,7 @@ import {
 export { otherRole };
 export type { BuildRole, CoreSet };
 
-export let currentProfileName = persistedState<string>('currentProfileName', DEFAULT_PROFILE_NAME);
+export const currentProfileName = persistedState<string>('currentProfileName', DEFAULT_PROFILE_NAME);
 export interface AllGems {
   orderGems: ArkGridGem[];
   chaosGems: ArkGridGem[];

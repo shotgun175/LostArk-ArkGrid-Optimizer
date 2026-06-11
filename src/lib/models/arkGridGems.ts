@@ -41,7 +41,7 @@ export const ArkGridGemOptionNames = Object.keys(ArkGridGemOptionTypes) as ArkGr
 export type ArkGridGemSpec = {
   attr: ArkGridAttr;
   name: LocalizationName;
-  req: Number;
+  req: number;
   availableOptions: ArkGridGemOptionName[];
 };
 export const ArkGridGemSpecs = {
@@ -127,12 +127,12 @@ export function determineGemGrade(
   option2: ArkGridGemOption,
   name?: ArkGridGemName
 ) {
-  let basePoint = name ? ArkGridGemSpecs[name].req : 8;
+  const basePoint = name ? ArkGridGemSpecs[name].req : 8;
   const totalPoint = basePoint - req + point + option1.value + option2.value;
   return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
 }
 export function determineGemGradeByGem(gem: ArkGridGem) {
-  let basePoint = gem.name ? ArkGridGemSpecs[gem.name].req : 8;
+  const basePoint = gem.name ? ArkGridGemSpecs[gem.name].req : 8;
   const totalPoint = basePoint - gem.req + gem.point + gem.option1.value + gem.option2.value;
   return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
 }

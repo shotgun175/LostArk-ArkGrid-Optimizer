@@ -271,7 +271,7 @@ class FrameProcessor {
           debugCtx.fillStyle = 'white';
           debugCtx.strokeStyle = 'black'; // outline color
           debugCtx.lineWidth = 10 * resolutionScale; // outline thickness
-          let x = 25;
+          const x = 25;
           let y = 100;
           // Draw the outline first, then fill in white text
           let msg = `Measured scale: ${(1 / resolutionScale).toFixed(2)}x (${frame.displayWidth}x${frame.displayHeight})`;
@@ -349,9 +349,9 @@ class FrameProcessor {
         }
       }
 
-      let currentLocale = this.previousInfo.locale;
-      let anchorX = this.previousInfo.anchorLoc.x;
-      let anchorY = this.previousInfo.anchorLoc.y;
+      const currentLocale = this.previousInfo.locale;
+      const anchorX = this.previousInfo.anchorLoc.x;
+      const anchorY = this.previousInfo.anchorLoc.y;
 
       //2 Search for the Order or Chaos label
       const gemAttr = this.findBest(

@@ -5,7 +5,6 @@ import { CaptureController } from './captureController';
 // loop() and the session fields are private; tests reach them via `any` to
 // drive the recording state machine without a real screen-capture session.
 function makeRecordingController() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c = new CaptureController() as any;
   c.state = 'recording';
   let trackStopped = false;
