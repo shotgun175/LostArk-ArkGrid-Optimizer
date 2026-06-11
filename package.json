@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "generate:sprite": "node scripts/generate-sprite.cjs",
     "generate:pipeline": "node scripts/extract-pipeline-table.cjs",
-    "generate:support-cutquality": "node scripts/generate-support-cutquality.cjs"
+    "generate:support-cutquality": "tsx scripts/generate-support-cutquality.mts"
   },
   "devDependencies": {
     "@fontsource/inter": "^5.2.8",

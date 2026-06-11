@@ -1,8 +1,7 @@
-import {
-  type ArkGridGem,
-  type ArkGridGemOptionName,
-  ArkGridGemOptionTypes,
-} from '../models/arkGridGems';
+// Type-only import keeps this module runnable under node (the support-table
+// generator imports it; arkGridGems.ts itself uses Vite-only import.meta.glob).
+import type { ArkGridGem } from '../models/arkGridGems';
+import { type ArkGridGemOptionName, ArkGridGemOptionTypes } from '../models/arkGridGemSpecs';
 
 export type GemRole = 'dps' | 'support';
 export type GemTier = 'Excellent' | 'Very Good' | 'Good for now' | 'Priority to Replace';

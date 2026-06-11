@@ -23,7 +23,15 @@
     type SupportCutQuality,
   } from '../lib/cutplan/types';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
-  import { type GemRole } from '../lib/scoring/gemScore';
+  import {
+    DPS_NODE_COEFF,
+    type GemRole,
+    POINT_NEUTRAL,
+    POINT_STEP,
+    SUPPORT_NODE_COEFF,
+    WILLPOWER_NEUTRAL,
+    WILLPOWER_STEP,
+  } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
@@ -203,18 +211,21 @@
                   upgrade (the same scoring the Gem Triage uses).
                 </p>
                 <p>
-                  <strong>Willpower</strong> = (4 - level) × 2.4 · <strong>Chaos Points</strong> =
-                  (level - 4) × 5.14 · <strong>Options</strong> = level × coefficient.
+                  <strong>Willpower</strong> = ({WILLPOWER_NEUTRAL} - level) × {WILLPOWER_STEP} ·
+                  <strong>Chaos Points</strong> = (level - {POINT_NEUTRAL}) × {POINT_STEP} ·
+                  <strong>Options</strong> = level × coefficient.
                 </p>
                 {#if role === 'support'}
                   <p>
-                    Support coefficients: <strong>Ally Atk Enh</strong> ×1.95 ·
-                    <strong>Brand</strong> ×1.36 · <strong>Ally Dmg Enh</strong> ×0.76.
+                    Support coefficients: <strong>Ally Atk Enh</strong> ×{SUPPORT_NODE_COEFF.AllyAttackEnh}
+                    · <strong>Brand</strong> ×{SUPPORT_NODE_COEFF.BrandPower} ·
+                    <strong>Ally Dmg Enh</strong> ×{SUPPORT_NODE_COEFF.AllyDamageEnh}.
                   </p>
                 {:else}
                   <p>
-                    DPS coefficients: <strong>Boss Dmg</strong> ×2.55 · <strong>Add. Dmg</strong>
-                    ×1.85 · <strong>Atk</strong> ×1.
+                    DPS coefficients: <strong>Boss Dmg</strong> ×{DPS_NODE_COEFF.BossDamage} ·
+                    <strong>Add. Dmg</strong> ×{DPS_NODE_COEFF.AddDamage} · <strong>Atk</strong>
+                    ×{DPS_NODE_COEFF.AtkPower}.
                   </p>
                 {/if}
               </section>
