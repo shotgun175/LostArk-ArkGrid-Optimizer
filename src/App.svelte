@@ -19,8 +19,10 @@
   import { initTooltipModal } from './lib/ui/tooltipModal';
 
   let locale = $derived(appLocale.current);
+  // Canonical display name (portfolio-wide); the long descriptive form lives
+  // in the meta description.
   const LTitle: LocalizationName = {
-    en_us: 'Ark Grid Combat Power Optimizer',
+    en_us: 'ArkGrid Optimizer',
   };
   let currentProfile = $state<CharacterProfile>(getCurrentProfile());
   $effect(() => {
@@ -50,7 +52,7 @@
   });
   const pageTitle = $derived(
     {
-      en_us: 'Ark Grid Combat Power Optimizer',
+      en_us: 'ArkGrid Optimizer — Ark Grid Combat Power for Lost Ark',
     }[appLocale.current]
   );
 </script>
