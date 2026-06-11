@@ -1,3 +1,6 @@
+<!-- Synced from shotgun175.github.io/snippets/hub-badge.html
+     (local change: font stacks use the app's shipped Inter/JetBrains Mono
+     instead of the hub's Cinzel/IBM Plex Mono, which this app never loads). -->
 <a class="lat-badge" href="https://shotgun175.github.io/" target="_blank" rel="noopener"
    aria-label="Part of Lost Ark Tools — see all tools">
   <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
@@ -18,11 +21,11 @@
 <style>
   .lat-badge { display:inline-flex; align-items:center; gap:10px; min-height:44px; padding:9px 14px;
     border:1px solid rgba(240,185,77,.45); border-radius:10px; background:#14172a; color:#ece8df;
-    text-decoration:none; font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace; }
+    text-decoration:none; font-family:"JetBrains Mono",ui-monospace,Consolas,monospace; }
   .lat-badge:hover { border-color:#f0b94d; }
   .lat-badge:focus-visible { outline:2px solid #54d8d2; outline-offset:3px; }
   .lat-badge__text { display:flex; flex-direction:column; }
   .lat-badge__kicker { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#aab0d2; }
-  .lat-badge__name { font-family:"Cinzel",Georgia,serif; font-size:14px; font-weight:600; color:#f0b94d; }
+  .lat-badge__name { font-family:"Inter",system-ui,sans-serif; font-size:14px; font-weight:600; color:#f0b94d; }
   .lat-badge__arrow { color:#54d8d2; }
 </style>

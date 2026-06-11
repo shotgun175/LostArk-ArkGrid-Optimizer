@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!-- Source for ../public/og-image.png. Render at exactly 1200x630 and screenshot.
+     Pattern borrowed from the hub repo (shotgun175.github.io/assets/og-image.html);
+     fonts load from Google Fonts only for this offline render, never in the app. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=IBM+Plex+Mono:wght@500&family=Spectral:wght@300&display=swap" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; }
+  body {
+    position: relative;
+    overflow: hidden;
+    background-color: #0a0b13;
+    background-image:
+      radial-gradient(50rem 34rem at 8% -10%, rgba(240,185,77,0.16), transparent 60%),
+      radial-gradient(46rem 32rem at 108% 12%, rgba(84,216,210,0.14), transparent 55%),
+      radial-gradient(40rem 40rem at 60% 130%, rgba(163,148,245,0.12), transparent 60%),
+      linear-gradient(rgba(170,178,220,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(170,178,220,0.06) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 100% 100%, 52px 52px, 52px 52px;
+    color: #ece8df;
+    font-family: "Spectral", Georgia, serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 92px;
+  }
+  body::after {
+    content: "";
+    position: absolute;
+    inset: 24px;
+    border: 1px solid rgba(170,178,220,0.16);
+    border-radius: 20px;
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: #f0b94d;
+    margin-bottom: 26px;
+  }
+  .title {
+    font-family: "Cinzel", serif;
+    font-weight: 700;
+    font-size: 110px;
+    line-height: 0.98;
+    letter-spacing: 0.02em;
+    background: linear-gradient(180deg, #fff7e6 0%, #ece8df 55%, #c8b487 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .lede {
+    margin-top: 26px;
+    font-size: 28px;
+    font-weight: 300;
+    color: #aab0d2;
+    max-width: 46ch;
+  }
+  .pills {
+    display: flex;
+    gap: 14px;
+    margin-top: 34px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 19px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .pill {
+    padding: 9px 18px;
+    border-radius: 999px;
+    border: 1px solid;
+  }
+  .pill.gold   { color: #f0b94d; border-color: rgba(240,185,77,0.5);  background: rgba(240,185,77,0.12); }
+  .pill.astral { color: #54d8d2; border-color: rgba(84,216,210,0.5);  background: rgba(84,216,210,0.12); }
+  .pill.violet { color: #a394f5; border-color: rgba(163,148,245,0.5); background: rgba(163,148,245,0.12); }
+  .url {
+    position: absolute;
+    right: 60px;
+    bottom: 36px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 20px;
+    letter-spacing: 0.08em;
+    color: #7e85a8;
+  }
+</style>
+</head>
+<body>
+  <div class="eyebrow">Lost Ark Tools &middot; Ark Grid</div>
+  <div class="title">ArkGrid Optimizer</div>
+  <div class="lede">Best-loadout solver, gem triage, and a cutting plan — with on-screen gem recognition.</div>
+  <div class="pills">
+    <span class="pill gold">Solver</span>
+    <span class="pill astral">Gem Recognition</span>
+    <span class="pill violet">Cutting Plan</span>
+  </div>
+  <div class="url">shotgun175.github.io/LostArk-ArkGrid-Optimizer</div>
+</body>
+</html>
