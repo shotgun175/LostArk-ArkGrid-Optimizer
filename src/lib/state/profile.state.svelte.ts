@@ -212,13 +212,16 @@ export function deleteProfile(name: string) {
 }
 
 export function updateProfileCharacterName(name: string) {
-  // Update the name of the current profile.
+  // Update the name of the current profile (same rules as addNewProfile:
+  // non-empty, max 16 chars, unique).
+  if (name.length == 0 || name.length > 16) return false;
   const existProfile = appConfig.current.characterProfiles.findIndex(
     (p) => p.characterName === name
   );
   if (existProfile != -1) return false;
   const profile = getCurrentProfile();
   profile.characterName = name;
+  return true;
 }
 
 export function addGem(gem: ArkGridGem) {

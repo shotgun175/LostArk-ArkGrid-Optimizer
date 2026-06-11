@@ -35,6 +35,6 @@
     background-color: var(--card);
   }
   button:hover {
-    background-color: var(--card-innner);
+    background-color: var(--card-inner);
   }
 </style>

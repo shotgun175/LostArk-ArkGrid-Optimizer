@@ -35,6 +35,11 @@
       en_us: 'Create Profile',
     }[locale]
   );
+  const LNewProfileFailedMsg = $derived(
+    {
+      en_us: 'A profile with this name already exists, or the name is longer than 16 characters.',
+    }[locale]
+  );
   const LConfirmDeleteProfile: Record<string, (profileName: string) => string> = {
     en_us: (name) => `Are you sure you want to delete the "${name}" profile?`,
   };
@@ -55,7 +60,7 @@
   );
   const LEditProfileFailedMsg = $derived(
     {
-      en_us: 'A profile with this name already exists.',
+      en_us: 'A profile with this name already exists, or the name is longer than 16 characters.',
     }[locale]
   );
   const LExportProfile = $derived(
@@ -110,9 +115,12 @@
     <button
       title={LNewProfile}
       onclick={() => {
-        const profileName = window.prompt(LAddNewProfile);
-        if (profileName === null || profileName.length == 0) return;
-        addNewProfile(initNewProfile(profileName));
+        const profileName = window.prompt(LAddNewProfile)?.trim();
+        if (profileName === undefined || profileName.length == 0) return;
+        if (!addNewProfile(initNewProfile(profileName))) {
+          window.alert(LNewProfileFailedMsg);
+          return;
+        }
         setCurrentProfileName(profileName);
       }}>➕</button
     >
@@ -251,10 +259,10 @@
     background-color: var(--card);
   }
   button:hover {
-    background-color: var(--card-innner);
+    background-color: var(--card-inner);
   }
   button.active {
-    background-color: var(--card-innner);
+    background-color: var(--card-inner);
     font-weight: bold;
     border: 2px solid;
   }
