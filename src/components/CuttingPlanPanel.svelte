@@ -11,9 +11,9 @@
   import {
     ARCHETYPES,
     type Archetype,
-    type Bucket,
     BUCKETS,
     type BindingMode,
+    type Bucket,
     type CutAction,
     GOLD_BRACKETS,
     GOLD_PER_DAMAGE,
@@ -188,9 +188,7 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={sectionUI.showCuttingPlan
-        ? 'Collapse section'
-        : 'Expand section'}
+      aria-label={sectionUI.showCuttingPlan ? 'Collapse section' : 'Expand section'}
       onclick={() => toggleSection('showCuttingPlan')}
     >
       {sectionUI.showCuttingPlan ? '▼' : '▲'}
@@ -217,7 +215,8 @@
                 </p>
                 {#if role === 'support'}
                   <p>
-                    Support coefficients: <strong>Ally Atk Enh</strong> ×{SUPPORT_NODE_COEFF.AllyAttackEnh}
+                    Support coefficients: <strong>Ally Atk Enh</strong>
+                    ×{SUPPORT_NODE_COEFF.AllyAttackEnh}
                     · <strong>Brand</strong> ×{SUPPORT_NODE_COEFF.BrandPower} ·
                     <strong>Ally Dmg Enh</strong> ×{SUPPORT_NODE_COEFF.AllyDamageEnh}.
                   </p>
@@ -236,7 +235,9 @@
                   header shows its expected gold value (EV). The four rows are the cut outcomes:
                 </p>
                 <ul>
-                  <li><strong>{role === 'support' ? '2S' : '2D'}</strong> - two {statWord} stats</li>
+                  <li>
+                    <strong>{role === 'support' ? '2S' : '2D'}</strong> - two {statWord} stats
+                  </li>
                   <li><strong>Op</strong> - best single {statWord} stat</li>
                   <li><strong>Sub</strong> - weaker single {statWord} stat</li>
                   <li><strong>No</strong> - no {statWord} stat</li>
@@ -313,8 +314,7 @@
                   <strong>3 UC, same cost</strong> → 85% UC / 13.5% Rare / 1.5% Epic. 500g, 50% RB.
                 </p>
                 <p>
-                  <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50%
-                  RB.
+                  <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50% RB.
                 </p>
                 <p>Purple "Fuse first" cells indicate when fusing beats cutting directly.</p>
               </section>

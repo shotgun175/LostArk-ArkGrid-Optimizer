@@ -335,9 +335,7 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={sectionUI.showOptimization
-        ? 'Collapse section'
-        : 'Expand section'}
+      aria-label={sectionUI.showOptimization ? 'Collapse section' : 'Expand section'}
       onclick={() => toggleSection('showOptimization')}
     >
       {sectionUI.showOptimization ? '▼' : '▲'}

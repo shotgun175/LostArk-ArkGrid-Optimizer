@@ -10,9 +10,7 @@ describe('getBestGemSetPacks input validation', () => {
   it('throws when a GemSet has no score range set', () => {
     const gs = new GemSet([], new Core(10, 0, [0]));
     expect(gs.maxScore).toBe(-1); // fresh GemSet: setScoreRange never called
-    expect(() => getBestGemSetPacks([[gs]], scoreMaps)).toThrow(
-      'maxScore and minScore is not set'
-    );
+    expect(() => getBestGemSetPacks([[gs]], scoreMaps)).toThrow('maxScore and minScore is not set');
   });
 
   it('accepts GemSets whose score range is set', () => {

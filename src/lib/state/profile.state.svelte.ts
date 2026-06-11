@@ -21,7 +21,10 @@ import {
 export { otherRole };
 export type { BuildRole, CoreSet };
 
-export const currentProfileName = persistedState<string>('currentProfileName', DEFAULT_PROFILE_NAME);
+export const currentProfileName = persistedState<string>(
+  'currentProfileName',
+  DEFAULT_PROFILE_NAME
+);
 export interface AllGems {
   orderGems: ArkGridGem[];
   chaosGems: ArkGridGem[];

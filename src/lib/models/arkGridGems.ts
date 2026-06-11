@@ -2,11 +2,7 @@ import { type ArkGridAttr, type LostArkGrade } from '../constants/enums';
 // Pure gem data (option types, specs) lives in arkGridGemSpecs.ts so the
 // support-table generator can import it without Vite. Re-exported here so
 // existing importers keep working.
-import {
-  type ArkGridGemName,
-  type ArkGridGemOptionName,
-  ArkGridGemSpecs,
-} from './arkGridGemSpecs';
+import { type ArkGridGemName, type ArkGridGemOptionName, ArkGridGemSpecs } from './arkGridGemSpecs';
 
 export { ArkGridGemOptionNames, ArkGridGemOptionTypes, ArkGridGemSpecs } from './arkGridGemSpecs';
 export type {
