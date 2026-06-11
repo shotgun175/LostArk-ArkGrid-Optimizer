@@ -127,7 +127,7 @@ export async function loadGemAsset() {
     {} as Record<GemRecognitionLocale, MatchingAtlas<KeyCorePoint>>
   );
 
-  const altasGemImage = supportedGemRecognitionLocales.reduce(
+  const atlasGemImage = supportedGemRecognitionLocales.reduce(
     (acc, locale) => {
       const mats = gt[locale];
       acc[locale] = generateMatchingAtlas({
@@ -177,7 +177,7 @@ export async function loadGemAsset() {
   return {
     atlasAnchor,
     atlasGemAttr,
-    altasGemImage,
+    atlasGemImage,
     atlasWillPower,
     atlasCorePoint,
     atlasOptionName,

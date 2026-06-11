@@ -98,4 +98,3 @@ export const ArkGridGemSpecs = {
   },
 } as const satisfies Record<string, ArkGridGemSpec>;
 export type ArkGridGemName = keyof typeof ArkGridGemSpecs;
-export const ArkGridGemNames = Object.keys(ArkGridGemSpecs) as ArkGridGemName[];

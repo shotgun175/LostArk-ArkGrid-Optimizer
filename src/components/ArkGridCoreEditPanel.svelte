@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ArkGridAttrs, type LocalizationName } from '../lib/constants/enums';
-  import { LDealeer, LSupporter } from '../lib/constants/localization';
+  import { LDealer, LSupporter } from '../lib/constants/localization';
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
   import { appConfig, toggleUI } from '../lib/state/appConfig.state.svelte';
   import { appLocale } from '../lib/state/locale.state.svelte';
@@ -68,7 +68,7 @@
           class:active={roleMode === 'dps'}
           onclick={() => selectRoleMode('dps')}
         >
-          {LDealeer[locale]} only
+          {LDealer[locale]} only
         </button>
         <button
           class="seg-btn"

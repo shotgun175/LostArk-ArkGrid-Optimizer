@@ -43,7 +43,7 @@ export function initBuildCores(isSupporter = false): CoreSet {
 }
 
 function emptySolveInfo() {
-  return { before: { coreGoalPoint: [0, 0, 0, 0, 0, 0] } };
+  return {};
 }
 
 /**

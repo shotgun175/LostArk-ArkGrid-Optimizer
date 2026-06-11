@@ -19,11 +19,10 @@
     "generate:support-cutquality": "tsx scripts/generate-support-cutquality.mts"
   },
   "devDependencies": {
-    "@fontsource/inter": "^5.2.8",
-    "@fontsource/jetbrains-mono": "^5.2.8",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@tsconfig/svelte": "^5.0.5",
+    "@types/dom-mediacapture-transform": "^0.1.11",
     "@types/node": "^24.6.0",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
@@ -39,8 +38,9 @@
     "vitest": "^3.2.6"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@techstark/opencv-js": "^4.12.0-release.1",
-    "@types/dom-mediacapture-transform": "^0.1.11",
     "@zerodevx/svelte-toast": "^0.9.6",
     "svelte-persisted-state": "^1.2.0"
   }

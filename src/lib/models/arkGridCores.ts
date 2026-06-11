@@ -373,21 +373,6 @@ export function getDefaultCoreEnergy(core: ArkGridCore | undefined | null): numb
       return 0;
   }
 }
-export function getDefaultCoreGoalPoint(core: ArkGridCore | undefined | null): number {
-  if (!core) return 0;
-  switch (core.grade) {
-    case 'Epic':
-      return 10;
-    case 'Legendary':
-      return 14;
-    case 'Relic':
-      return 17;
-    case 'Ancient':
-      return 17;
-    default:
-      return 0;
-  }
-}
 export function getMaxCorePoint(core: ArkGridCore | undefined | null): number {
   if (!core) return 0;
   switch (core.grade) {

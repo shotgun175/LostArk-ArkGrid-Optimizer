@@ -164,8 +164,7 @@
       if (!previousPerSlot) {
         // First solve — no previous assignment to compare against.
         return newGems.map(
-          (gem) =>
-            JSON.parse(JSON.stringify({ ...gem, assign: coreIndex, isNew: false })) as ArkGridGem
+          (gem) => JSON.parse(JSON.stringify({ ...gem, isNew: false })) as ArkGridGem
         );
       }
 
@@ -206,14 +205,10 @@
         const c = oldCountsForNew.get(fp) ?? 0;
         if (c > 0) {
           oldCountsForNew.set(fp, c - 1);
-          return JSON.parse(
-            JSON.stringify({ ...gem, assign: coreIndex, isNew: false })
-          ) as ArkGridGem;
+          return JSON.parse(JSON.stringify({ ...gem, isNew: false })) as ArkGridGem;
         }
         const replaces: ArkGridGem | undefined = droppedGems[droppedIdx++];
-        return JSON.parse(
-          JSON.stringify({ ...gem, assign: coreIndex, isNew: true, replaces })
-        ) as ArkGridGem;
+        return JSON.parse(JSON.stringify({ ...gem, isNew: true, replaces })) as ArkGridGem;
       });
     });
   }

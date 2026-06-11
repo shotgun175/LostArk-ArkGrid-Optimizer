@@ -8,12 +8,7 @@ import {
   ArkGridGemSpecs,
 } from './arkGridGemSpecs';
 
-export {
-  ArkGridGemNames,
-  ArkGridGemOptionNames,
-  ArkGridGemOptionTypes,
-  ArkGridGemSpecs,
-} from './arkGridGemSpecs';
+export { ArkGridGemOptionNames, ArkGridGemOptionTypes, ArkGridGemSpecs } from './arkGridGemSpecs';
 export type {
   ArkGridGemName,
   ArkGridGemOptionName,
@@ -34,6 +29,8 @@ export interface ArkGridGem {
   point: number;
   option1: ArkGridGemOption;
   option2: ArkGridGemOption;
+  /** Retired (write-only; equipped state derives from solveAnswer.assignedGems).
+   *  Kept only because old persisted snapshots may still carry the key. */
   assign?: number;
   isNew?: boolean;
   replaces?: ArkGridGem;

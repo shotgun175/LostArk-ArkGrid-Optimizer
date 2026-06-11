@@ -69,7 +69,7 @@ export class GemSet {
     }
     this.coreCoeff = core.coeff[this.point];
     if (this.coreCoeff == undefined) {
-      throw Error('Core coeffient is incorrect.');
+      throw Error('Core coefficient is incorrect.');
     }
     this.core = core;
     this.minScore = -1;

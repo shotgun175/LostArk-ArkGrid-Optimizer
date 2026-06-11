@@ -100,7 +100,7 @@ describe('migrateProfileToDualBuild', () => {
 
     const builds = p.builds as Record<string, any>;
     expect(builds.dps.cores.Order.Sun.grade).toBe('Epic');
-    expect(builds.dps.solveInfo.before.coreGoalPoint).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(builds.dps.solveInfo).toEqual({});
     expect(builds.support.cores.Chaos.Star.grade).toBe('Epic');
   });
 });

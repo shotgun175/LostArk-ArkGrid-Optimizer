@@ -17,9 +17,6 @@
     }
   ],
   "importOrder": [
-    "^@core/(.*)$",
-    "^@server/(.*)$",
-    "^@ui/(.*)$",
     "^[./]"
   ],
   "importOrderSeparation": true,

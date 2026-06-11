@@ -13,9 +13,8 @@
     <span>🎓️ {LTitle[locale]}</span>
   </div>
   <div class="content">
-    {#if true}
-      <div class="content">
-        <p>
+    <div class="content">
+      <p>
           1. Open an Astrogem list and unequip all.<br />
           You can switch to an unused Ark Grid preset to quickly unequip all astrogems.
         </p>
@@ -54,7 +53,6 @@
           </li>
         </ol>
       </div>
-    {/if}
   </div>
 </div>
 
@@ -78,9 +76,4 @@
     align-items: center;
     gap: 0.4rem;
   }
-  /* .guide img {
-    max-width: 100%;
-    height: auto;
-    display: block;
-  } */
 </style>

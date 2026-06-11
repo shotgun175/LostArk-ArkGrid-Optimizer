@@ -1,6 +1,6 @@
 /* Self-hosted webfonts — no external CDN. Inter = UI text; JetBrains Mono = solver numerics/code.
-   Latin subset only (the app is English-only). Shipped via @fontsource (dev dependency). Per the CSS
-   spec, @import must precede every other rule, so these stay at the very top of the file. */
+   Latin subset only (the app is English-only). Shipped via @fontsource (runtime dependency). Per the
+   CSS spec, @import must precede every other rule, so these stay at the very top of the file. */
 @import '@fontsource/inter/latin-400.css';
 @import '@fontsource/inter/latin-500.css';
 @import '@fontsource/inter/latin-600.css';

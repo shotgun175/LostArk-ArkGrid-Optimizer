@@ -24,7 +24,7 @@
     terms: 'Terms',
   };
 
-  const openDialong = (component: Footers) => {
+  const openDialog = (component: Footers) => {
     currentFooter = component;
     if (dialog) dialog.showModal();
   };
@@ -56,11 +56,11 @@
 <div class="hub-badge-row"><HubBadge /></div>
 
 <div class="container">
-  <a class="footer-link" href="#credits" onclick={() => openDialong('credit')}>Credits</a>
+  <a class="footer-link" href="#credits" onclick={() => openDialog('credit')}>Credits</a>
 
-  <a class="footer-link" href="#privacy" onclick={() => openDialong('policy')}>Privacy Policy</a>
+  <a class="footer-link" href="#privacy" onclick={() => openDialog('policy')}>Privacy Policy</a>
 
-  <a class="footer-link" href="#terms" onclick={() => openDialong('terms')}>Terms</a>
+  <a class="footer-link" href="#terms" onclick={() => openDialog('terms')}>Terms</a>
 </div>
 
 <style>

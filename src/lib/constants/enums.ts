@@ -1,6 +1,3 @@
-export type ArkGridAttrType = {
-  name: LocalizationName;
-};
 export const ArkGridAttrTypes = {
   Order: {
     name: {
@@ -16,9 +13,6 @@ export const ArkGridAttrTypes = {
 export type ArkGridAttr = keyof typeof ArkGridAttrTypes;
 export const ArkGridAttrs = Object.keys(ArkGridAttrTypes) as ArkGridAttr[];
 
-export type LostArkGradeType = {
-  name: LocalizationName;
-};
 export const LostArkGradeTypes = {
   Epic: {
     name: {
@@ -54,7 +48,6 @@ export type ScrollCommand = 'top' | 'bottom' | null;
 // English-only UI. (GemRecognitionLocale below is separate — it covers which game
 // CLIENT language the CV can read, and still supports ko/en/ru game clients.)
 export type AppLocale = 'en_us';
-export const supportedLocales: AppLocale[] = ['en_us'];
 
 export type GemRecognitionLocale = 'ko_kr' | 'en_us' | 'ru_ru';
 export const supportedGemRecognitionLocales: GemRecognitionLocale[] = ['ko_kr', 'en_us', 'ru_ru'];

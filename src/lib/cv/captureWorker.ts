@@ -10,7 +10,7 @@ import { type MatchingResult, getBestMatch, multiScaleAnchorMatch } from './matc
 import { buildScaleLadder, rawScaleToResolutionScale, snapResolutionScale } from './scaleDetection';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types';
 
-type RecgonitionTarget<K extends string> = {
+type RecognitionTarget<K extends string> = {
   roi: {
     // Search-target roi within the full frame
     x: number;
@@ -143,7 +143,7 @@ class FrameProcessor {
   }
 
   findBest<K extends string>(
-    t: RecgonitionTarget<K>,
+    t: RecognitionTarget<K>,
     frame: CvMat,
     debugCtx?: OffscreenCanvasRenderingContext2D | null,
     option?: {
@@ -376,7 +376,7 @@ class FrameProcessor {
         const gemName = this.findBest(
           {
             roi: { x: rowX + 9, y: rowY + 14, width: 30, height: 30 },
-            atlas: this.loadedAsset.altasGemImage[currentLocale],
+            atlas: this.loadedAsset.atlasGemImage[currentLocale],
             threshold: this.thresholdSet.gemImage - detectionMargin,
           },
           resizedFrame,
