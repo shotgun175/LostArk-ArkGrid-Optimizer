@@ -13,7 +13,7 @@
   import ProfileEdit from './components/Header/ProfileEditor.svelte';
   import SectionNav from './components/SectionNav.svelte';
   import { type LocalizationName } from './lib/constants/enums';
-  import { appConfig, enableDarkMode, toggleUI } from './lib/state/appConfig.state.svelte';
+  import { appConfig, applyOsThemePreference, toggleUI } from './lib/state/appConfig.state.svelte';
   import { appLocale, setLocale } from './lib/state/locale.state.svelte';
   import { type CharacterProfile, getCurrentProfile } from './lib/state/profile.state.svelte';
   import { initTooltipModal } from './lib/ui/tooltipModal';
@@ -32,11 +32,9 @@
   });
 
   onMount(() => {
-    // Dark mode
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (prefersDark) {
-      enableDarkMode();
-    }
+    // Dark mode: the OS preference only seeds the theme until the user
+    // explicitly toggles it — a persisted choice survives reloads.
+    applyOsThemePreference(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     // debug CLI
     (window as any).debug = () => {
