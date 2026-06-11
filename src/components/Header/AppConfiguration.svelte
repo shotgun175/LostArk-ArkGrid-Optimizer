@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '../../lib/Icon.svelte';
   import { type LocalizationName } from '../../lib/constants/enums';
   import { appConfig, toggleDarkMode, toggleUI } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
@@ -15,11 +16,7 @@
   >
   <button onclick={toggleDarkMode} style="">
     {LDarkMode[locale]}
-    <i
-      class="fa-solid"
-      class:fa-toggle-on={appConfig.current.uiConfig.darkMode}
-      class:fa-toggle-off={!appConfig.current.uiConfig.darkMode}
-    ></i>
+    <Icon name={appConfig.current.uiConfig.darkMode ? 'toggle-on' : 'toggle-off'} />
   </button>
 </div>
 

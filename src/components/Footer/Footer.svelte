@@ -1,19 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
   import HubBadge from '../../lib/HubBadge.svelte';
   import Credit from './Credit.svelte';
   import Policy from './Policy.svelte';
   import Terms from './Terms.svelte';
-
-  onMount(() => {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css';
-    link.crossOrigin = 'anonymous';
-    link.referrerPolicy = 'no-referrer';
-    document.head.appendChild(link);
-  });
 
   let dialog = $state<HTMLDialogElement>();
   type Footers = 'credit' | 'policy' | 'terms';

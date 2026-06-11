@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
+  import Icon from '../lib/Icon.svelte';
   import { type AppLocale, ArkGridAttrs } from '../lib/constants/enums';
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
@@ -386,7 +387,7 @@
         {LOptimizeHint}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <span class="tooltip" tabindex="0">
-          <i class="fa-solid fa-circle-info info-icon"></i>
+          <Icon name="circle-info" class="info-icon" />
           <span class="tooltip-text">{LOptimizeTooltip}</span>
         </span>
       </div>

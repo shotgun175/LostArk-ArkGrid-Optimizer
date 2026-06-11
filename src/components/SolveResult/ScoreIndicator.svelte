@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '../../lib/Icon.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
 
   type ScoreSet = {
@@ -74,7 +75,7 @@
       <div>{LCurrent}</div>
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <span class="tooltip" tabindex="0">
-        <i class="fa-solid fa-circle-info info-icon"></i>
+        <Icon name="circle-info" class="info-icon" />
         <span class="tooltip-text">
           {LCurrentDesc}
         </span>
@@ -88,7 +89,7 @@
       <div>{LMaximum}</div>
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <span class="tooltip" tabindex="0">
-        <i class="fa-solid fa-circle-info info-icon"></i>
+        <Icon name="circle-info" class="info-icon" />
         <span class="tooltip-text">
           {LMaxDesc}
         </span>
@@ -100,7 +101,7 @@
     <span class="total-score">{LTotalScore} {(totalScore * 100).toFixed(2)}</span>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <span class="tooltip" tabindex="0">
-      <i class="fa-solid fa-circle-info info-icon"></i>
+      <Icon name="circle-info" class="info-icon" />
       <span class="tooltip-text">
         {LTotalScoreDesc}
       </span>
