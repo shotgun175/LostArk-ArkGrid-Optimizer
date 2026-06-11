@@ -170,6 +170,7 @@ class FrameProcessor {
     const canvas = this.canvas;
     const ctx = this.ctx;
     let resizedFrame: CvMat | null = null;
+    let rawGray: CvMat | null = null;
     let debugCtx: OffscreenCanvasRenderingContext2D | null = null;
     const cv = this.cv;
     if (!cv) return;
@@ -182,7 +183,7 @@ class FrameProcessor {
       canvas.height = frame.displayHeight;
       ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
       const rawImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const rawGray = cv.matFromImageData(rawImageData);
+      rawGray = cv.matFromImageData(rawImageData);
       cv.cvtColor(rawGray, rawGray, cv.COLOR_RGBA2GRAY);
 
       // Determine the UI scale: reuse the cached/persisted scale, else measure it once by
@@ -221,6 +222,7 @@ class FrameProcessor {
               ?.drawImage(frame, 0, 0, this.debugCanvas.width, this.debugCanvas.height);
           }
           rawGray.delete();
+          rawGray = null;
           this.previousInfo = null;
           return;
         }
@@ -249,6 +251,7 @@ class FrameProcessor {
         cv.INTER_AREA
       );
       rawGray.delete();
+      rawGray = null;
       canvas.width = resizedFrame.cols;
       canvas.height = resizedFrame.rows;
 
@@ -526,6 +529,10 @@ class FrameProcessor {
       // ... other recognition
       // return the recognized objects
     } finally {
+      // OpenCV.js Mats are WASM-heap allocations that are never GC'd; an
+      // exception between creation and the happy-path deletes above would
+      // leak them without this (rawGray is null on every non-throw path).
+      if (rawGray) rawGray.delete();
       if (resizedFrame) resizedFrame.delete();
       frame.close();
       this.frameTimes.push(performance.now() - start);
