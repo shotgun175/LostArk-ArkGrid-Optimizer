@@ -30,9 +30,20 @@ describe('theme startup decision', () => {
     expect(appConfig.current.uiConfig.themeSetByUser).toBe(true);
   });
 
-  it('migrateAppConfig backfills themeSetByUser on old payloads', () => {
-    const old = { uiConfig: { darkMode: true } } as never;
-    migrateAppConfig(old);
-    expect((old as { uiConfig: { themeSetByUser: boolean } }).uiConfig.themeSetByUser).toBe(false);
+  it('migrateAppConfig treats an existing darkMode value as a user choice', () => {
+    // Old payloads carrying a theme keep it: backfilling false would let the
+    // OS preference clobber every existing install's saved theme once.
+    const withTheme = { uiConfig: { darkMode: true } } as never;
+    migrateAppConfig(withTheme);
+    expect((withTheme as { uiConfig: { themeSetByUser: boolean } }).uiConfig.themeSetByUser).toBe(
+      true
+    );
+
+    const withoutTheme = { uiConfig: {} } as never;
+    migrateAppConfig(withoutTheme);
+    const ui = (withoutTheme as { uiConfig: { themeSetByUser: boolean; darkMode: boolean } })
+      .uiConfig;
+    expect(ui.themeSetByUser).toBe(false);
+    expect(ui.darkMode).toBe(false);
   });
 });

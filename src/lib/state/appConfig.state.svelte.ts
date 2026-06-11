@@ -69,13 +69,17 @@ export const bigIntSerializer = {
   },
 };
 export function migrateAppConfig(appConfig: Partial<AppConfig>) {
+  // themeSetByUser (added with the OS-preference fix; old payloads predate it).
+  // Payloads that already carry a darkMode value are treated as an explicit
+  // user choice: backfilling false instead would let the OS preference clobber
+  // every existing install's saved theme on its next load. Must run before the
+  // darkMode backfill below so "already carried" is observable.
+  if (appConfig.uiConfig && appConfig.uiConfig.themeSetByUser === undefined) {
+    appConfig.uiConfig.themeSetByUser = appConfig.uiConfig.darkMode !== undefined;
+  }
   // Add uiConfig.darkMode
   if (appConfig.uiConfig && appConfig.uiConfig.darkMode === undefined) {
     appConfig.uiConfig.darkMode = false;
-  }
-  // themeSetByUser (added with the OS-preference fix; old payloads predate it)
-  if (appConfig.uiConfig && appConfig.uiConfig.themeSetByUser === undefined) {
-    appConfig.uiConfig.themeSetByUser = false;
   }
   // Remove appLocale
   if ('appLocale' in appConfig) {
