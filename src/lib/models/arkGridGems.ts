@@ -1,101 +1,16 @@
-import { type ArkGridAttr, type LocalizationName, type LostArkGrade } from '../constants/enums';
+import { type ArkGridAttr, type LostArkGrade } from '../constants/enums';
+// Pure gem data (option types, specs) lives in arkGridGemSpecs.ts so the
+// support-table generator can import it without Vite. Re-exported here so
+// existing importers keep working.
+import { type ArkGridGemName, type ArkGridGemOptionName, ArkGridGemSpecs } from './arkGridGemSpecs';
 
-export type ArkGridGemOptionType = {
-  name: LocalizationName;
-};
-export const ArkGridGemOptionTypes = {
-  AtkPower: {
-    name: {
-      en_us: 'Atk. Power',
-    },
-  },
-  BossDamage: {
-    name: {
-      en_us: 'Boss Damage',
-    },
-  },
-  AddDamage: {
-    name: {
-      en_us: 'Additional Damage',
-    },
-  },
-  BrandPower: {
-    name: {
-      en_us: 'Brand Power',
-    },
-  },
-  AllyAttackEnh: {
-    name: {
-      en_us: 'Ally Attack Enh.',
-    },
-  },
-  AllyDamageEnh: {
-    name: {
-      en_us: 'Ally Damage Enh.',
-    },
-  },
-} as const satisfies Record<string, ArkGridGemOptionType>;
-export type ArkGridGemOptionName = keyof typeof ArkGridGemOptionTypes;
-export const ArkGridGemOptionNames = Object.keys(ArkGridGemOptionTypes) as ArkGridGemOptionName[];
-
-export type ArkGridGemSpec = {
-  attr: ArkGridAttr;
-  name: LocalizationName;
-  req: Number;
-  availableOptions: ArkGridGemOptionName[];
-};
-export const ArkGridGemSpecs = {
-  'Order Astrogem: Stability': {
-    attr: 'Order',
-    name: {
-      en_us: 'Order Astrogem: Stability',
-    },
-    req: 8,
-    availableOptions: ['AtkPower', 'AddDamage', 'BrandPower', 'AllyDamageEnh'],
-  },
-  'Order Astrogem: Solidity': {
-    attr: 'Order',
-    name: {
-      en_us: 'Order Astrogem: Solidity',
-    },
-    req: 9,
-    availableOptions: ['AtkPower', 'BossDamage', 'AllyDamageEnh', 'AllyAttackEnh'],
-  },
-  'Order Astrogem: Immutability': {
-    attr: 'Order',
-    name: {
-      en_us: 'Order Astrogem: Immutability',
-    },
-    req: 10,
-    availableOptions: ['AddDamage', 'BossDamage', 'BrandPower', 'AllyAttackEnh'],
-  },
-  'Chaos Astrogem: Corrosion': {
-    attr: 'Chaos',
-    name: {
-      en_us: 'Chaos Astrogem: Corrosion',
-    },
-    req: 8,
-    availableOptions: ['AtkPower', 'AddDamage', 'BrandPower', 'AllyDamageEnh'],
-  },
-  'Chaos Astrogem: Distortion': {
-    attr: 'Chaos',
-    name: {
-      en_us: 'Chaos Astrogem: Distortion',
-    },
-    req: 9,
-    availableOptions: ['AtkPower', 'BossDamage', 'AllyDamageEnh', 'AllyAttackEnh'],
-  },
-  'Chaos Astrogem: Destruction': {
-    attr: 'Chaos',
-    name: {
-      en_us: 'Chaos Astrogem: Destruction',
-    },
-    req: 10,
-    availableOptions: ['AddDamage', 'BossDamage', 'BrandPower', 'AllyAttackEnh'],
-  },
-} as const satisfies Record<string, ArkGridGemSpec>;
-export type ArkGridGemName = keyof typeof ArkGridGemSpecs;
-export const ArkGridGemNames = Object.keys(ArkGridGemSpecs) as ArkGridGemName[];
+export { ArkGridGemOptionNames, ArkGridGemOptionTypes, ArkGridGemSpecs } from './arkGridGemSpecs';
+export type {
+  ArkGridGemName,
+  ArkGridGemOptionName,
+  ArkGridGemOptionType,
+  ArkGridGemSpec,
+} from './arkGridGemSpecs';
 
 export type ArkGridGemOption = {
   optionType: ArkGridGemOptionName;
@@ -110,6 +25,8 @@ export interface ArkGridGem {
   point: number;
   option1: ArkGridGemOption;
   option2: ArkGridGemOption;
+  /** Retired (write-only; equipped state derives from solveAnswer.assignedGems).
+   *  Kept only because old persisted snapshots may still carry the key. */
   assign?: number;
   isNew?: boolean;
   replaces?: ArkGridGem;
@@ -127,12 +44,12 @@ export function determineGemGrade(
   option2: ArkGridGemOption,
   name?: ArkGridGemName
 ) {
-  let basePoint = name ? ArkGridGemSpecs[name].req : 8;
+  const basePoint = name ? ArkGridGemSpecs[name].req : 8;
   const totalPoint = basePoint - req + point + option1.value + option2.value;
   return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
 }
 export function determineGemGradeByGem(gem: ArkGridGem) {
-  let basePoint = gem.name ? ArkGridGemSpecs[gem.name].req : 8;
+  const basePoint = gem.name ? ArkGridGemSpecs[gem.name].req : 8;
   const totalPoint = basePoint - gem.req + gem.point + gem.option1.value + gem.option2.value;
   return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
 }

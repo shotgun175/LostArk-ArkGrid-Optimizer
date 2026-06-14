@@ -11,9 +11,9 @@
   import {
     ARCHETYPES,
     type Archetype,
-    type Bucket,
     BUCKETS,
     type BindingMode,
+    type Bucket,
     type CutAction,
     GOLD_BRACKETS,
     GOLD_PER_DAMAGE,
@@ -23,7 +23,15 @@
     type SupportCutQuality,
   } from '../lib/cutplan/types';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
-  import { type GemRole } from '../lib/scoring/gemScore';
+  import {
+    DPS_NODE_COEFF,
+    type GemRole,
+    POINT_NEUTRAL,
+    POINT_STEP,
+    SUPPORT_NODE_COEFF,
+    WILLPOWER_NEUTRAL,
+    WILLPOWER_STEP,
+  } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
@@ -180,9 +188,7 @@
     <BuildViewSwitch />
     <button
       class="fold-button"
-      aria-label={sectionUI.showCuttingPlan
-        ? 'Collapse section'
-        : 'Expand section'}
+      aria-label={sectionUI.showCuttingPlan ? 'Collapse section' : 'Expand section'}
       onclick={() => toggleSection('showCuttingPlan')}
     >
       {sectionUI.showCuttingPlan ? '▼' : '▲'}
@@ -203,18 +209,22 @@
                   upgrade (the same scoring the Gem Triage uses).
                 </p>
                 <p>
-                  <strong>Willpower</strong> = (4 - level) × 2.4 · <strong>Chaos Points</strong> =
-                  (level - 4) × 5.14 · <strong>Options</strong> = level × coefficient.
+                  <strong>Willpower</strong> = ({WILLPOWER_NEUTRAL} - level) × {WILLPOWER_STEP} ·
+                  <strong>Chaos Points</strong> = (level - {POINT_NEUTRAL}) × {POINT_STEP} ·
+                  <strong>Options</strong> = level × coefficient.
                 </p>
                 {#if role === 'support'}
                   <p>
-                    Support coefficients: <strong>Ally Atk Enh</strong> ×1.95 ·
-                    <strong>Brand</strong> ×1.36 · <strong>Ally Dmg Enh</strong> ×0.76.
+                    Support coefficients: <strong>Ally Atk Enh</strong>
+                    ×{SUPPORT_NODE_COEFF.AllyAttackEnh}
+                    · <strong>Brand</strong> ×{SUPPORT_NODE_COEFF.BrandPower} ·
+                    <strong>Ally Dmg Enh</strong> ×{SUPPORT_NODE_COEFF.AllyDamageEnh}.
                   </p>
                 {:else}
                   <p>
-                    DPS coefficients: <strong>Boss Dmg</strong> ×2.55 · <strong>Add. Dmg</strong>
-                    ×1.85 · <strong>Atk</strong> ×1.
+                    DPS coefficients: <strong>Boss Dmg</strong> ×{DPS_NODE_COEFF.BossDamage} ·
+                    <strong>Add. Dmg</strong> ×{DPS_NODE_COEFF.AddDamage} · <strong>Atk</strong>
+                    ×{DPS_NODE_COEFF.AtkPower}.
                   </p>
                 {/if}
               </section>
@@ -225,7 +235,9 @@
                   header shows its expected gold value (EV). The four rows are the cut outcomes:
                 </p>
                 <ul>
-                  <li><strong>{role === 'support' ? '2S' : '2D'}</strong> - two {statWord} stats</li>
+                  <li>
+                    <strong>{role === 'support' ? '2S' : '2D'}</strong> - two {statWord} stats
+                  </li>
                   <li><strong>Op</strong> - best single {statWord} stat</li>
                   <li><strong>Sub</strong> - weaker single {statWord} stat</li>
                   <li><strong>No</strong> - no {statWord} stat</li>
@@ -302,8 +314,7 @@
                   <strong>3 UC, same cost</strong> → 85% UC / 13.5% Rare / 1.5% Epic. 500g, 50% RB.
                 </p>
                 <p>
-                  <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50%
-                  RB.
+                  <strong>1R + 2 UC, optimal cost</strong> → 52% UC / 44% Rare / 4% Epic. 500g, 50% RB.
                 </p>
                 <p>Purple "Fuse first" cells indicate when fusing beats cutting directly.</p>
               </section>

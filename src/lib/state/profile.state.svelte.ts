@@ -1,11 +1,6 @@
 import { persistedState } from 'svelte-persisted-state';
 
-import {
-  type ArkGridAttr,
-  ArkGridAttrs,
-  DEFAULT_PROFILE_NAME,
-  LostArkGrades,
-} from '../constants/enums';
+import { type ArkGridAttr, ArkGridAttrs, DEFAULT_PROFILE_NAME } from '../constants/enums';
 import {
   type ArkGridCore,
   type ArkGridCoreType,
@@ -26,7 +21,10 @@ import {
 export { otherRole };
 export type { BuildRole, CoreSet };
 
-export let currentProfileName = persistedState<string>('currentProfileName', DEFAULT_PROFILE_NAME);
+export const currentProfileName = persistedState<string>(
+  'currentProfileName',
+  DEFAULT_PROFILE_NAME
+);
 export interface AllGems {
   orderGems: ArkGridGem[];
   chaosGems: ArkGridGem[];
@@ -61,11 +59,6 @@ export interface CharacterProfile {
 
 // Result
 
-// Inputs
-export type SolveBefore = {
-  coreGoalPoint: number[]; // not used
-};
-
 // Optimization result
 export type SolveAnswerScoreSet = {
   score: number;
@@ -98,7 +91,6 @@ export type SolveAfter = {
   inputSig?: string;
 };
 export type SolveInfo = {
-  before: SolveBefore;
   after?: SolveAfter;
 };
 
@@ -142,11 +134,11 @@ export function initNewProfile(name: string): CharacterProfile {
     builds: {
       dps: {
         cores: initBuildCores(false),
-        solveInfo: { before: { coreGoalPoint: [0, 0, 0, 0, 0, 0] } },
+        solveInfo: {},
       },
       support: {
         cores: initBuildCores(true),
-        solveInfo: { before: { coreGoalPoint: [0, 0, 0, 0, 0, 0] } },
+        solveInfo: {},
       },
     },
     activeBuild: 'dps',
@@ -158,6 +150,15 @@ export function migrateProfile(profile: Partial<CharacterProfile>) {
   // Dual-build: wrap legacy single-role fields (cores/isSupporter/solveInfo/baselineOverride)
   // into builds.{dps,support} + activeBuild + dualRole. Idempotent for already-migrated profiles.
   migrateProfileToDualBuild(profile as Record<string, unknown>);
+
+  // Drop the retired solveInfo.before (its only field, coreGoalPoint, was never
+  // read; per-core goalPoint replaced it) from persisted payloads.
+  for (const role of ['dps', 'support'] as BuildRole[]) {
+    const solveInfo = profile.builds?.[role]?.solveInfo as Record<string, unknown> | undefined;
+    if (solveInfo && 'before' in solveInfo) {
+      delete solveInfo.before;
+    }
+  }
 
   // Backfill core.goalPoint (introduced after some cores were saved) across both builds.
   for (const role of ['dps', 'support'] as BuildRole[]) {
@@ -212,13 +213,16 @@ export function deleteProfile(name: string) {
 }
 
 export function updateProfileCharacterName(name: string) {
-  // Update the name of the current profile.
+  // Update the name of the current profile (same rules as addNewProfile:
+  // non-empty, max 16 chars, unique).
+  if (name.length == 0 || name.length > 16) return false;
   const existProfile = appConfig.current.characterProfiles.findIndex(
     (p) => p.characterName === name
   );
   if (existProfile != -1) return false;
   const profile = getCurrentProfile();
   profile.characterName = name;
+  return true;
 }
 
 export function addGem(gem: ArkGridGem) {
@@ -254,16 +258,6 @@ export function deleteGem(gem: ArkGridGem) {
     targetGems.splice(index, 1);
   }
 }
-export function unassignGems() {
-  const gems = getCurrentProfile().gems;
-  gems.orderGems.forEach((g) => {
-    delete g.assign;
-  });
-  gems.chaosGems.forEach((g) => {
-    delete g.assign;
-  });
-}
-
 export function getCore(attr: ArkGridAttr, ctype: ArkGridCoreType) {
   return activeBuildState().cores[attr][ctype];
 }

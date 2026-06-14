@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
+  import Icon from '../../lib/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
   import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
@@ -289,7 +290,7 @@
     ></div>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <span class="tooltip" tabindex="0">
-      <i class="fa-solid fa-circle-info info-icon"></i>
+      <Icon name="circle-info" class="info-icon" />
       <span class="tooltip-text">
         {LSupportedClient}
       </span>
@@ -321,11 +322,11 @@
           </button>
           <button onclick={toggleDeferredScreenSharingInit}>
             {LControllerLazyLoading}
-            <i
-              class="fa-solid"
-              class:fa-circle-dot={appConfig.current.uiConfig.deferredScreenSharingInit}
-              class:fa-circle={!appConfig.current.uiConfig.deferredScreenSharingInit}
-            ></i>
+            <Icon
+              name={appConfig.current.uiConfig.deferredScreenSharingInit
+                ? 'circle-dot'
+                : 'circle'}
+            />
           </button>
         {/if}
       </div>

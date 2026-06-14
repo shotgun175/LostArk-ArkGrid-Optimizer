@@ -123,11 +123,7 @@ export function getBestGemSetPacks(
   // validate
   [gss1, gss2, gss3].forEach((gss) => {
     if (gss === undefined || gss.length == 0) return;
-    if (
-      gss.some((gs) => {
-        gs.maxScore == -1 || gs.minScore == -1;
-      })
-    ) {
+    if (gss.some((gs) => gs.maxScore == -1 || gs.minScore == -1)) {
       throw Error('maxScore and minScore is not set');
     }
   });

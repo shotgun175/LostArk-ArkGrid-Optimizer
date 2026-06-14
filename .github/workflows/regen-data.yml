@@ -1,0 +1,39 @@
+name: Regenerate data tables
+
+# Monthly regenerate of the committed support cut-quality table, failing
+# loudly (scheduled-run failure email) when the output drifted from what is
+# committed (e.g. after a deliberate constants edit that skipped the regen).
+# Scoped to generate:support-cutquality — the pipeline-table generator's input
+# is untracked third-party content and cannot run here (see ci.yml).
+#
+# Deliberately fail-on-drift rather than auto-PR: this repo's Actions settings
+# disallow workflow-created pull requests ("Allow GitHub Actions to create and
+# approve pull requests" is off), and a GITHUB_TOKEN PR would not trigger CI
+# anyway. If auto-PRs are ever wanted, enable that setting and swap the last
+# step for peter-evans/create-pull-request.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 1 * *' # monthly; upstream tables move with game patches
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run generate:support-cutquality
+      - name: Fail if the committed table drifted
+        run: |
+          if ! git diff --exit-code src/lib/cutplan/supportCutQuality.json; then
+            echo '::error::supportCutQuality.json drifted from its generator/constants.'
+            echo 'Run `npm run generate:support-cutquality` locally and commit the result.'
+            exit 1
+          fi

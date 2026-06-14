@@ -1,5 +1,8 @@
 // Build-time generator: parse the reference astrogem pipeline table (DPS Monte-Carlo
 // output) into a compact JSON the app embeds. Re-run with: node scripts/extract-pipeline-table.cjs
+// The input HTML is third-party and deliberately untracked; the output's _meta block
+// records its sha256 + date so the committed table stays auditable from a clone.
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -134,8 +137,40 @@ for (const thr of THRESHOLDS) {
   result[thr] = {};
   for (const binding of BINDINGS) result[thr][binding] = extractTable(thr, binding);
 }
+
+// Provenance stamp; generated_at is preserved when input and output are
+// unchanged so re-runs on an untouched tree stay byte-identical.
+const sourceSha256 = crypto.createHash('sha256').update(html).digest('hex');
+let generatedAt = new Date().toISOString().slice(0, 10);
+if (fs.existsSync(OUT_PATH)) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(OUT_PATH, 'utf8'));
+    const prevMeta = prev._meta;
+    delete prev._meta;
+    if (
+      JSON.stringify(prev) === JSON.stringify(result) &&
+      prevMeta &&
+      prevMeta.source_sha256 === sourceSha256 &&
+      prevMeta.generated_at
+    ) {
+      generatedAt = prevMeta.generated_at;
+    }
+  } catch {
+    // unreadable previous file: stamp fresh
+  }
+}
+const final = {
+  _meta: {
+    generator: 'scripts/extract-pipeline-table.cjs',
+    source: 'Reference Projects/astrogem-pipeline-table-main/index.html (untracked)',
+    source_sha256: sourceSha256,
+    generated_at: generatedAt,
+  },
+  ...result,
+};
+
 fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-fs.writeFileSync(OUT_PATH, JSON.stringify(result), 'utf8'); // minified
+fs.writeFileSync(OUT_PATH, JSON.stringify(final), 'utf8'); // minified
 const bytes = fs.statSync(OUT_PATH).size;
 console.log(`wrote ${OUT_PATH} (${(bytes / 1024).toFixed(0)} KB)`);
 // Sanity: 500k nrb BL5 E8 must be 2D 45.1% / header 17100.

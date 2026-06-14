@@ -13,48 +13,44 @@
     <span>🎓️ {LTitle[locale]}</span>
   </div>
   <div class="content">
-    {#if true}
-      <div class="content">
-        <p>
-          1. Open an Astrogem list and unequip all.<br />
-          You can switch to an unused Ark Grid preset to quickly unequip all astrogems.
-        </p>
-        <p>2. Press the [🖥️ Start Screen Sharing] button to share your Lost Ark game screen.</p>
-        <p>3. Scroll down and check that recognized astrogems are being added to the list.</p>
-        <p>
-          4. Verify the total number of collected astrogems. Once <b
-            >all Order and Chaos astrogems</b
-          >
-          have been collected, click the [✅ Apply to Current Profile] button to save them to your profile.
-        </p>
-        <br />
-        <h2>FAQ</h2>
-        <p>
-          Q. I get a message saying screen sharing failed or was denied.<br />
-          A. Please use Chrome or Edge browser.
-        </p>
-        <p>
-          Q. Astrogems are not being recognized.<br />
-          A. Press the [🔨 Display Shared Screen] and check the following:
-        </p>
-        <ol>
-          <li>Make sure the game screen is updating properly.</li>
-          <li>
-            If the area used to extract astrogem options does not match the actual screen, switch
-            the game to "windowed mode". This tool auto-detects common 16:9 resolutions (1920×1080,
-            2560×1440, 3840×2160) and most in-between window sizes.
-          </li>
-          <li>
-            If parts of the extraction area are highlighted in red, try increasing the “Recognition
-            Tolerance Range” slider at the top.
-          </li>
-          <li>
-            Scroll while keeping the mouse cursor positioned over the scrollbar, so it does not
-            interact with the astrogems.
-          </li>
-        </ol>
-      </div>
-    {/if}
+    <div class="content">
+      <p>
+        1. Open an Astrogem list and unequip all.<br />
+        You can switch to an unused Ark Grid preset to quickly unequip all astrogems.
+      </p>
+      <p>2. Press the [🖥️ Start Screen Sharing] button to share your Lost Ark game screen.</p>
+      <p>3. Scroll down and check that recognized astrogems are being added to the list.</p>
+      <p>
+        4. Verify the total number of collected astrogems. Once <b>all Order and Chaos astrogems</b>
+        have been collected, click the [✅ Apply to Current Profile] button to save them to your profile.
+      </p>
+      <br />
+      <h2>FAQ</h2>
+      <p>
+        Q. I get a message saying screen sharing failed or was denied.<br />
+        A. Please use Chrome or Edge browser.
+      </p>
+      <p>
+        Q. Astrogems are not being recognized.<br />
+        A. Press the [🔨 Display Shared Screen] and check the following:
+      </p>
+      <ol>
+        <li>Make sure the game screen is updating properly.</li>
+        <li>
+          If the area used to extract astrogem options does not match the actual screen, switch the
+          game to "windowed mode". This tool auto-detects common 16:9 resolutions (1920×1080,
+          2560×1440, 3840×2160) and most in-between window sizes.
+        </li>
+        <li>
+          If parts of the extraction area are highlighted in red, try increasing the “Recognition
+          Tolerance Range” slider at the top.
+        </li>
+        <li>
+          Scroll while keeping the mouse cursor positioned over the scrollbar, so it does not
+          interact with the astrogems.
+        </li>
+      </ol>
+    </div>
   </div>
 </div>
 
@@ -78,9 +74,4 @@
     align-items: center;
     gap: 0.4rem;
   }
-  /* .guide img {
-    max-width: 100%;
-    height: auto;
-    display: block;
-  } */
 </style>

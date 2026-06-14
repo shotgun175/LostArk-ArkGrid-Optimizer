@@ -13,7 +13,7 @@ export const LOrder: LocalizationName = {
 export const LChaos: LocalizationName = {
   en_us: 'Chaos',
 };
-export const LDealeer: LocalizationName = {
+export const LDealer: LocalizationName = {
   en_us: 'DPS',
 };
 export const LSupporter: LocalizationName = {

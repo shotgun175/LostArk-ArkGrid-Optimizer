@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { LDealeer, LSupporter } from '../lib/constants/localization';
+  import { LDealer, LSupporter } from '../lib/constants/localization';
   import { appLocale } from '../lib/state/locale.state.svelte';
   import { getCurrentProfile, setActiveBuild } from '../lib/state/profile.state.svelte';
 
@@ -21,7 +21,7 @@
         class:active={profile.activeBuild === 'dps'}
         onclick={() => setActiveBuild('dps')}
       >
-        {LDealeer[locale]}
+        {LDealer[locale]}
       </button>
       <button
         class="seg-btn"

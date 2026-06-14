@@ -4,13 +4,13 @@ name: CI
 # This is the regression gate that must pass before the Deploy workflow (deploy.yml)
 # publishes from main. Mirrors the local `npm run check` + `npm test` gate.
 #
-# Note on data-drift: the committed cutting-plan tables are produced by
-# `npm run generate:pipeline` and `npm run generate:support-cutquality`. A "regenerate +
-# git diff --exit-code" guard is intentionally NOT run here because the pipeline generator
-# reads `Reference Projects/astrogem-pipeline-table-main/index.html`, which is gitignored and
-# absent from a fresh CI checkout, so it cannot run. (The support generator is self-contained
-# and deterministic but is a ~30s Monte-Carlo; left out so the guard isn't half-applied.)
-# Regenerate locally and commit when the source tables change.
+# Note on data-drift: supportCutQuality.json is regenerated and diffed below (the
+# generator is deterministic — seeded RNG — and imports the app's own scoring
+# constants, so a coefficient edit without a regen fails CI). pipelineTable.json is
+# NOT guarded: its generator reads `Reference Projects/astrogem-pipeline-table-main/
+# index.html`, which is gitignored third-party content absent from a fresh checkout;
+# the committed table instead carries a `_meta` block with the input's sha256 + date.
+# Regenerate locally and commit when that source table changes.
 
 on:
   push:
@@ -35,4 +35,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run lint
       - run: npm test
+      - name: Support-table drift guard
+        run: |
+          npm run generate:support-cutquality
+          git diff --exit-code src/lib/cutplan/supportCutQuality.json

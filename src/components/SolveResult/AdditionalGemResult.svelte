@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '../../lib/Icon.svelte';
   import { type ArkGridAttr, ArkGridAttrs } from '../../lib/constants/enums';
   import { LChaos, LOrder } from '../../lib/constants/localization';
   import { gemSetPackKey } from '../../lib/solver/utils';
@@ -90,7 +91,7 @@
     {LTitle}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <span class="tooltip" tabindex="0">
-      <i class="fa-solid fa-circle-info info-icon"></i>
+      <Icon name="circle-info" class="info-icon" />
       <span class="tooltip-text">{LTitleDesc}</span>
     </span>
   </div>

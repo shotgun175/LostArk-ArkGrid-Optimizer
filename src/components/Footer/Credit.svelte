@@ -6,8 +6,4 @@
     operates as a non-commercial fan site. Content will be immediately removed if requested by the
     rights holder.
   </p>
-  <p>
-    Icons by
-    <a href="https://fontawesome.com" target="_blank" rel="noopener noreferrer">Font Awesome</a>
-  </p>
 </div>

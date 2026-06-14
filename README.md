@@ -1,8 +1,12 @@
-# Ark Grid Combat Power Optimizer
+# ArkGrid Optimizer
 
-A fully client-side web app for Lost Ark's **Ark Grid** astrogem system. It finds the highest-combat-power
-gem loadout from the gems you own, triages which gems to keep or replace, and tells you what to farm next —
-with on-screen gem recognition so you don't have to type anything in.
+Part of [Lost Ark Tools](https://shotgun175.github.io/). **Live app:**
+<https://shotgun175.github.io/LostArk-ArkGrid-Optimizer/>
+
+An Ark Grid combat-power optimizer: a fully client-side web app for Lost Ark's **Ark Grid** astrogem
+system. It finds the highest-combat-power gem loadout from the gems you own, triages which gems to keep
+or replace, and tells you what to farm next — with on-screen gem recognition so you don't have to type
+anything in.
 
 ## Features
 
@@ -58,6 +62,12 @@ npm run generate:pipeline           # DPS cutting-plan table -> src/lib/cutplan/
 npm run generate:support-cutquality # Support single-cut quality data -> src/lib/cutplan/supportCutQuality.json
 ```
 
+Note: `generate:pipeline` reads `Reference Projects/astrogem-pipeline-table-main/index.html`, a
+third-party reference table that is deliberately **not** tracked — the command only runs on a machine
+that has it. The committed `pipelineTable.json` carries a `_meta` block (input sha256 + date) so it
+stays auditable. `generate:support-cutquality` is fully self-contained and deterministic (seeded RNG);
+CI regenerates it and fails on drift.
+
 ## Deployment
 
 Deployment is automated by GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
@@ -67,7 +77,7 @@ also be triggered on demand from the repository's **Actions** tab. There is no m
 The Vite `base` is `/LostArk-ArkGrid-Optimizer/` and must match the GitHub repository name, otherwise the
 published assets 404.
 
-## Assumptions, open questions & scope
+## Assumptions, scope & open questions
 
 A fan project that models a live game; here's what's been checked, what hasn't, and where the
 boundaries are.
@@ -109,4 +119,4 @@ Games. "Lost Ark" and all related names and assets belong to their respective ow
 
 ## License
 
-MIT — see [license.txt](license.txt). All game-related assets are property of their respective owners.
+MIT — see [LICENSE](LICENSE). All game-related assets are property of their respective owners.

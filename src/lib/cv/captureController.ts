@@ -308,40 +308,47 @@ export class CaptureController {
 
   private async loop() {
     // While recording, read frames from the reader, send them to the worker, and wait for results.
-    while (this.state == 'recording') {
-      if (!this.reader) {
-        throw Error('reader not exists');
-      }
-      let value: VideoFrame | undefined;
-      try {
-        if (!this.worker) throw Error('worker not exists');
-        const result = await this.reader.read();
-        value = result.value;
-        const done = result.done;
-        if (done) break; // break here when the user stops screen sharing
-        if (!value) break;
+    // loop() is fired without await, so a rejection escaping here would be unhandled: the track
+    // would never stop and the state would stick at 'recording' forever. Catch instead and fall
+    // through to the same teardown the normal stop path uses.
+    try {
+      while (this.state == 'recording') {
+        if (!this.reader) {
+          throw Error('reader not exists');
+        }
+        let value: VideoFrame | undefined;
+        try {
+          if (!this.worker) throw Error('worker not exists');
+          const result = await this.reader.read();
+          value = result.value;
+          const done = result.done;
+          if (done) break; // break here when the user stops screen sharing
+          if (!value) break;
 
-        // Create a promise that resolves when analysis finishes
-        const waitForAnalysis = new Promise<void>((resolve) => {
-          this.awaitFrameCompletion = resolve;
-        });
-        // postMessage the current frame
-        this.worker.postMessage(
-          {
-            type: 'frame',
-            frame: value,
-            drawDebug: this.drawDebug,
-            detectionMargin: this.detectionMargin,
-          } satisfies CaptureWorkerRequest,
-          [value]
-        );
-        value = undefined;
-        // Note: ownership of value was transferred to the worker, so set it to undefined to avoid touching it
-        await waitForAnalysis;
-      } finally {
-        // If for some reason ownership of value wasn't transferred, close it here in the controller
-        value?.close();
+          // Create a promise that resolves when analysis finishes
+          const waitForAnalysis = new Promise<void>((resolve) => {
+            this.awaitFrameCompletion = resolve;
+          });
+          // postMessage the current frame
+          this.worker.postMessage(
+            {
+              type: 'frame',
+              frame: value,
+              drawDebug: this.drawDebug,
+              detectionMargin: this.detectionMargin,
+            } satisfies CaptureWorkerRequest,
+            [value]
+          );
+          value = undefined;
+          // Note: ownership of value was transferred to the worker, so set it to undefined to avoid touching it
+          await waitForAnalysis;
+        } finally {
+          // If for some reason ownership of value wasn't transferred, close it here in the controller
+          value?.close();
+        }
       }
+    } catch (err) {
+      console.error('[capture] loop aborted, tearing down:', err);
     }
     // Once the loop exits, set state to idle
     this.track?.stop();

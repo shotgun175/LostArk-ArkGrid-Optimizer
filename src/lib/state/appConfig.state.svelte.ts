@@ -7,6 +7,9 @@ interface UIConfig {
   showCoreCoeff: boolean;
   debugMode: boolean;
   darkMode: boolean;
+  /** True once the user has explicitly toggled the theme; from then on the
+   *  persisted darkMode wins over the OS prefers-color-scheme at startup. */
+  themeSetByUser: boolean;
   deferredScreenSharingInit: boolean;
   newGemAddStyle: boolean;
 }
@@ -14,6 +17,7 @@ const defaultUIConfig: UIConfig = {
   showCoreCoeff: false,
   debugMode: false,
   darkMode: false,
+  themeSetByUser: false,
   deferredScreenSharingInit: false,
   newGemAddStyle: false,
 };
@@ -65,6 +69,14 @@ export const bigIntSerializer = {
   },
 };
 export function migrateAppConfig(appConfig: Partial<AppConfig>) {
+  // themeSetByUser (added with the OS-preference fix; old payloads predate it).
+  // Payloads that already carry a darkMode value are treated as an explicit
+  // user choice: backfilling false instead would let the OS preference clobber
+  // every existing install's saved theme on its next load. Must run before the
+  // darkMode backfill below so "already carried" is observable.
+  if (appConfig.uiConfig && appConfig.uiConfig.themeSetByUser === undefined) {
+    appConfig.uiConfig.themeSetByUser = appConfig.uiConfig.darkMode !== undefined;
+  }
   // Add uiConfig.darkMode
   if (appConfig.uiConfig && appConfig.uiConfig.darkMode === undefined) {
     appConfig.uiConfig.darkMode = false;
@@ -136,9 +148,13 @@ export function updateUI(optionName: keyof UIConfig, value: boolean) {
 
 export function toggleDarkMode() {
   appConfig.current.uiConfig.darkMode = !appConfig.current.uiConfig.darkMode;
+  appConfig.current.uiConfig.themeSetByUser = true;
 }
-export function enableDarkMode() {
-  appConfig.current.uiConfig.darkMode = true;
+export function applyOsThemePreference(prefersDark: boolean) {
+  // Seed the theme from the OS only while the user has never chosen one;
+  // an explicit toggle persists and must survive reloads.
+  if (appConfig.current.uiConfig.themeSetByUser) return;
+  appConfig.current.uiConfig.darkMode = prefersDark;
 }
 export function toggleDeferredScreenSharingInit() {
   appConfig.current.uiConfig.deferredScreenSharingInit =

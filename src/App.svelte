@@ -13,14 +13,16 @@
   import ProfileEdit from './components/Header/ProfileEditor.svelte';
   import SectionNav from './components/SectionNav.svelte';
   import { type LocalizationName } from './lib/constants/enums';
-  import { appConfig, enableDarkMode, toggleUI } from './lib/state/appConfig.state.svelte';
+  import { appConfig, applyOsThemePreference, toggleUI } from './lib/state/appConfig.state.svelte';
   import { appLocale, setLocale } from './lib/state/locale.state.svelte';
   import { type CharacterProfile, getCurrentProfile } from './lib/state/profile.state.svelte';
   import { initTooltipModal } from './lib/ui/tooltipModal';
 
   let locale = $derived(appLocale.current);
+  // Canonical display name (portfolio-wide); the long descriptive form lives
+  // in the meta description.
   const LTitle: LocalizationName = {
-    en_us: 'Ark Grid Combat Power Optimizer',
+    en_us: 'ArkGrid Optimizer',
   };
   let currentProfile = $state<CharacterProfile>(getCurrentProfile());
   $effect(() => {
@@ -32,11 +34,9 @@
   });
 
   onMount(() => {
-    // Dark mode
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (prefersDark) {
-      enableDarkMode();
-    }
+    // Dark mode: the OS preference only seeds the theme until the user
+    // explicitly toggles it — a persisted choice survives reloads.
+    applyOsThemePreference(window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     // debug CLI
     (window as any).debug = () => {
@@ -52,7 +52,7 @@
   });
   const pageTitle = $derived(
     {
-      en_us: 'Ark Grid Combat Power Optimizer',
+      en_us: 'ArkGrid Optimizer - Combat Power Maximizer for Lost Ark',
     }[appLocale.current]
   );
 </script>

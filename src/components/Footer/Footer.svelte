@@ -1,19 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
   import HubBadge from '../../lib/HubBadge.svelte';
   import Credit from './Credit.svelte';
   import Policy from './Policy.svelte';
   import Terms from './Terms.svelte';
-
-  onMount(() => {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css';
-    link.crossOrigin = 'anonymous';
-    link.referrerPolicy = 'no-referrer';
-    document.head.appendChild(link);
-  });
 
   let dialog = $state<HTMLDialogElement>();
   type Footers = 'credit' | 'policy' | 'terms';
@@ -24,7 +13,7 @@
     terms: 'Terms',
   };
 
-  const openDialong = (component: Footers) => {
+  const openDialog = (component: Footers) => {
     currentFooter = component;
     if (dialog) dialog.showModal();
   };
@@ -56,11 +45,11 @@
 <div class="hub-badge-row"><HubBadge /></div>
 
 <div class="container">
-  <a class="footer-link" href="#credits" onclick={() => openDialong('credit')}>Credits</a>
+  <a class="footer-link" href="#credits" onclick={() => openDialog('credit')}>Credits</a>
 
-  <a class="footer-link" href="#privacy" onclick={() => openDialong('policy')}>Privacy Policy</a>
+  <a class="footer-link" href="#privacy" onclick={() => openDialog('policy')}>Privacy Policy</a>
 
-  <a class="footer-link" href="#terms" onclick={() => openDialong('terms')}>Terms</a>
+  <a class="footer-link" href="#terms" onclick={() => openDialog('terms')}>Terms</a>
 </div>
 
 <style>
