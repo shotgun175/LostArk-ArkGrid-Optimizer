@@ -163,7 +163,9 @@ body {
 
   /* Vertical spacing between elements inside the panel */
   gap: 0.7rem;
-  overflow-y: hidden;
+  /* overflow stays visible: hover tooltips extend above/beside their trigger and must escape the
+     panel rather than be clipped. Inner scroll regions and wide content set their own overflow;
+     the layout's grids reflow instead of overflowing, so the panel never needs to clip. */
 }
 @media (max-width: 767px) {
   .panel {
@@ -353,12 +355,10 @@ input[type='radio']:disabled {
   opacity: 1;
 }
 
-/* On phones, a tooltip centered on its trigger can hang off the screen edge — and because
-   .panel has overflow-y:hidden (which makes overflow-x compute to auto), that off-edge
-   (even while hidden) turns the panel into a sideways-swipe area. Show tooltips as a centered
-   card over a dimmed/blurred backdrop instead: fully readable, removed from the panel's layout
-   (so nothing overflows), and dismissable by tapping the backdrop or pressing Escape (the
-   backdrop + dismissal are wired up in initTooltipModal). */
+/* On phones, a tooltip anchored to its trigger can hang off the screen edge and be unreadable.
+   Show tooltips as a centered card over a dimmed/blurred backdrop instead: fully readable,
+   removed from the panel's layout (so nothing overflows), and dismissable by tapping the
+   backdrop or pressing Escape (the backdrop + dismissal are wired up in initTooltipModal). */
 @media (max-width: 767px) {
   .tooltip-text {
     position: fixed;

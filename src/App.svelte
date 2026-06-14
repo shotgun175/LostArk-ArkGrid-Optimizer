@@ -52,7 +52,7 @@
   });
   const pageTitle = $derived(
     {
-      en_us: 'ArkGrid Optimizer — Ark Grid Combat Power for Lost Ark',
+      en_us: 'ArkGrid Optimizer - Combat Power Maximizer for Lost Ark',
     }[appLocale.current]
   );
 </script>
