@@ -8,7 +8,8 @@
  *
  * To pull the trigger: set STATUS to 'retired' and fill in RETIREMENT_DATE below.
  * Everything else (banner copy, dismissibility) follows automatically. The full
- * sunset checklist lives in DEPRECATION.md at the repo root.
+ * sunset checklist is in the maintainer's local docs/DEPRECATION.md runbook
+ * (kept on disk, not tracked).
  */
 
 export type DeprecationStatus = 'pending' | 'retired';
