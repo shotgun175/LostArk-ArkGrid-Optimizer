@@ -1,18 +1,20 @@
 <script lang="ts">
   import { DEPRECATION } from './deprecation';
 
-  // Dismissal is per-status, so the harder retirement notice re-appears even if a
-  // user had dismissed the earlier pending heads-up. Plain localStorage (matching
-  // captureController's 'arkgrid:' cache keys) is enough — this is a client-only
-  // app (mount(), no SSR), so localStorage is available synchronously and there's
-  // no flash-then-hide.
+  // Session-scoped dismissal: hiding the banner lasts only for the current browsing
+  // session — sessionStorage survives in-tab refreshes but clears when the tab/window
+  // closes — so the heads-up returns on each new visit as a recurring reminder,
+  // without nagging users who refresh repeatedly in one sitting. Keyed by status so
+  // the later retirement notice isn't pre-dismissed by an earlier pending dismissal.
+  // Client-only app (mount(), no SSR), so storage is available synchronously and
+  // there's no flash-then-hide.
   const KEY = `arkgrid:deprecation-dismissed:${DEPRECATION.status}`;
 
   let dismissed = $state(DEPRECATION.dismissible && readDismissed());
 
   function readDismissed(): boolean {
     try {
-      return localStorage.getItem(KEY) === '1';
+      return sessionStorage.getItem(KEY) === '1';
     } catch {
       return false;
     }
@@ -21,7 +23,7 @@
   function dismiss(): void {
     dismissed = true;
     try {
-      localStorage.setItem(KEY, '1');
+      sessionStorage.setItem(KEY, '1');
     } catch {
       // Private mode / storage disabled — the banner just won't stay dismissed.
     }
