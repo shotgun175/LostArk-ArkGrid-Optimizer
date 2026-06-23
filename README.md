@@ -3,6 +3,10 @@
 Part of [Lost Ark Tools](https://shotgun175.github.io/). **Live app:**
 <https://shotgun175.github.io/LostArk-ArkGrid-Optimizer/>
 
+> **Status: winding down.** Lost Ark is introducing built-in Ark Grid optimization, which will
+> supersede this fan tool. The live app and this repository will be retired once the in-game feature
+> ships; until then everything still works.
+
 An Ark Grid combat-power optimizer: a fully client-side web app for Lost Ark's **Ark Grid** astrogem
 system. It finds the highest-combat-power gem loadout from the gems you own, triages which gems to keep
 or replace, and tells you what to farm next — with on-screen gem recognition so you don't have to type
