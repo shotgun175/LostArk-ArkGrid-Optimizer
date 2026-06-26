@@ -14,12 +14,17 @@ import {
   willpowerScore,
 } from './gemScore';
 
-// Independently-derived reference constants (shizukaziye METHODOLOGY §1 closed form:
-// per-level D = 100·ln((1 + other + gridAdd)/(1 + other)) / levels). Computed here from
-// the documented baselines so the test does not just echo the implementation.
-const refAtk = (100 * Math.log(1.132 / 1.121)) / 30; // attack: other 12.1%, +1.1% / 30
-const refAdd = (100 * Math.log(1.3602 / 1.336)) / 30; // add dmg: other 33.6%, +2.42% / 30
-const refBoss = (100 * Math.log(1.025 / 1.0)) / 30; // boss: other 0%, +2.5% / 30
+// Independently-derived reference constants (shizukaziye's current model/astrogem.js `_perLevelD`:
+// the MARGINAL D of one more level on a full lvl-30 grid, 100·ln((base + gridAdd/levels)/base) with
+// base = 1 + other + gridAdd). Computed here from the documented baselines so the test does not just
+// echo the implementation.
+const margD = (other: number, gridAdd: number, levels: number) => {
+  const base = 1 + other + gridAdd;
+  return 100 * Math.log((base + gridAdd / levels) / base);
+};
+const refAtk = margD(0.121, 0.011, 30); // attack: other 12.1%, +1.1% / 30
+const refAdd = margD(0.336, 0.0242, 30); // add dmg: other 33.6%, +2.42% / 30
+const refBoss = margD(0.0, 0.025, 30); // boss: other 0%, +2.5% / 30
 const refOrder = 100 * Math.log(1.0016); // order: flat ×1.0016 per point
 const refWp = 2.4 * refAtk; // willpower keeps the 2.4:1 willpower:attack ratio
 
@@ -35,20 +40,20 @@ function gem(
 describe('per-line D constants (real % damage, log space)', () => {
   it('match the documented closed-form baselines', () => {
     expect(D_ATTACK).toBeCloseTo(refAtk, 10);
-    expect(D_ATTACK).toBeCloseTo(0.0325495, 6);
+    expect(D_ATTACK).toBeCloseTo(0.0323858, 6);
     expect(D_ADD).toBeCloseTo(refAdd, 10);
-    expect(D_ADD).toBeCloseTo(0.0598389, 6);
+    expect(D_ADD).toBeCloseTo(0.0592874, 6);
     expect(D_BOSS).toBeCloseTo(refBoss, 10);
-    expect(D_BOSS).toBeCloseTo(0.0823087, 6);
+    expect(D_BOSS).toBeCloseTo(0.0812678, 6);
     expect(D_ORDER).toBeCloseTo(refOrder, 10);
     expect(D_ORDER).toBeCloseTo(0.159872, 5);
     expect(D_WILLPOWER).toBeCloseTo(refWp, 10);
-    expect(D_WILLPOWER).toBeCloseTo(0.0781187, 6);
+    expect(D_WILLPOWER).toBeCloseTo(0.0777259, 6);
   });
 
-  it('preserves the old DPS weight RATIOS (boss≈2.53, add≈1.84, willpower≈2.4 vs attack=1)', () => {
-    expect(D_BOSS / D_ATTACK).toBeCloseTo(2.53, 2);
-    expect(D_ADD / D_ATTACK).toBeCloseTo(1.84, 2);
+  it('preserves the DPS weight RATIOS (boss≈2.51, add≈1.83, willpower≈2.4 vs attack=1)', () => {
+    expect(D_BOSS / D_ATTACK).toBeCloseTo(2.51, 2);
+    expect(D_ADD / D_ATTACK).toBeCloseTo(1.83, 2);
     expect(D_WILLPOWER / D_ATTACK).toBeCloseTo(2.4, 6);
   });
 });

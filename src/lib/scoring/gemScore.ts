@@ -20,19 +20,24 @@ export type GemRole = 'dps' | 'support';
 export type GemRank = string;
 
 // ---- Per-line D constants (% damage), derived from documented stat baselines ----
-// per-level D = 100 · ln((1 + other + gridAdd) / (1 + other)) / levels
+// MARGINAL D of one more level on top of a full lvl-30 grid — the standalone yardstick each gem is
+// rated against (a single gem can't see the rest of the grid). Matches shizukaziye's current
+// model/astrogem.js `_perLevelD`; his code is the source of truth (his METHODOLOGY.md still shows
+// the older per-level *average* formula, which his code superseded — doc not yet updated).
+//   per-level D = 100 · ln((base + gridAdd/levels) / base),  base = 1 + other + gridAdd
 const STAT_BASELINES = {
   attackPower: { other: 0.121, gridAdd: 0.011, levels: 30 }, // 12.1% other, +1.1% over 30
   additionalDamage: { other: 0.336, gridAdd: 0.0242, levels: 30 }, // 33.6% other, +2.42% over 30
   bossDamage: { other: 0.0, gridAdd: 0.025, levels: 30 }, // 0% other, +2.5% over 30
 } as const;
 function perLevelD(b: { other: number; gridAdd: number; levels: number }): number {
-  return (100 * Math.log((1 + b.other + b.gridAdd) / (1 + b.other))) / b.levels;
+  const base = 1 + b.other + b.gridAdd;
+  return 100 * Math.log((base + b.gridAdd / b.levels) / base);
 }
 
-export const D_ATTACK = perLevelD(STAT_BASELINES.attackPower); // ≈ 0.032549
-export const D_ADD = perLevelD(STAT_BASELINES.additionalDamage); // ≈ 0.059839
-export const D_BOSS = perLevelD(STAT_BASELINES.bossDamage); // ≈ 0.082309
+export const D_ATTACK = perLevelD(STAT_BASELINES.attackPower); // ≈ 0.032386
+export const D_ADD = perLevelD(STAT_BASELINES.additionalDamage); // ≈ 0.059287
+export const D_BOSS = perLevelD(STAT_BASELINES.bossDamage); // ≈ 0.081268
 export const D_ORDER = 100 * Math.log(1.0016); // ≈ 0.159872, FLAT per point
 export const WILLPOWER_OVER_ATTACK_RATIO = 2.4; // kept from the prior model
 export const D_WILLPOWER = WILLPOWER_OVER_ATTACK_RATIO * D_ATTACK; // ≈ 0.078119 per cost-level
