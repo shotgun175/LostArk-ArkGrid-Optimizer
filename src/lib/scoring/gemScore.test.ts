@@ -119,13 +119,15 @@ describe('grade (0–100, min-max over the gem space) + letter rank', () => {
     expect(r.rank.startsWith('F')).toBe(true);
   });
 
-  it('rankFromGrade applies the S85/A75/B65/C50/D25/F0 cuts with +/- thirds', () => {
+  it('rankFromGrade applies the S85/A70/B55/C40/D20/F0 cuts with +/- thirds', () => {
     expect(rankFromGrade(100)).toBe('S+');
-    expect(rankFromGrade(85)).toBe('S-');
-    expect(rankFromGrade(83)).toBe('A+'); // band A [75,85): top third
-    expect(rankFromGrade(80)).toBe('A'); // middle third
-    expect(rankFromGrade(76)).toBe('A-'); // bottom third
-    expect(rankFromGrade(65)).toBe('B-');
+    expect(rankFromGrade(85)).toBe('S-'); // S band [85,100): bottom
+    expect(rankFromGrade(82)).toBe('A+'); // band A [70,85): top third (t=0.8)
+    expect(rankFromGrade(77)).toBe('A'); // middle third (t=0.47)
+    expect(rankFromGrade(72)).toBe('A-'); // bottom third (t=0.13)
+    expect(rankFromGrade(55)).toBe('B-'); // B band [55,70): bottom
+    expect(rankFromGrade(40)).toBe('C-'); // C band [40,55): bottom
+    expect(rankFromGrade(20)).toBe('D-'); // D band [20,40): bottom
     expect(rankFromGrade(0)).toBe('F-');
     expect(grade(gem(5, 5, { optionType: 'BossDamage', value: 5 }, { optionType: 'AddDamage', value: 5 }), 'dps')).toBe(100);
   });

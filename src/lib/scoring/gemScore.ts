@@ -212,12 +212,14 @@ export function grade(gem: ScoredGem, role: GemRole): number {
   return Math.round(Math.max(0, Math.min(100, g)) * 10) / 10;
 }
 
+// Cutoffs synced to shizukaziye's recalibrated multiplicative grade (astrogem-calculator,
+// model/astrogem.js): S85 / A70 / B55 / C40 / D20 / F0.
 const RANK_CUTS: [string, number][] = [
   ['S', 85],
-  ['A', 75],
-  ['B', 65],
-  ['C', 50],
-  ['D', 25],
+  ['A', 70],
+  ['B', 55],
+  ['C', 40],
+  ['D', 20],
   ['F', 0],
 ];
 /** Letter rank from a 0-100 grade; each band split into −/·/+ thirds for finer granularity. */
