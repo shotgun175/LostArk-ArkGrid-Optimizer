@@ -11,6 +11,7 @@ export type CvPoint = CV.Point;
 export type CaptureWorkerRequest =
   | { type: 'init'; scaleHints?: Record<string, number> } // init worker (optionally seeded with persisted per-resolution UI scales)
   | { type: 'frame'; frame: VideoFrame; drawDebug: boolean; detectionMargin: number } // send frame
+  | { type: 'image'; bitmap: ImageBitmap; detectionMargin: number } // recognize a single uploaded/pasted screenshot
   | { type: 'reset' } // clear cached anchor location + scale (force fresh detection)
   | { type: 'stop' };
 
@@ -20,6 +21,16 @@ export type CaptureWorkerResponse =
   | { type: 'init:error' }
   | {
       type: 'frame:done';
+      result:
+        | {
+            locale: GemRecognitionLocale;
+            gemAttr: ArkGridAttr;
+            gems: ArkGridGem[];
+          }
+        | undefined;
+    }
+  | {
+      type: 'image:done';
       result:
         | {
             locale: GemRecognitionLocale;

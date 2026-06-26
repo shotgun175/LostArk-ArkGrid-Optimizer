@@ -8,7 +8,6 @@
   import {
     appConfig,
     sectionUI,
-    setSection,
     toggleDeferredScreenSharingInit,
     toggleSection,
   } from '../../lib/state/appConfig.state.svelte';
@@ -41,7 +40,7 @@
   const LUnsupported = $derived(
     {
       en_us:
-        'On-screen recognition needs a desktop Chromium browser (Chrome or Edge). You can still add gems manually below.',
+        'Live on-screen recognition needs a desktop Chromium browser (Chrome or Edge). On other browsers, use “📷 Upload Screenshot” below to recognize gems from a screenshot, or add gems manually.',
     }[locale]
   );
   const LSupportedClient = $derived(
@@ -54,6 +53,19 @@
       en_us: 'Prevent Screen Sharing Crash',
     }[locale]
   );
+  const LUpload: LocalizationName = {
+    en_us: 'Upload Screenshot',
+  };
+  const LUploadHint = $derived(
+    {
+      en_us: 'Drop a screenshot here, paste (Ctrl/⌘+V), or click to choose a file.',
+    }[locale]
+  );
+  const LUploadProcessing = $derived(
+    {
+      en_us: 'Recognizing…',
+    }[locale]
+  );
   // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
   // MediaStreamTrackProcessor (Chromium-only). Detect once; gate the UI when missing so
   // mobile/Safari/Firefox users get a clear message instead of a button that throws.
@@ -62,14 +74,15 @@
     typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
     typeof (window as any).MediaStreamTrackProcessor === 'function';
 
-  // On devices that can't screen-capture, the whole recognition section is irrelevant (it only
-  // drives the desktop capture flow) — collapse it by default so it doesn't dominate the view.
-  // The unsupported note still shows on the collapsed bar so the user knows why.
-  if (!captureSupported) {
-    setSection('showGemRecognitionPanel', false);
-  }
+  // Note: the panel is no longer auto-collapsed when live capture is unsupported — the “📷 Upload
+  // Screenshot” path works for everyone (mobile / Safari / Firefox included), so the section stays
+  // expanded and the unsupported note simply points those users at upload.
 
   let debugCanvas: HTMLCanvasElement | null;
+  let fileInput = $state<HTMLInputElement | null>(null);
+  let showUpload = $state<boolean>(false);
+  let isDragging = $state<boolean>(false);
+  let isProcessingUpload = $state<boolean>(false);
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
   let isRecording = $state<boolean>(false);
@@ -188,6 +201,30 @@
     }
   }
 
+  // Recognize gems from a single uploaded / pasted / dropped screenshot. Works for everyone —
+  // including mobile / Safari / Firefox — since it needs only the worker, not screen sharing.
+  async function processImageFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return;
+    if (isProcessingUpload) return;
+    isProcessingUpload = true;
+    try {
+      const controller = await getCaptureController();
+      const bitmap = await createImageBitmap(file);
+      const result = await controller.recognizeImage(bitmap);
+      if (result && result.gems.length > 0) {
+        applyCurrentGems(result.gemAttr, result.gems);
+      } else {
+        window.alert(
+          'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot.'
+        );
+      }
+    } catch {
+      window.alert('Could not read that image file.');
+    } finally {
+      isProcessingUpload = false;
+    }
+  }
+
   async function startGemCapture() {
     // The button is hidden when unsupported; guard defensively anyway.
     if (!captureSupported) return;
@@ -250,19 +287,46 @@
     const controller = await getCaptureController();
     controller.detectionMargin = detectionMargin;
   }
-  // On desktop, warm the recognition worker (download + JIT-compile the OpenCV WASM) shortly after
-  // load so the first "Start Screen Sharing" doesn't pay the cold ~5s cost. Deferred to idle so it
-  // never competes with first paint; gated on captureSupported so mobile never fetches the 10.8MB
-  // CV chunk. startGemCapture() reuses the warmed worker.
   onMount(() => {
-    if (!captureSupported) return;
-    const warm = () => void getCaptureController().then((c) => c.warmup());
-    if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(warm, { timeout: 3000 });
-      return () => cancelIdleCallback(id);
+    // Paste-to-recognize: only acts while the upload panel is open, so it never hijacks paste
+    // elsewhere. Reads the first image item off the clipboard and runs it through recognition.
+    const onPaste = (e: ClipboardEvent) => {
+      if (!showUpload) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void processImageFile(file);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+
+    // On desktop, warm the recognition worker (download + JIT-compile the OpenCV WASM) shortly
+    // after load so the first "Start Screen Sharing" doesn't pay the cold ~5s cost. Deferred to
+    // idle so it never competes with first paint; gated on captureSupported so mobile never
+    // fetches the 10.8MB CV chunk on load (upload lazy-loads it only when a file is chosen).
+    let cancelWarm: (() => void) | undefined;
+    if (captureSupported) {
+      const warm = () => void getCaptureController().then((c) => c.warmup());
+      if (typeof requestIdleCallback === 'function') {
+        const id = requestIdleCallback(warm, { timeout: 3000 });
+        cancelWarm = () => cancelIdleCallback(id);
+      } else {
+        const id = window.setTimeout(warm, 1200);
+        cancelWarm = () => clearTimeout(id);
+      }
     }
-    const id = window.setTimeout(warm, 1200);
-    return () => clearTimeout(id);
+
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      cancelWarm?.();
+    };
   });
 
   onDestroy(async () => {
@@ -330,8 +394,55 @@
           </button>
         {/if}
       </div>
-      <div class="right"></div>
+      <div class="right">
+        <!-- Available to everyone (not gated on captureSupported): static-image recognition is the
+             path mobile / Safari / Firefox users have, and a convenience for desktop too. -->
+        <button class:active={showUpload} onclick={() => (showUpload = !showUpload)}>
+          📷 {LUpload[locale]}
+        </button>
+      </div>
     </div>
+    {#if showUpload}
+      <div
+        class="upload-zone"
+        class:dragging={isDragging}
+        class:busy={isProcessingUpload}
+        role="button"
+        tabindex="0"
+        aria-label={LUpload[locale]}
+        aria-busy={isProcessingUpload}
+        onclick={() => fileInput?.click()}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput?.click();
+          }
+        }}
+        ondragover={(e) => {
+          e.preventDefault();
+          isDragging = true;
+        }}
+        ondragleave={() => (isDragging = false)}
+        ondrop={(e) => {
+          e.preventDefault();
+          isDragging = false;
+          void processImageFile(e.dataTransfer?.files?.[0]);
+        }}
+      >
+        <span class="upload-zone-text">{isProcessingUpload ? LUploadProcessing : LUploadHint}</span>
+        <input
+          bind:this={fileInput}
+          class="upload-file-input"
+          type="file"
+          accept="image/*"
+          onchange={(e) => {
+            const input = e.currentTarget;
+            void processImageFile(input.files?.[0]);
+            input.value = '';
+          }}
+        />
+      </div>
+    {/if}
     <div hidden={!isDebugging}>
       <div class="debug-screen">
         <div class="threshold-controller">
@@ -436,6 +547,41 @@
     opacity: 0.85;
     max-width: 36rem;
     line-height: 1.4;
+  }
+
+  .upload-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border: 2px dashed var(--text);
+    border-radius: 8px;
+    padding: 1.5rem 1rem;
+    cursor: pointer;
+    opacity: 0.85;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      opacity 0.15s ease;
+  }
+  .upload-zone:hover,
+  .upload-zone:focus-visible {
+    opacity: 1;
+    outline: none;
+  }
+  .upload-zone.dragging {
+    border-color: #22c55e;
+    background-color: rgba(34, 197, 94, 0.08);
+    opacity: 1;
+  }
+  .upload-zone.busy {
+    cursor: progress;
+  }
+  .upload-zone-text {
+    pointer-events: none;
+  }
+  .upload-file-input {
+    display: none;
   }
 
   .panel > .content {

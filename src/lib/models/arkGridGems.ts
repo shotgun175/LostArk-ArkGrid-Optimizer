@@ -2,9 +2,17 @@ import { type ArkGridAttr, type LostArkGrade } from '../constants/enums';
 // Pure gem data (option types, specs) lives in arkGridGemSpecs.ts so the
 // support-table generator can import it without Vite. Re-exported here so
 // existing importers keep working.
-import { type ArkGridGemName, type ArkGridGemOptionName, ArkGridGemSpecs } from './arkGridGemSpecs';
+import { type ArkGridGemName, type ArkGridGemOptionName } from './arkGridGemSpecs';
 
-export { ArkGridGemOptionNames, ArkGridGemOptionTypes, ArkGridGemSpecs } from './arkGridGemSpecs';
+export {
+  ArkGridGemOptionNames,
+  ArkGridGemOptionTypes,
+  ArkGridGemSpecs,
+  // Grade logic lives in the Vite-free specs module so node-side tooling can import it;
+  // re-exported here so existing `from '../models/arkGridGems'` importers keep working.
+  determineGemGrade,
+  determineGemGradeByGem,
+} from './arkGridGemSpecs';
 export type {
   ArkGridGemName,
   ArkGridGemOptionName,
@@ -35,23 +43,6 @@ export interface ArkGridGem {
 
 export function gemFingerprint(gem: ArkGridGem): string {
   return `${gem.req}|${gem.point}|${gem.option1.optionType}|${gem.option1.value}|${gem.option2.optionType}|${gem.option2.value}`;
-}
-
-export function determineGemGrade(
-  req: number,
-  point: number,
-  option1: ArkGridGemOption,
-  option2: ArkGridGemOption,
-  name?: ArkGridGemName
-) {
-  const basePoint = name ? ArkGridGemSpecs[name].req : 8;
-  const totalPoint = basePoint - req + point + option1.value + option2.value;
-  return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
-}
-export function determineGemGradeByGem(gem: ArkGridGem) {
-  const basePoint = gem.name ? ArkGridGemSpecs[gem.name].req : 8;
-  const totalPoint = basePoint - gem.req + gem.point + gem.option1.value + gem.option2.value;
-  return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
 }
 
 export function isSameArkGridGem(a: ArkGridGem | undefined, b: ArkGridGem | undefined): boolean {

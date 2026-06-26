@@ -35,6 +35,13 @@ export class CaptureController {
     reject: (reason: StartCaptureErrorType) => void;
   } | null = null;
   private awaitFrameCompletion: (() => void) | null = null;
+  // Resolver for an in-flight recognizeImage() call (static-image upload path).
+  private awaitImageCompletion:
+    | ((result: { gemAttr: ArkGridAttr; gems: ArkGridGem[] } | null) => void)
+    | null = null;
+  // True once the worker has reported init:done at least once (warmup or a prior call), so
+  // recognizeImage() can skip a redundant re-init when the worker is already warm.
+  private workerInitialized = false;
 
   // Externally registered callbacks
   onFrameDone: ((gemAttr: ArkGridAttr, gems: ArkGridGem[]) => void) | null = null; // analysis done
@@ -58,12 +65,21 @@ export class CaptureController {
 
     switch (data.type) {
       case 'init:done':
+        this.workerInitialized = true;
         this.awaitWorkerInitialization?.resolve();
         this.awaitWorkerInitialization = null;
         const onLoad = this.onLoad;
         if (onLoad) {
           queueMicrotask(() => onLoad());
         }
+        break;
+
+      case 'image:done':
+        // Resolve the pending recognizeImage() promise with the recognized gems (or null).
+        this.awaitImageCompletion?.(
+          data.result ? { gemAttr: data.result.gemAttr, gems: data.result.gems } : null
+        );
+        this.awaitImageCompletion = null;
         break;
 
       case 'frame:done':
@@ -232,6 +248,55 @@ export class CaptureController {
     } catch {
       // Best-effort; if worker creation fails here, startCapture() will try again normally.
       this.worker = null;
+    }
+  }
+
+  /**
+   * Recognize gems from a single uploaded / pasted / dropped screenshot. Unlike {@link startCapture}
+   * this needs NO screen share (no getDisplayMedia / MediaStreamTrackProcessor), so it works on
+   * mobile / Safari / Firefox where live capture is unsupported — it only needs the worker plus
+   * OpenCV's matFromImageData. The first call lazily creates the worker, which downloads + compiles
+   * the ~10.8MB CV WASM chunk. The bitmap is transferred to the worker (which closes it). Resolves
+   * with the recognized gems, or null if nothing was recognized or worker init failed.
+   */
+  async recognizeImage(
+    bitmap: ImageBitmap
+  ): Promise<{ gemAttr: ArkGridAttr; gems: ArkGridGem[] } | null> {
+    try {
+      if (!this.worker) {
+        this.worker = new Worker(new URL('./captureWorker.ts', import.meta.url), {
+          type: 'module',
+        });
+        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      }
+      if (!this.workerInitialized) {
+        const waitForInit = new Promise<void>((resolve, reject) => {
+          this.awaitWorkerInitialization = { resolve, reject };
+        });
+        this.postMessage({ type: 'init', scaleHints: this.readScaleCache() });
+        await waitForInit;
+      }
+      return await new Promise<{ gemAttr: ArkGridAttr; gems: ArkGridGem[] } | null>((resolve) => {
+        this.awaitImageCompletion = resolve;
+        this.worker!.postMessage(
+          {
+            type: 'image',
+            bitmap,
+            detectionMargin: this.detectionMargin,
+          } satisfies CaptureWorkerRequest,
+          [bitmap]
+        );
+      });
+    } catch {
+      // Init was rejected (worker-init-failed) or worker creation threw — surface as "no result"
+      // so the caller can show a friendly message. The bitmap wasn't transferred yet; release it.
+      this.awaitImageCompletion = null;
+      try {
+        bitmap.close();
+      } catch {
+        // already closed / transferred
+      }
+      return null;
     }
   }
 
