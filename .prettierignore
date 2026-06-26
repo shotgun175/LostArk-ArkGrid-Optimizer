@@ -18,5 +18,4 @@ dist
 build
 
 # Generated, minified data modules — keep them compact, don't reformat
-src/lib/cutplan/pipelineTable.json
-src/lib/cutplan/supportCutQuality.json
+src/lib/cutplan/pipeline.json

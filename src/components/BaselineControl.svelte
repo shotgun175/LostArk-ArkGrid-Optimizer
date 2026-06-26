@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ArkGridGem } from '../lib/models/arkGridGems';
-  import { type GemRole } from '../lib/scoring/gemScore';
+  import { type GemRole, maxScoreForRole } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
   import {
     type CharacterProfile,
@@ -18,9 +18,20 @@
   let equipped: ArkGridGem[] = $derived(
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
+  // Slider ceiling = the highest score any real gem of this role can reach (DPS ≈ 1.5, support ≈ 1.0),
+  // so the baseline can't run off into a range no gem could occupy.
+  let blMax = $derived(Math.ceil(maxScoreForRole(role) * 10) / 10);
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
-  let baseline = $derived(Math.round(effectiveBaseline(auto, build.baselineOverride)));
+  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
   let usingOverride = $derived(build.baselineOverride !== undefined);
+
+  // Auto-correct a stale manual override above the role's ceiling (e.g. a high DPS baseline left
+  // over when switching to Support) so the slider can always represent the active value.
+  $effect(() => {
+    if (build.baselineOverride !== undefined && build.baselineOverride > blMax) {
+      updateBaselineOverride(blMax);
+    }
+  });
 
   function onSlider(e: Event) {
     updateBaselineOverride(Number((e.target as HTMLInputElement).value));
@@ -29,7 +40,14 @@
     updateBaselineOverride(undefined);
   }
 
-  const ticks = Array.from({ length: 21 }, (_, i) => i);
+  // Baseline is in % damage. Ticks span 0..ceiling at a role-appropriate step.
+  let ticks = $derived.by(() => {
+    const step = blMax > 1.2 ? 0.5 : 0.25;
+    const out: number[] = [];
+    for (let v = 0; v <= blMax + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  });
+  const fmtTick = (t: number) => t.toFixed(2).replace(/\.?0+$/, '') || '0';
 </script>
 
 <div class="baseline-control">
@@ -37,7 +55,7 @@
     <span class="bl-label">Baseline Level</span>
     <div class="bl-status">
       <span class="bl-badge" class:manual={usingOverride}>
-        <span class="bl-num">{baseline}</span>
+        <span class="bl-num">{baseline.toFixed(2)}%</span>
         <span class="bl-mode">· {usingOverride ? 'manual mode' : 'auto mode'}</span>
       </span>
       {#if usingOverride}
@@ -48,10 +66,10 @@
   <input
     class="bl-slider"
     type="range"
-    aria-label="Baseline Level"
+    aria-label="Baseline (% damage)"
     min="0"
-    max="20"
-    step="1"
+    max={blMax}
+    step="0.05"
     value={baseline}
     oninput={onSlider}
   />
@@ -61,7 +79,7 @@
         type="button"
         class="slider-tick"
         class:active={t === baseline}
-        onclick={() => updateBaselineOverride(t)}>{t}</button
+        onclick={() => updateBaselineOverride(t)}>{fmtTick(t)}</button
       >
     {/each}
   </div>
@@ -69,7 +87,7 @@
     {#if auto === null && !usingOverride}
       Run the optimizer to auto-set this from your equipped loadout, or drag to set it manually.
     {:else}
-      Gems scoring above {baseline} are upgrades over your weakest equipped gem.
+      Gems scoring above {baseline.toFixed(2)}% are upgrades over your weakest equipped gem.
     {/if}
   </div>
 </div>

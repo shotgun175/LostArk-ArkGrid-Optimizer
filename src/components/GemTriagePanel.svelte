@@ -5,15 +5,13 @@
     ArkGridGemOptionTypes,
   } from '../lib/models/arkGridGems';
   import {
-    DPS_NODE_COEFF,
+    D_ORDER,
+    D_WILLPOWER,
+    DPS_EFFECT_D,
+    type GemRank,
     type GemRole,
-    type GemTier,
-    POINT_NEUTRAL,
-    POINT_STEP,
-    SUPPORT_NODE_COEFF,
+    SUPPORT_EFFECT_D,
     type ScoreFactor,
-    WILLPOWER_NEUTRAL,
-    WILLPOWER_STEP,
     computeGemScore,
     explainGemScore,
   } from '../lib/scoring/gemScore';
@@ -45,7 +43,8 @@
   type Row = {
     gem: ArkGridGem;
     score: number;
-    tier: GemTier;
+    grade: number;
+    rank: GemRank;
     action: TriageAction;
   };
 
@@ -82,7 +81,7 @@
     const oChaosHeadroom = dual ? attrHasUpgradeHeadroom(oBuild.cores.Chaos) : false;
 
     const scored = owned.map((gem, i) => {
-      const { score, tier } = computeGemScore(gem, role);
+      const { score, grade, rank } = computeGemScore(gem, role);
       const hasHeadroom = gem.gemAttr === 'Order' ? orderHeadroom : chaosHeadroom;
       let result = triageGem({ score, baseline, isEquipped: flags[i], hasHeadroom });
       if (dual) {
@@ -95,7 +94,7 @@
         });
         result = reconcileDualBuild(result, oResult, oRole);
       }
-      return { gem, score, tier, action: result.action };
+      return { gem, score, grade, rank, action: result.action };
     });
     scored.sort((a, b) => (worstFirst ? a.score - b.score : b.score - a.score));
     return scored;
@@ -106,12 +105,14 @@
   let keepCount = $derived(rows.filter((r) => r.action === 'keep').length);
   let removeCount = $derived(rows.filter((r) => r.action === 'remove').length);
 
-  const r1 = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+  // Score is real % damage: the headline shows 2 dp + "%", the per-line factors 4 dp.
+  const pct = (n: number) => `${(Math.round(n * 100) / 100).toFixed(2)}%`;
+  const f4 = (n: number) => (Math.round(n * 1e4) / 1e4).toFixed(4);
   // Plain-text breakdown for the native hover tooltip on each score (clip-free in the scroll list).
   const scoreTitle = (factors: ScoreFactor[], score: number) =>
     [
-      ...factors.map((f) => `${f.label}  ${f.detail} = ${f.value >= 0 ? '+' : ''}${r1(f.value)}`),
-      `Total = ${r1(score)}`,
+      ...factors.map((f) => `${f.label}  ${f.detail} = ${f.value >= 0 ? '+' : ''}${f4(f.value)}`),
+      `Total = ${pct(score)}`,
     ].join('\n');
 
   const ACTION_LABEL: Record<TriageAction, string> = {
@@ -147,18 +148,21 @@
     {#if showHelp}
       <div class="score-help">
         <div class="sh-title">How the score is calculated</div>
-        <p class="sh-eq">Score = Willpower + Chaos Points + Option&nbsp;1 + Option&nbsp;2</p>
+        <p class="sh-eq">Score (% damage) = Willpower + Order&nbsp;Points + Option&nbsp;1 + Option&nbsp;2</p>
         <ul class="sh-list">
           <li>
-            <strong>Willpower</strong> = ({WILLPOWER_NEUTRAL} - level) × {WILLPOWER_STEP} - a lower willpower
+            Each line is real <strong>% damage</strong> (D = 100·ln of its multiplier), so they add up
+            to the gem's approximate total % damage. A perfect gem is ≈ 1.4%.
+          </li>
+          <li>
+            <strong>Willpower</strong> = (4 - req) × {f4(D_WILLPOWER)} per cost-level - a lower willpower
             requirement scores higher.
           </li>
           <li>
-            <strong>Chaos Points</strong> = (level - {POINT_NEUTRAL}) × {POINT_STEP} - more chaos points
-            score higher.
+            <strong>Order Points</strong> = level × {f4(D_ORDER)} - flat per point.
           </li>
           <li>
-            <strong>Each option</strong> = its level × the node coefficient below (depends on your role).
+            <strong>Each option</strong> = its level × the per-level % damage below (depends on your role).
           </li>
         </ul>
         <table class="sh-coeff">
@@ -174,33 +178,28 @@
               <tr>
                 <td>{ArkGridGemOptionTypes[opt].name.en_us}</td>
                 {#if role === 'support'}
-                  <td class="active-lens">{SUPPORT_NODE_COEFF[opt]}</td>
-                  <td>{DPS_NODE_COEFF[opt]}</td>
+                  <td class="active-lens">{f4(SUPPORT_EFFECT_D[opt])}</td>
+                  <td>{f4(DPS_EFFECT_D[opt])}</td>
                 {:else}
-                  <td class="active-lens">{DPS_NODE_COEFF[opt]}</td>
-                  <td>{SUPPORT_NODE_COEFF[opt]}</td>
+                  <td class="active-lens">{f4(DPS_EFFECT_D[opt])}</td>
+                  <td>{f4(SUPPORT_EFFECT_D[opt])}</td>
                 {/if}
               </tr>
             {/each}
           </tbody>
         </table>
-        <div class="sh-tiers">
-          <span class="tier" data-tier="Priority to Replace">
-            <span class="t-name">Priority to Replace</span>
-            <span class="t-range">&lt; 5</span>
-          </span>
-          <span class="tier" data-tier="Good for now">
-            <span class="t-name">Good for now</span>
-            <span class="t-range">5 - 9.99</span>
-          </span>
-          <span class="tier" data-tier="Very Good">
-            <span class="t-name">Very Good</span>
-            <span class="t-range">10 - 14.99</span>
-          </span>
-          <span class="tier" data-tier="Excellent">
-            <span class="t-name">Excellent</span>
-            <span class="t-range">≥ 15</span>
-          </span>
+        <p class="sh-eq">Grade &amp; rank</p>
+        <ul class="sh-list">
+          <li>
+            Each gem also gets a <strong>0-100 grade</strong> (0 = worst possible, 100 = a perfect gem)
+            and a letter <strong>rank</strong>. Cutoffs: S ≥ 85, A ≥ 75, B ≥ 65, C ≥ 50, D ≥ 25, F ≥ 0 -
+            each split into +/·/- thirds (S+, S, S-, A+ …).
+          </li>
+        </ul>
+        <div class="sh-ranks">
+          {#each ['S+', 'S', 'A', 'B', 'C', 'D', 'F'] as rk}
+            <span class="rank" data-rank={rk}>{rk}</span>
+          {/each}
         </div>
         <p class="sh-hint">
           Tip: <span class="hint-hover">hover</span><span class="hint-tap">tap</span> any score to see
@@ -274,21 +273,21 @@
             <div class="badges">
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <span class="score-pop" tabindex="0" title={scoreTitle(factors, row.score)}>
-                <span class="score">{r1(row.score)}</span>
+                <span class="score">{pct(row.score)}</span>
                 <span class="tooltip-text score-breakdown">
                   {#each factors as f}
                     <span class="sf">
                       <span>{f.label}</span>
-                      <span>{f.detail} = {f.value >= 0 ? '+' : ''}{r1(f.value)}</span>
+                      <span>{f.detail} = {f.value >= 0 ? '+' : ''}{f4(f.value)}</span>
                     </span>
                   {/each}
                   <span class="sf sf-total">
                     <span>Total</span>
-                    <span>{r1(row.score)}</span>
+                    <span>{pct(row.score)}</span>
                   </span>
                 </span>
               </span>
-              <span class="tier" data-tier={row.tier}>{row.tier}</span>
+              <span class="rank" data-rank={row.rank} title="Grade {row.grade} / 100">{row.rank}</span>
               <span class="action" data-action={row.action}>{ACTION_LABEL[row.action]}</span>
             </div>
           </div>
@@ -421,20 +420,10 @@
   :global(.dark-mode) .sh-coeff .active-lens {
     background: rgba(240, 192, 64, 0.18);
   }
-  .sh-tiers {
+  .sh-ranks {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
-  }
-  .sh-tiers .tier {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.25;
-  }
-  .t-range {
-    font-weight: 400;
-    font-size: 0.75rem;
   }
   .sh-hint {
     opacity: 0.75;
@@ -566,26 +555,30 @@
     text-align: right;
     cursor: help;
   }
-  .tier {
+  /* Letter-rank badge, colored by band (F/D gray, C green, B blue, A purple, S pink). */
+  .rank {
     padding: 0.1rem 0.5rem;
     border-radius: 0.5rem;
     font-size: 0.8rem;
-    font-weight: 700;
+    font-weight: 800;
     white-space: nowrap;
+    min-width: 2.5rem;
+    text-align: center;
     color: #fff;
+    font-variant-numeric: tabular-nums;
+    background: #6f747a; /* default: F / D */
   }
-  /* In-game grade colors, so the tier pill never shares a hue with the action pill. */
-  .tier[data-tier='Excellent'] {
-    background: #ce43fc; /* epic */
+  .rank[data-rank^='C'] {
+    background: #4f9d5d;
   }
-  .tier[data-tier='Very Good'] {
-    background: #0e7490; /* rare (teal) */
+  .rank[data-rank^='B'] {
+    background: #3b7fd0;
   }
-  .tier[data-tier='Good for now'] {
-    background: #b8860b; /* original goldenrod */
+  .rank[data-rank^='A'] {
+    background: #7e5cc0;
   }
-  .tier[data-tier='Priority to Replace'] {
-    background: #c62828;
+  .rank[data-rank^='S'] {
+    background: #c95f85;
   }
   .action {
     font-weight: 700;

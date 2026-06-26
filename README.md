@@ -61,16 +61,15 @@ npm run check      # svelte-check + tsc type checking
 Some data modules are generated at build time and committed:
 
 ```bash
-npm run generate:sprite             # OpenCV template sprites + coordinate maps
-npm run generate:pipeline           # DPS cutting-plan table -> src/lib/cutplan/pipelineTable.json
-npm run generate:support-cutquality # Support single-cut quality data -> src/lib/cutplan/supportCutQuality.json
+npm run generate:sprite   # OpenCV template sprites + coordinate maps
+npm run generate:pipeline # Cutting-plan dataset (DPS + Support) -> src/lib/cutplan/pipeline.json
 ```
 
-Note: `generate:pipeline` reads `Reference Projects/astrogem-pipeline-table-main/index.html`, a
-third-party reference table that is deliberately **not** tracked — the command only runs on a machine
-that has it. The committed `pipelineTable.json` carries a `_meta` block (input sha256 + date) so it
-stays auditable. `generate:support-cutquality` is fully self-contained and deterministic (seeded RNG);
-CI regenerates it and fails on drift.
+Note: `generate:pipeline` reads shizukaziye's `astrogem-calculator` pipeline data
+(`data/pipeline.json` + `data/pipeline-support.json`) from under `Reference Projects/`, third-party
+content that is deliberately **not** tracked — the command only runs on a machine that has it. The
+committed `pipeline.json` (his exact Bellman-DP, real % damage, used with attribution) carries a
+`_provenance` block (each source's sha256 + date) so it stays auditable.
 
 ## Deployment
 

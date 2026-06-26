@@ -15,8 +15,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "generate:sprite": "node scripts/generate-sprite.cjs",
-    "generate:pipeline": "node scripts/extract-pipeline-table.cjs",
-    "generate:support-cutquality": "tsx scripts/generate-support-cutquality.mts"
+    "generate:pipeline": "node scripts/extract-pipeline.cjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",

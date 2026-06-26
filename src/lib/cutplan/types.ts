@@ -1,36 +1,95 @@
+// Types for the per-effect-pair-bucket cut-plan model (shizukaziye's exact Bellman-DP
+// pipeline, real % damage). Both axes (DPS, Support) share this shape; the data is baked
+// by scripts/extract-pipeline.cjs into pipeline.json.
+
 export type GoldBracket = '500k' | '1M' | '1_5M' | '2_5M' | '3_5M' | '5M' | '7_5M' | '10M';
 export type BindingMode = 'nrb' | 'rb';
-export type CutAction = 'cut-reset' | 'cut' | 'fuse' | 'dont-cut';
-export type Archetype = 'UC8' | 'UC9' | 'UC10' | 'R8' | 'R9' | 'R10' | 'E8' | 'E9' | 'E10';
-export type Bucket = '2D' | 'Op' | 'Sub' | 'No';
+export type CutAxis = 'dps' | 'support';
+export type CutAction = 'cut-reset' | 'cut' | 'dont-cut';
+export type Rarity = 'uncommon' | 'rare' | 'epic';
+export type BucketKey = '2_damage' | 'optimal_damage' | 'suboptimal_damage' | 'no_damage';
+/** Verdict band from the cut value (his meta.verdict gold thresholds). */
+export type Verdict = 'green' | 'yellow-hi' | 'yellow-mid' | 'yellow-lo' | 'yellow-dim' | 'red';
 
-export interface BucketCell {
-  goldEV: number | null;
-  pct: number | null;
+// ---- Baked data shape (output of scripts/extract-pipeline.cjs) ----
+export interface CellNrb {
+  cut: number; // exact Bellman gold value of cutting a fresh gem of this archetype
+  pAbove: number; // P(the optimal cut ends at/above baseline)
+  expScore: number; // expected % damage of the cut
+  fLeg: number; // fodder tier split (legendary / relic / ancient), sums to 1 − pAbove
+  fRelic: number;
+  fAnc: number;
+}
+export interface CellRb {
+  cut: number;
+  pAbove: number;
+  expScore: number;
+}
+export interface PipelineCellEntry {
+  b: number; // baseline anchor (% damage)
+  nrb: CellNrb;
+  rb: CellRb;
+}
+export interface PipelineThruEntry {
+  b: number;
+  directPerWk: number;
+  fusePerWk: number;
+  totalPerWk: number;
+  weeks: number | null; // null when total = 0 (24/0 = ∞); recomputed from total at read time
+  goldPerWk: number;
+  boxEV: number;
+  avgScore: number;
+  cpGain: number;
+}
+export interface PipelineMeta {
+  scoreUnit: string;
+  costs: number[];
+  rarities: Rarity[];
+  buckets: BucketKey[];
+  bucketLabels: Record<BucketKey, string>;
+  effectBuckets: Record<string, Record<BucketKey, { effect1: string; effect2: string }>>;
+  verdict: { green: number; yellowHi: number; yellowMid: number; yellowLo: number; red: number };
+  slots: number;
+  cutsPerWeek: Record<Rarity, number>;
+  boxSchedule: { count: number; rarity: Rarity }[];
+  freshBucketMix: Record<BucketKey, number>;
+  anchorGpd: number[];
+  baselines: number[];
+}
+type CellsByGpd = Record<string, PipelineCellEntry[]>;
+type ThruByGpd = Record<string, PipelineThruEntry[]>;
+export interface PipelineAxis {
+  cells: Record<Rarity, Record<string, Record<BucketKey, CellsByGpd>>>;
+  thru: Record<Rarity, Record<string, ThruByGpd>>;
+}
+export interface PipelineData {
+  _provenance: Record<string, unknown>;
+  meta: PipelineMeta;
+  axes: Record<CutAxis, PipelineAxis>;
+}
+
+// ---- Interpolated results the UI renders ----
+export interface CutCell {
+  cut: number;
+  pAbove: number;
+  expScore: number;
+  fLeg: number;
+  fRelic: number;
+  fAnc: number;
+  verdict: Verdict;
   action: CutAction;
+  resetWorthy: boolean; // green band — worth resetting if it lands below baseline
 }
-export interface ArchetypeCell {
-  headerEV: number | null;
-  buckets: Partial<Record<Bucket, BucketCell>>;
+export interface ThruRow {
+  directPerWk: number;
+  fusePerWk: number;
+  totalPerWk: number;
+  weeks: number | null; // null = nothing clears the baseline (can't fill at this budget)
+  goldPerWk: number;
+  boxEV: number;
+  avgScore: number;
+  cpGain: number;
 }
-export interface PipelineStats {
-  boxes: string;
-  boxEV: string;
-  directWk: string;
-  fuseWk: string;
-  totalWk: string;
-  weeks: string;
-  gold: string;
-  avgScore: string;
-  totalScore: string;
-  cpGain: string;
-}
-export interface CutPlanRow {
-  baseline: number;
-  archetypes: Record<Archetype, ArchetypeCell>;
-  pipeline: PipelineStats;
-}
-export type PipelineTable = Record<GoldBracket, Record<BindingMode, CutPlanRow[]>>;
 
 export const GOLD_BRACKETS: GoldBracket[] = [
   '500k',
@@ -42,11 +101,7 @@ export const GOLD_BRACKETS: GoldBracket[] = [
   '7_5M',
   '10M',
 ];
-export const ARCHETYPES: Archetype[] = ['UC8', 'UC9', 'UC10', 'R8', 'R9', 'R10', 'E8', 'E9', 'E10'];
-export const BUCKETS: Bucket[] = ['2D', 'Op', 'Sub', 'No'];
-
-// Numeric "gold per 1% damage" for each bracket (the author's value selector). Drives the support
-// EV (and could back the DPS value formula too); the DPS pipeline table embeds its own EVs already.
+/** "Gold per 1% damage" for each bracket; these are exactly his baked gpd anchors. */
 export const GOLD_PER_DAMAGE: Record<GoldBracket, number> = {
   '500k': 500_000,
   '1M': 1_000_000,
@@ -58,33 +113,16 @@ export const GOLD_PER_DAMAGE: Record<GoldBracket, number> = {
   '10M': 10_000_000,
 };
 
-// supportCutQuality[baseline][archetype][bucket] = { pct: P(score > baseline), avg: E[score | >bl] }.
-export interface SupportCell {
-  pct: number;
-  avg: number | null;
-}
-export type SupportCutQuality = Record<
-  string,
-  Record<Archetype, Partial<Record<Bucket, SupportCell>>>
->;
-
-export interface SupportArchetypeRank {
-  archetype: Archetype;
-  best: number; // best single-cut % across this archetype's buckets at the baseline
-  // per-bucket single-cut % + E[score | above baseline], for the cards and the EV-based cut action
-  buckets: Partial<Record<Bucket, { pct: number; avg: number | null }>>;
-}
-
-// Support summary values. The weekly-rate tiles are copied from the DPS pipeline (role-agnostic
-// acquisition/cutting); these are the support-scored values + the best-target headline.
-export interface SupportSummary {
-  bestPct: number; // best single-cut chance across all archetypes/buckets (drives the best-target hint)
-  bestTarget: { archetype: Archetype; bucket: Bucket } | null;
-  avgScore: number | null; // best target's E[score | above baseline]
-  totalScore: number | null; // avgScore × grid slots (projected full grid)
-}
-
-export interface SupportPlan {
-  ranks: SupportArchetypeRank[];
-  summary: SupportSummary;
-}
+export const RARITIES: Rarity[] = ['uncommon', 'rare', 'epic'];
+export const COSTS = [8, 9, 10] as const;
+export const BUCKET_KEYS: BucketKey[] = [
+  '2_damage',
+  'optimal_damage',
+  'suboptimal_damage',
+  'no_damage',
+];
+export const RARITY_LABEL: Record<Rarity, string> = {
+  uncommon: 'Uncommon',
+  rare: 'Rare',
+  epic: 'Epic',
+};

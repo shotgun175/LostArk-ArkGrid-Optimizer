@@ -1,130 +1,176 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  actionFor,
   actionLabel,
   bracketLabel,
-  getDpsPlan,
-  getSupportPlan,
-  supportBucketAction,
+  effectPair,
+  getCutCell,
+  getThru,
+  headerCut,
+  verdictFor,
   weeksBand,
 } from './cutPlan';
-import type { PipelineTable } from './types';
-import type { SupportCutQuality } from './types';
+import type { PipelineData, PipelineMeta } from './types';
 
-// Minimal fake table: bracket 500k has BL window 5-6.
-const table = {
-  '500k': {
-    nrb: [
-      { baseline: 5, archetypes: {} as any, pipeline: { weeks: '6.8' } as any },
-      { baseline: 6, archetypes: {} as any, pipeline: { weeks: '9.7' } as any },
-    ],
-    rb: [],
+const verdict: PipelineMeta['verdict'] = {
+  green: 18000,
+  yellowHi: 10000,
+  yellowMid: 5000,
+  yellowLo: 1000,
+  red: 0,
+};
+
+// Minimal fake pipeline: one epic/c8 archetype with two buckets and two baseline anchors
+// (b=1 and b=2), gpd anchor 500000, plus a throughput row, so interpolation is testable.
+const meta: PipelineMeta = {
+  scoreUnit: 'percent_damage',
+  costs: [8],
+  rarities: ['epic'],
+  buckets: ['2_damage', 'no_damage'],
+  bucketLabels: { '2_damage': '2D', optimal_damage: 'Op', suboptimal_damage: 'Sub', no_damage: 'No' },
+  effectBuckets: {
+    '8': {
+      '2_damage': { effect1: 'Additional Damage', effect2: 'Attack Power' },
+      optimal_damage: { effect1: 'Additional Damage', effect2: 'Brand Power' },
+      suboptimal_damage: { effect1: 'Attack Power', effect2: 'Brand Power' },
+      no_damage: { effect1: 'Brand Power', effect2: 'Ally Damage Enh.' },
+    },
   },
-} as unknown as PipelineTable;
+  verdict,
+  slots: 24,
+  cutsPerWeek: { uncommon: 70, rare: 26, epic: 9 },
+  boxSchedule: [],
+  freshBucketMix: { '2_damage': 0.17, optimal_damage: 0.33, suboptimal_damage: 0.33, no_damage: 0.17 },
+  anchorGpd: [500000],
+  baselines: [1, 2],
+};
+const data: PipelineData = {
+  _provenance: {},
+  meta,
+  axes: {
+    dps: {
+      cells: {
+        epic: {
+          '8': {
+            '2_damage': {
+              '500000': [
+                { b: 1, nrb: { cut: 10000, pAbove: 0.5, expScore: 1.0, fLeg: 0.3, fRelic: 0.1, fAnc: 0.1 }, rb: { cut: 12000, pAbove: 0.6, expScore: 1.1 } },
+                { b: 2, nrb: { cut: 20000, pAbove: 0.2, expScore: 1.5, fLeg: 0.5, fRelic: 0.2, fAnc: 0.1 }, rb: { cut: 22000, pAbove: 0.3, expScore: 1.6 } },
+              ],
+            },
+            no_damage: {
+              '500000': [
+                { b: 1, nrb: { cut: -500, pAbove: 0.01, expScore: 0.4, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.01, expScore: 0.4 } },
+                { b: 2, nrb: { cut: -500, pAbove: 0.0, expScore: 0.4, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.4 } },
+              ],
+            },
+          },
+        },
+      } as unknown as PipelineData['axes']['dps']['cells'],
+      thru: {
+        epic: {
+          '8': {
+            '500000': [
+              { b: 1, directPerWk: 4, fusePerWk: 1, totalPerWk: 5, weeks: 4.8, goldPerWk: 800000, boxEV: 400000, avgScore: 1.0, cpGain: 0.2 },
+              { b: 2, directPerWk: 2, fusePerWk: 1, totalPerWk: 3, weeks: 8.0, goldPerWk: 900000, boxEV: 420000, avgScore: 1.4, cpGain: 0.5 },
+              // High baseline: nothing clears -> total 0, weeks baked as null (24/0 = ∞).
+              { b: 3, directPerWk: 0, fusePerWk: 0, totalPerWk: 0, weeks: null, goldPerWk: 100000, boxEV: 420000, avgScore: 1.6, cpGain: 0.6 },
+            ],
+          },
+        },
+      } as unknown as PipelineData['axes']['dps']['thru'],
+    },
+    support: { cells: {} as unknown as PipelineData['axes']['dps']['cells'], thru: {} as unknown as PipelineData['axes']['dps']['thru'] },
+  },
+};
 
-describe('getDpsPlan', () => {
-  it('returns the row when the baseline is inside the bracket window', () => {
-    const r = getDpsPlan(table, '500k', 'nrb', 5);
-    expect(r.kind).toBe('ok');
-    if (r.kind === 'ok') expect(r.row.baseline).toBe(5);
+describe('verdictFor / actionFor', () => {
+  it('bands a cut value by the baked gold thresholds', () => {
+    expect(verdictFor(20000, verdict)).toBe('green');
+    expect(verdictFor(18000, verdict)).toBe('green');
+    expect(verdictFor(12000, verdict)).toBe('yellow-hi');
+    expect(verdictFor(7000, verdict)).toBe('yellow-mid');
+    expect(verdictFor(2000, verdict)).toBe('yellow-lo');
+    expect(verdictFor(500, verdict)).toBe('yellow-dim');
+    expect(verdictFor(0, verdict)).toBe('red');
+    expect(verdictFor(-100, verdict)).toBe('red');
   });
-  it('reports below-window when the baseline is under the bracket min', () => {
-    const r = getDpsPlan(table, '500k', 'nrb', 3);
-    expect(r.kind).toBe('below-window');
-    if (r.kind === 'below-window') expect(r.minBaseline).toBe(5);
-  });
-  it('reports above-window when the baseline is over the bracket max', () => {
-    const r = getDpsPlan(table, '500k', 'nrb', 9);
-    expect(r.kind).toBe('above-window');
-    if (r.kind === 'above-window') expect(r.maxBaseline).toBe(6);
-  });
-  it('reports no-data for a missing binding/bracket or empty rows', () => {
-    expect(getDpsPlan(table, '500k', 'rb', 5).kind).toBe('no-data'); // empty array
-    expect(getDpsPlan(table, '1M', 'nrb', 5).kind).toBe('no-data'); // missing bracket
+  it('maps verdicts to actions (green=reset, yellow=cut, red=dont-cut)', () => {
+    expect(actionFor('green')).toBe('cut-reset');
+    expect(actionFor('yellow-hi')).toBe('cut');
+    expect(actionFor('yellow-dim')).toBe('cut');
+    expect(actionFor('red')).toBe('dont-cut');
   });
 });
 
-describe('actionLabel / bracketLabel / weeksBand', () => {
-  it('maps actions to labels', () => {
+describe('getCutCell (baseline interpolation)', () => {
+  it('linearly interpolates fields between baseline anchors', () => {
+    const c = getCutCell(data, 'dps', 'epic', 8, '2_damage', 'nrb', 500000, 1.5)!;
+    expect(c.cut).toBeCloseTo(15000, 6); // midpoint of 10000..20000
+    expect(c.pAbove).toBeCloseTo(0.35, 6);
+    expect(c.expScore).toBeCloseTo(1.25, 6);
+    expect(c.fLeg).toBeCloseTo(0.4, 6);
+    expect(c.verdict).toBe('yellow-hi'); // 15000 is in [10000, 18000)
+    expect(c.action).toBe('cut');
+    expect(c.resetWorthy).toBe(false);
+  });
+  it('clamps a baseline below/above the baked range to the nearest anchor', () => {
+    expect(getCutCell(data, 'dps', 'epic', 8, '2_damage', 'nrb', 500000, 0.2)!.cut).toBe(10000);
+    expect(getCutCell(data, 'dps', 'epic', 8, '2_damage', 'nrb', 500000, 5)!.cut).toBe(20000);
+  });
+  it('flags the green (reset-worthy) band at high baseline', () => {
+    const c = getCutCell(data, 'dps', 'epic', 8, '2_damage', 'nrb', 500000, 2)!;
+    expect(c.cut).toBe(20000);
+    expect(c.verdict).toBe('green');
+    expect(c.action).toBe('cut-reset');
+    expect(c.resetWorthy).toBe(true);
+  });
+  it('uses the rb fields and zeroes the fodder split for roster-bound gems', () => {
+    const c = getCutCell(data, 'dps', 'epic', 8, '2_damage', 'rb', 500000, 1.5)!;
+    expect(c.cut).toBeCloseTo(17000, 6); // 12000..22000 midpoint
+    expect(c.fLeg).toBe(0);
+  });
+  it('marks a worthless archetype as dont-cut (negative cut)', () => {
+    const c = getCutCell(data, 'dps', 'epic', 8, 'no_damage', 'nrb', 500000, 1.5)!;
+    expect(c.cut).toBeLessThan(0);
+    expect(c.action).toBe('dont-cut');
+  });
+  it('returns null for a missing cell', () => {
+    expect(getCutCell(data, 'dps', 'rare', 8, '2_damage', 'nrb', 500000, 1.5)).toBeNull();
+  });
+});
+
+describe('headerCut', () => {
+  it('returns the best (max) cut across an archetype’s buckets', () => {
+    expect(headerCut(data, 'dps', 'epic', 8, 'nrb', 500000, 1.5)).toBeCloseTo(15000, 6);
+  });
+});
+
+describe('getThru', () => {
+  it('interpolates throughput and DERIVES weeks from total (slots / total, not the baked value)', () => {
+    const t = getThru(data, 'dps', 'epic', 8, 500000, 1.5)!;
+    expect(t.totalPerWk).toBeCloseTo(4, 6); // 5..3 midpoint
+    expect(t.weeks).toBeCloseTo(24 / 4, 6); // 6.0, computed from total — NOT the 6.4 a linear weeks interp gives
+    expect(t.goldPerWk).toBeCloseTo(850000, 6);
+  });
+  it('returns weeks = null when nothing clears (total ≈ 0) instead of crashing on the baked null', () => {
+    const t = getThru(data, 'dps', 'epic', 8, 500000, 5)!; // clamps to the b=3 anchor (total 0)
+    expect(t.totalPerWk).toBe(0);
+    expect(t.weeks).toBeNull();
+  });
+});
+
+describe('labels / bands', () => {
+  it('effectPair reads the bucket’s two effects', () => {
+    expect(effectPair(meta, 8, '2_damage')).toBe('Additional Damage + Attack Power');
+  });
+  it('actionLabel / bracketLabel / weeksBand', () => {
     expect(actionLabel('cut-reset')).toBe('Cut + reset');
-    expect(actionLabel('cut')).toBe('Cut');
-    expect(actionLabel('fuse')).toBe('Fuse first');
     expect(actionLabel('dont-cut')).toBe("Don't cut");
-  });
-  it('renders bracket keys with the dotted display form', () => {
     expect(bracketLabel('1_5M')).toBe('1.5M');
-    expect(bracketLabel('500k')).toBe('500k');
-  });
-  it('bands weeks fast/med/slow', () => {
-    expect(weeksBand(6.8)).toBe('fast'); // <=8
-    expect(weeksBand(20)).toBe('med'); // 8-26
-    expect(weeksBand(40)).toBe('slow'); // >26
-  });
-});
-
-const support = {
-  '10': {
-    E9: {
-      '2D': { pct: 50, avg: 13.5 },
-      Op: { pct: 30, avg: 12.9 },
-      Sub: { pct: 5, avg: 10.7 },
-      No: { pct: 0, avg: null },
-    },
-    UC8: {
-      '2D': { pct: 4, avg: 8.2 },
-      Op: { pct: 1, avg: 7.9 },
-      Sub: { pct: 0, avg: null },
-      No: { pct: 0, avg: null },
-    },
-  },
-} as unknown as SupportCutQuality;
-
-describe('getSupportPlan', () => {
-  it('ranks archetypes by their best single-cut % at the baseline, best first', () => {
-    const plan = getSupportPlan(support, 10);
-    expect(plan.ranks.map((r) => r.archetype)).toEqual(['E9', 'UC8']);
-    expect(plan.ranks[0].best).toBe(50);
-    expect(plan.ranks[0].buckets['2D']?.pct).toBe(50); // per-bucket {pct, avg} for the cards + EV
-    expect(plan.ranks[0].buckets['2D']?.avg).toBe(13.5);
-  });
-  it('computes the summary tiles from the best-chance target', () => {
-    const { summary } = getSupportPlan(support, 10);
-    expect(summary.bestPct).toBe(50);
-    expect(summary.bestTarget).toEqual({ archetype: 'E9', bucket: '2D' });
-    expect(summary.avgScore).toBe(13.5);
-    expect(summary.totalScore).toBe(Math.round(13.5 * 24)); // avg × grid slots
-  });
-  it('returns empty ranks + a null summary when the baseline is out of range', () => {
-    const plan = getSupportPlan(support, 99);
-    expect(plan.ranks).toEqual([]);
-    expect(plan.summary.bestPct).toBe(0);
-    expect(plan.summary.avgScore).toBeNull();
-    expect(plan.summary.totalScore).toBeNull();
-  });
-});
-
-describe('supportBucketAction (EV-based)', () => {
-  // goldPerScore = goldPerDamage / 27 (× SUPPORT_VALUE_RATE = 1.0).
-  // goldEV = (pct/100) × max(0, avg − baseline) × goldPerScore − 900.
-  const RICH = 2_500_000; // goldPerScore ≈ 92,593
-  const POOR = 500_000; //   goldPerScore ≈ 18,519
-  it('mirrors the DPS fuse recommendation regardless of EV', () => {
-    expect(supportBucketAction(90, 18, 10, RICH, 'fuse')).toBe('fuse');
-    expect(supportBucketAction(0, null, 10, RICH, 'fuse')).toBe('fuse');
-  });
-  it("returns don't-cut with no chance, no data, or no surplus", () => {
-    expect(supportBucketAction(0, null, 10, RICH)).toBe('dont-cut');
-    expect(supportBucketAction(null, null, 10, RICH)).toBe('dont-cut');
-    expect(supportBucketAction(50, 10, 10, RICH)).toBe('dont-cut'); // avg == baseline → 0 surplus
-  });
-  it('thresholds goldEV against the reset cost (20k) and the cut floor (>0)', () => {
-    // strong gem at a rich bracket → large EV → cut-reset
-    expect(supportBucketAction(80, 15, 10, RICH)).toBe('cut-reset');
-    // poor bracket, pct 20 / surplus 1: gain 0.2×1×18519 = 3704, goldEV 2804 → cut
-    expect(supportBucketAction(20, 11, 10, POOR)).toBe('cut');
-    // poor bracket, pct 2 / surplus 1: gain 370, goldEV −530 → dont-cut
-    expect(supportBucketAction(2, 11, 10, POOR)).toBe('dont-cut');
-    // a non-fuse DPS action does not override the EV calc
-    expect(supportBucketAction(80, 15, 10, RICH, 'cut')).toBe('cut-reset');
+    expect(weeksBand(6.8)).toBe('fast');
+    expect(weeksBand(20)).toBe('med');
+    expect(weeksBand(40)).toBe('slow');
   });
 });

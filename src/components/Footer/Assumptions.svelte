@@ -1,32 +1,36 @@
 <script lang="ts">
-  import { CUT_COST, RESET_COST, SCORE_PER_DMG_PCT, SUPPORT_VALUE_RATE } from '../../lib/cutplan/cutPlan';
   import { type ArkGridGemOptionName, ArkGridGemOptionTypes } from '../../lib/models/arkGridGems';
-  import { DPS_NODE_COEFF, POINT_STEP, SUPPORT_NODE_COEFF, WILLPOWER_STEP } from '../../lib/scoring/gemScore';
+  import {
+    D_ORDER,
+    D_WILLPOWER,
+    DPS_EFFECT_D,
+    SUPPORT_EFFECT_D,
+    SUPPORT_ORDER_D,
+    SUPPORT_WILLPOWER_FACTOR,
+  } from '../../lib/scoring/gemScore';
 
   type Row = { label: string; value: string };
 
   const optLabel = (name: ArkGridGemOptionName) => ArkGridGemOptionTypes[name].name.en_us;
 
-  // Only the options each role actually scores (coefficient > 0), strongest first.
+  // Only the options each role actually scores (coefficient > 0), strongest first. Values are
+  // per-level % damage (D = 100·ln(multiplier)), so they are shown to 4 decimals.
   const activeCoeffs = (coeff: Record<ArkGridGemOptionName, number>): Row[] =>
     (Object.entries(coeff) as [ArkGridGemOptionName, number][])
       .filter(([, v]) => v > 0)
       .sort((a, b) => b[1] - a[1])
-      .map(([name, v]) => ({ label: optLabel(name), value: v.toFixed(2) }));
+      .map(([name, v]) => ({ label: optLabel(name), value: v.toFixed(4) }));
 
   // All values are imported live from the modules below, so this panel can't drift from the solver.
+  // Scoring is real % damage in log space (D = 100·ln(multiplier)).
   const scoring: Row[] = [
-    { label: 'Willpower step — (4 − req) ×', value: WILLPOWER_STEP.toFixed(2) },
-    { label: 'Point step — (point − 4) ×', value: POINT_STEP.toFixed(2) },
+    { label: 'Willpower per cost-level — (4 − req) ×', value: D_WILLPOWER.toFixed(4) },
+    { label: 'Order per point ×', value: D_ORDER.toFixed(4) },
+    { label: 'Support order per point ×', value: SUPPORT_ORDER_D.toFixed(4) },
+    { label: 'Support willpower factor', value: SUPPORT_WILLPOWER_FACTOR.toFixed(3) },
   ];
-  const dpsCoeffs = activeCoeffs(DPS_NODE_COEFF);
-  const supportCoeffs = activeCoeffs(SUPPORT_NODE_COEFF);
-  const cutplan: Row[] = [
-    { label: 'Score per 1% damage', value: String(SCORE_PER_DMG_PCT) },
-    { label: 'Cut cost (gold)', value: CUT_COST.toLocaleString() },
-    { label: 'Reset threshold (gold)', value: RESET_COST.toLocaleString() },
-    { label: 'Support value rate', value: SUPPORT_VALUE_RATE.toFixed(2) },
-  ];
+  const dpsCoeffs = activeCoeffs(DPS_EFFECT_D);
+  const supportCoeffs = activeCoeffs(SUPPORT_EFFECT_D);
 </script>
 
 <details class="assumptions">
@@ -70,14 +74,11 @@
   </div>
 
   <div class="group">
-    <h4>Cutting Plan <span class="src">src/lib/cutplan/cutPlan.ts</span></h4>
-    <dl>
-      {#each cutplan as r}
-        <div class="kv"><dt>{r.label}</dt>
-          <dd class="mono">{r.value}</dd>
-        </div>
-      {/each}
-    </dl>
+    <h4>Cutting Plan <span class="src">src/lib/cutplan/pipeline.json</span></h4>
+    <p class="note">
+      Cut / reset / fuse values are shizukaziye's exact Bellman-DP pipeline (real % damage),
+      interpolated at your baseline. See the Cutting Plan glossary for the verdict bands.
+    </p>
   </div>
 </details>
 
