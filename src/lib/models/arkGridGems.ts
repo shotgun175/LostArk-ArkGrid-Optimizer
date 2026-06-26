@@ -8,10 +8,11 @@ export {
   ArkGridGemOptionNames,
   ArkGridGemOptionTypes,
   ArkGridGemSpecs,
-  // Grade logic lives in the Vite-free specs module so node-side tooling can import it;
-  // re-exported here so existing `from '../models/arkGridGems'` importers keep working.
+  // Grade + gem-equality logic live in the Vite-free specs module so node-side tooling can
+  // import them; re-exported here so existing `from '../models/arkGridGems'` importers keep working.
   determineGemGrade,
   determineGemGradeByGem,
+  isSameArkGridGem,
 } from './arkGridGemSpecs';
 export type {
   ArkGridGemName,
@@ -43,22 +44,6 @@ export interface ArkGridGem {
 
 export function gemFingerprint(gem: ArkGridGem): string {
   return `${gem.req}|${gem.point}|${gem.option1.optionType}|${gem.option1.value}|${gem.option2.optionType}|${gem.option2.value}`;
-}
-
-export function isSameArkGridGem(a: ArkGridGem | undefined, b: ArkGridGem | undefined): boolean {
-  if (a === undefined || b === undefined) return false;
-  return (
-    (a.name !== undefined && b.name !== undefined ? a.name === b.name : true) &&
-    a.gemAttr === b.gemAttr &&
-    a.req === b.req &&
-    a.point === b.point &&
-    isSameOption(a.option1, b.option1) &&
-    isSameOption(a.option2, b.option2)
-  );
-}
-
-function isSameOption(a: ArkGridGemOption, b: ArkGridGemOption): boolean {
-  return a.optionType === b.optionType && a.value === b.value;
 }
 
 const MapGemNameImage: Record<ArkGridGemName, string> = {

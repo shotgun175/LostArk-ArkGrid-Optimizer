@@ -120,3 +120,20 @@ export function determineGemGradeByGem(gem: ArkGridGem) {
   const totalPoint = basePoint - gem.req + gem.point + gem.option1.value + gem.option2.value;
   return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
 }
+
+// Content equality of two gems (pure; here in the Vite-free module so node-side tooling — the
+// multi-screenshot stitcher / harness — can use it). Names compared only when both are known.
+export function isSameArkGridGem(a: ArkGridGem | undefined, b: ArkGridGem | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  return (
+    (a.name !== undefined && b.name !== undefined ? a.name === b.name : true) &&
+    a.gemAttr === b.gemAttr &&
+    a.req === b.req &&
+    a.point === b.point &&
+    isSameOption(a.option1, b.option1) &&
+    isSameOption(a.option2, b.option2)
+  );
+}
+function isSameOption(a: ArkGridGemOption, b: ArkGridGemOption): boolean {
+  return a.optionType === b.optionType && a.value === b.value;
+}
