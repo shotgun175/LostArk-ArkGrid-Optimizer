@@ -51,10 +51,12 @@
 
 <style>
   .dep-banner {
+    position: relative;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 10px 2.75rem;
     border: 1px solid rgba(240, 185, 77, 0.45);
     border-left: 4px solid #f0b94d;
     border-radius: 10px;
@@ -78,10 +80,14 @@
   }
   .dep-banner__text {
     margin: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
+    text-align: center;
   }
   .dep-banner__close {
-    flex: 0 0 auto;
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
     appearance: none;
     border: none;
     background: transparent;
