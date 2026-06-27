@@ -267,15 +267,25 @@ export function extractNineGems(
 // owned)" line, x-start AFTER the "(Order " prefix so the capital "O" can't be mistaken for a 0.
 // ru_ru: the 2nd footer line "(В наличии: рунитов Порядка – N, рунитов Хаоса – N.)" (Order first,
 // Chaos last, lower than EN's line); the band spans both numbers and the Cyrillic between them
-// scores below the digit threshold. ko_kr is pending its templates + geometry → no entry, so
-// readOwnedCount no-ops for it. See the footer-OCR NEEDS note.
+// scores below the digit threshold. ko_kr: the 2nd line "(질서 N개, 혼돈 N개 보유 중)" (질서=Order,
+// 혼돈=Chaos); band spans both counts, the Hangul between/after scores below threshold. The Hangul
+// is digit-height so the band is kept tight (starts after "질서 ", ends before "개 보유 중").
 const FOOTER_COUNT_BAND: Partial<
   Record<GemRecognitionLocale, { x: number; y: number; width: number; height: number }>
 > = {
   en_us: { x: -132, y: 819, width: 150, height: 20 },
   ru_ru: { x: -74, y: 857, width: 170, height: 14 },
+  ko_kr: { x: -145, y: 823, width: 105, height: 14 },
 };
-const OWNED_DIGIT_THRESHOLD = 0.85; // real footer digits score ≥0.89; spurious letter/bracket strokes ≤0.81
+// Per-locale digit-match cutoff. EN/RU: real digits score ≥0.89, spurious letter/bracket strokes
+// ≤0.81 → 0.85. KO: Hangul has vertical strokes that hit "1" up to ~0.87 and its clean digits score
+// ≥0.93, so it needs a higher bar; soft/stream KO frames whose digits fall below it read partial
+// (by design — a clean screenshot reads fully).
+const OWNED_DIGIT_THRESHOLD: Record<GemRecognitionLocale, number> = {
+  en_us: 0.85,
+  ru_ru: 0.85,
+  ko_kr: 0.9,
+};
 const OWNED_DIGIT_NMS_X = 4; // suppress overlapping matches within this many px (one digit per spot)
 const OWNED_DIGIT_MAX_PITCH = 18; // adjacent digits ≤this px apart = same number; a wider gap (the
 //   ", Chaos " / " owned" words between the two counts) starts the next number
@@ -318,7 +328,7 @@ export function readOwnedCount(
       const data = res.data32F;
       const cols = res.cols;
       for (let i = 0; i < data.length; i++) {
-        if (data[i] > OWNED_DIGIT_THRESHOLD) cands.push({ d, x: i % cols, score: data[i] });
+        if (data[i] > OWNED_DIGIT_THRESHOLD[locale]) cands.push({ d, x: i % cols, score: data[i] });
       }
       res.delete();
     }
