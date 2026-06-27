@@ -40,9 +40,11 @@
     updateBaselineOverride(undefined);
   }
 
-  // Baseline is in % damage. Ticks span 0..ceiling at a role-appropriate step.
+  // Baseline is in % damage. Ticks span 0..ceiling at a role-appropriate step. Support's ceiling
+  // is much smaller (per-DPS coefficients ≈0.3 vs DPS ≈1.5), so it needs a finer step or it shows
+  // only 0 / 0.25.
   let ticks = $derived.by(() => {
-    const step = blMax > 1.2 ? 0.5 : 0.25;
+    const step = blMax > 1.2 ? 0.5 : blMax > 0.6 ? 0.25 : 0.1;
     const out: number[] = [];
     for (let v = 0; v <= blMax + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
     return out;
