@@ -43,8 +43,13 @@ export const WILLPOWER_OVER_ATTACK_RATIO = 2.4; // kept from the prior model
 export const D_WILLPOWER = WILLPOWER_OVER_ATTACK_RATIO * D_ATTACK; // ≈ 0.078119 per cost-level
 const WILLPOWER_NEUTRAL = 4; // willpower cost 4 is the zero point
 
-// ---- Support coefficients (party-damage scale, ×3 baked in; shizukaziye's support model) ----
-export const SUPPORT_ORDER_D = 0.0747; // support order, flat per point
+// ---- Support coefficients (PER-DPS; shizukaziye's current model) ----
+// A support gem buffs all 3 party DPS, so its raw value is ~3× a single DPS gem. Under the
+// multiplicative model that ×3 double-counts, so every party-buff coefficient is stored ÷3 (the
+// per-DPS efficiency). The ×3 party benefit is reapplied ONLY at the gold step — which for us lives
+// in the baked cut-plan (pipeline-support.json), so no ×3 belongs here. Willpower is a per-DPS ratio
+// (not a party buff), so it is NOT divided — just the 2/3 factor.
+export const SUPPORT_ORDER_D = 0.0747 / 3; // support order, flat per point (party buff ÷3 = 0.0249)
 export const SUPPORT_WILLPOWER_FACTOR = 2 / 3; // support willpower = (2/3) × the DPS willpower term
 
 export const DPS_EFFECT_D: Record<ArkGridGemOptionName, number> = {
@@ -56,9 +61,9 @@ export const DPS_EFFECT_D: Record<ArkGridGemOptionName, number> = {
   AllyDamageEnh: 0,
 };
 export const SUPPORT_EFFECT_D: Record<ArkGridGemOptionName, number> = {
-  AllyAttackEnh: 0.0596,
-  BrandPower: 0.0434,
-  AllyDamageEnh: 0.0195,
+  AllyAttackEnh: 0.0596 / 3, // party attack buff ÷3 (per-DPS)
+  BrandPower: 0.0434 / 3, // brand amp ÷3
+  AllyDamageEnh: 0.0195 / 3, // party damage buff ÷3
   AtkPower: 0,
   AddDamage: 0,
   BossDamage: 0,
@@ -66,12 +71,12 @@ export const SUPPORT_EFFECT_D: Record<ArkGridGemOptionName, number> = {
 
 /** Per-core order/chaos point value for the SUPPORT grid total (keyed by core base id). */
 export const SUPPORT_ORDER_PER_CORE: Record<number, number> = {
-  10001: 0.0694, // Order Sun
-  10002: 0.064, // Order Moon
-  10003: 0.0486, // Order Star
-  10004: 0.0753, // Chaos Sun
-  10005: 0.1044, // Chaos Moon
-  10006: 0.0869, // Chaos Star
+  10001: 0.0694 / 3, // Order Sun (Ally Attack)
+  10002: 0.064 / 3, // Order Moon (Ally Damage)
+  10003: 0.0486 / 3, // Order Star (serenade)
+  10004: 0.0753 / 3, // Chaos Sun (Ally Damage)
+  10005: 0.1044 / 3, // Chaos Moon (Brand — strongest)
+  10006: 0.0869 / 3, // Chaos Star (Weapon Power)
 };
 
 // Side-effect pools per base cost (8/9/10), derived from the canonical gem specs.

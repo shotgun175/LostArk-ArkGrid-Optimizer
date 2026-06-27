@@ -47,7 +47,7 @@ const junk = gem(
   { optionType: 'BrandPower', value: 1 },
   { optionType: 'AllyDamageEnh', value: 1 }
 );
-// Support: AllyAttackEnh5 + BrandPower5 ≈ 0.81 (support) / 0.64 (dps; only its order points count).
+// Support: AllyAttackEnh5 + BrandPower5 ≈ 0.27 (support, per-DPS ÷3) / 0.64 (dps; only its order points count).
 const support = gem(
   4,
   4,
@@ -67,7 +67,7 @@ describe('autoBaselineFromLoadout', () => {
     expect(autoBaselineFromLoadout([gemA, junk], 'dps')).toBe(0); // weakest is junk (negative) -> 0
   });
   it('respects role (DPS damage options count 0 under support, but order still counts)', () => {
-    expect(autoBaselineFromLoadout([support], 'support')).toBeCloseTo(0.81, 2);
+    expect(autoBaselineFromLoadout([support], 'support')).toBeCloseTo(0.27, 2); // per-DPS (÷3)
     expect(autoBaselineFromLoadout([support], 'dps')).toBeCloseTo(0.64, 2); // order 4 × 0.159872
   });
 });

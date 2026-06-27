@@ -141,8 +141,8 @@ describe('grade (0–100, min-max over the gem space) + letter rank', () => {
 describe('computeGemScore (Support axis)', () => {
   it('uses support coefficients and ignores DPS damage options', () => {
     const support = gem(4, 4, { optionType: 'AllyAttackEnh', value: 5 }, { optionType: 'BrandPower', value: 5 });
-    // willpower 0, support: AllyAttackEnh 0.0596 + Brand 0.0434 per level + 0.0747 order.
-    const expected = 0 + 4 * 0.0747 + 5 * 0.0596 + 5 * 0.0434;
+    // willpower 0, support (per-DPS, coeffs ÷3): AllyAttackEnh 0.0596/3 + Brand 0.0434/3 + 0.0747/3 order.
+    const expected = 0 + (4 * 0.0747) / 3 + (5 * 0.0596) / 3 + (5 * 0.0434) / 3;
     expect(computeGemScore(support, 'support').score).toBeCloseTo(expected, 9);
     // Same gem under DPS: both options are non-DPS -> only the flat order term.
     expect(computeGemScore(support, 'dps').score).toBeCloseTo(4 * refOrder, 9);
