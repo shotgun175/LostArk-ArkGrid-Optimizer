@@ -40,7 +40,7 @@ export const D_ADD = perLevelD(STAT_BASELINES.additionalDamage); // ≈ 0.059287
 export const D_BOSS = perLevelD(STAT_BASELINES.bossDamage); // ≈ 0.081268
 export const D_ORDER = 100 * Math.log(1.0016); // ≈ 0.159872, FLAT per point
 export const WILLPOWER_OVER_ATTACK_RATIO = 2.4; // kept from the prior model
-export const D_WILLPOWER = WILLPOWER_OVER_ATTACK_RATIO * D_ATTACK; // ≈ 0.078119 per cost-level
+export const D_WILLPOWER = WILLPOWER_OVER_ATTACK_RATIO * D_ATTACK; // ≈ 0.07773 per cost-level
 const WILLPOWER_NEUTRAL = 4; // willpower cost 4 is the zero point
 
 // ---- Support coefficients (PER-DPS; shizukaziye's current model) ----
@@ -187,7 +187,7 @@ function valueBounds(role: GemRole): { min: number; max: number } {
 }
 
 // Highest achievable additive score (% damage) for a role — bounds the baseline UI so the
-// slider can't run far past where any real gem could land (DPS ≈ 1.43%, support ≈ 0.94%).
+// slider can't run far past where any real gem could land (DPS ≈ 1.42%, support ≈ 0.28% per-DPS).
 const _scoreMax: Partial<Record<GemRole, number>> = {};
 export function maxScoreForRole(role: GemRole): number {
   const cached = _scoreMax[role];

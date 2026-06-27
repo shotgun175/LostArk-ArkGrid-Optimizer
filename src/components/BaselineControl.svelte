@@ -18,8 +18,9 @@
   let equipped: ArkGridGem[] = $derived(
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
-  // Slider ceiling = the highest score any real gem of this role can reach (DPS ≈ 1.5, support ≈ 1.0),
-  // so the baseline can't run off into a range no gem could occupy.
+  // Slider ceiling = the highest score any real gem of this role can reach, rounded up (DPS ≈ 1.5,
+  // support ≈ 0.3 — support is per-DPS, a much smaller scale), so the baseline can't run off into a
+  // range no gem could occupy.
   let blMax = $derived(Math.ceil(maxScoreForRole(role) * 10) / 10);
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
