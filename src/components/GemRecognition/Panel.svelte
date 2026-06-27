@@ -4,6 +4,7 @@
   import Icon from '../../lib/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
+  import type { OwnedCount } from '../../lib/cv/types';
   import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
   import {
     appConfig,
@@ -83,6 +84,8 @@
   let showUpload = $state<boolean>(false);
   let isDragging = $state<boolean>(false);
   let isProcessingUpload = $state<boolean>(false);
+  // The in-game "Astrogems Owned" total read from the last uploaded screenshot (count checksum).
+  let detectedOwned = $state<OwnedCount | null>(null);
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
   let isRecording = $state<boolean>(false);
@@ -211,6 +214,7 @@
       const controller = await getCaptureController();
       const bitmap = await createImageBitmap(file);
       const result = await controller.recognizeImage(bitmap);
+      detectedOwned = result?.owned ?? null;
       if (result && result.gems.length > 0) {
         applyCurrentGems(result.gemAttr, result.gems);
       } else {
@@ -442,6 +446,12 @@
           }}
         />
       </div>
+      {#if detectedOwned && (detectedOwned.order !== null || detectedOwned.chaos !== null)}
+        <p class="owned-note">
+          📋 Screenshot inventory: Order {detectedOwned.order ?? '?'}, Chaos
+          {detectedOwned.chaos ?? '?'} owned
+        </p>
+      {/if}
     {/if}
     <div hidden={!isDebugging}>
       <div class="debug-screen">
@@ -582,6 +592,12 @@
   }
   .upload-file-input {
     display: none;
+  }
+  .owned-note {
+    margin: 0.4rem 0 0;
+    color: var(--text);
+    opacity: 0.9;
+    font-size: 0.9rem;
   }
 
   .panel > .content {

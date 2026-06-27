@@ -1,6 +1,9 @@
 import type { ArkGridAttr } from '../constants/enums';
 import { type ArkGridGem } from '../models/arkGridGems';
-import type { CaptureWorkerRequest, CaptureWorkerResponse } from './types';
+import type { CaptureWorkerRequest, CaptureWorkerResponse, OwnedCount } from './types';
+
+/** What recognizeImage resolves with: the gems plus the footer owned-count checksum. */
+export type ImageRecognition = { gemAttr: ArkGridAttr; gems: ArkGridGem[]; owned: OwnedCount | null };
 
 const START_CAPTURE_ERROR_TYPES = [
   'recording',
@@ -36,9 +39,7 @@ export class CaptureController {
   } | null = null;
   private awaitFrameCompletion: (() => void) | null = null;
   // Resolver for an in-flight recognizeImage() call (static-image upload path).
-  private awaitImageCompletion:
-    | ((result: { gemAttr: ArkGridAttr; gems: ArkGridGem[] } | null) => void)
-    | null = null;
+  private awaitImageCompletion: ((result: ImageRecognition | null) => void) | null = null;
   // True once the worker has reported init:done at least once (warmup or a prior call), so
   // recognizeImage() can skip a redundant re-init when the worker is already warm.
   private workerInitialized = false;
@@ -75,9 +76,11 @@ export class CaptureController {
         break;
 
       case 'image:done':
-        // Resolve the pending recognizeImage() promise with the recognized gems (or null).
+        // Resolve the pending recognizeImage() promise with the gems + owned-count (or null).
         this.awaitImageCompletion?.(
-          data.result ? { gemAttr: data.result.gemAttr, gems: data.result.gems } : null
+          data.result
+            ? { gemAttr: data.result.gemAttr, gems: data.result.gems, owned: data.result.owned }
+            : null
         );
         this.awaitImageCompletion = null;
         break;
@@ -259,9 +262,7 @@ export class CaptureController {
    * the ~10.8MB CV WASM chunk. The bitmap is transferred to the worker (which closes it). Resolves
    * with the recognized gems, or null if nothing was recognized or worker init failed.
    */
-  async recognizeImage(
-    bitmap: ImageBitmap
-  ): Promise<{ gemAttr: ArkGridAttr; gems: ArkGridGem[] } | null> {
+  async recognizeImage(bitmap: ImageBitmap): Promise<ImageRecognition | null> {
     try {
       if (!this.worker) {
         this.worker = new Worker(new URL('./captureWorker.ts', import.meta.url), {
@@ -276,7 +277,7 @@ export class CaptureController {
         this.postMessage({ type: 'init', scaleHints: this.readScaleCache() });
         await waitForInit;
       }
-      return await new Promise<{ gemAttr: ArkGridAttr; gems: ArkGridGem[] } | null>((resolve) => {
+      return await new Promise<ImageRecognition | null>((resolve) => {
         this.awaitImageCompletion = resolve;
         this.worker!.postMessage(
           {

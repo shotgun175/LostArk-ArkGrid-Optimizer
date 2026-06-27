@@ -7,6 +7,12 @@ export type CvMat = CV.Mat;
 export type CvRect = CV.Rect;
 export type CvPoint = CV.Point;
 
+/** Per-attribute owned counts read from the in-game "Astrogems Owned" footer (count-checksum). */
+export interface OwnedCount {
+  order: number | null;
+  chaos: number | null;
+}
+
 // main → worker
 export type CaptureWorkerRequest =
   | { type: 'init'; scaleHints?: Record<string, number> } // init worker (optionally seeded with persisted per-resolution UI scales)
@@ -26,6 +32,7 @@ export type CaptureWorkerResponse =
             locale: GemRecognitionLocale;
             gemAttr: ArkGridAttr;
             gems: ArkGridGem[];
+            owned: OwnedCount | null;
           }
         | undefined;
     }
@@ -36,6 +43,7 @@ export type CaptureWorkerResponse =
             locale: GemRecognitionLocale;
             gemAttr: ArkGridAttr;
             gems: ArkGridGem[];
+            owned: OwnedCount | null;
           }
         | undefined;
     }

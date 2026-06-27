@@ -22,7 +22,9 @@ import { showMatch } from './debug';
 import type { KeyOptionLevel, KeyOptionString, loadGemAsset } from './matStore';
 import { type MatchingResult, getBestMatch, multiScaleAnchorMatch } from './matcher';
 import { rawScaleToResolutionScale, snapResolutionScale } from './scaleDetection';
-import type { CvMat } from './types';
+import type { CvMat, OwnedCount } from './types';
+
+export type { OwnedCount };
 
 /** The atlas bundle produced by {@link loadGemAsset} (in either the browser or Node). */
 export type LoadedGemAsset = Awaited<ReturnType<typeof loadGemAsset>>;
@@ -42,6 +44,8 @@ export interface RecognizeResult {
   locale: GemRecognitionLocale;
   gemAttr: ArkGridAttr;
   gems: ArkGridGem[];
+  /** Footer "Astrogems Owned" per-attr counts, or null if unread (locale not calibrated). */
+  owned: OwnedCount | null;
 }
 
 // Erased at runtime; only the live worker ever supplies a real drawing context.
@@ -259,6 +263,109 @@ export function extractNineGems(
   return gems;
 }
 
+// Per-locale anchor-relative band over the "(Order N, Chaos N …)" footer line. The x-start is AFTER
+// the "(Order " prefix so the capital "O" can't be mistaken for a 0; width covers up to 3-digit
+// counts. ko_kr / ru_ru are pending footer-digit templates + their own geometry (different wording),
+// so they have no entry → readOwnedCount no-ops for them. See the footer-OCR NEEDS note.
+const FOOTER_COUNT_BAND: Partial<
+  Record<GemRecognitionLocale, { x: number; y: number; width: number; height: number }>
+> = {
+  en_us: { x: -132, y: 819, width: 150, height: 20 },
+};
+const OWNED_DIGIT_THRESHOLD = 0.78; // real digits score ≥0.89; letter strokes (h/d→1) score ≤0.80
+const FOOTER_PIX_THRESHOLD = 120; // grayscale value above which a footer pixel counts as "text"
+const FOOTER_TOKEN_GAP = 3; // a column gap wider than this separates space-delimited tokens
+
+/**
+ * Read the per-attribute owned counts from the in-game footer ("Astrogems Owned … (Order N, Chaos N
+ * owned)") — the count-checksum source. Approach: slide the footer-digit templates over the count
+ * line and keep peaks above threshold (letter strokes score lower and drop out); column-segment the
+ * line into glyph runs grouped into space-delimited TOKENS; then read each token's LEADING run of
+ * digit glyphs. A word token ("Chaos"/"owned") starts with a non-digit so contributes no number, and
+ * a trailing comma ends "24,". The first number is Order, the last is Chaos. Returns null when the
+ * locale has no footer-digit atlas / geometry.
+ *
+ * NOTE: a count containing a digit with no template (en_us is missing 5/6/8/9 until more screenshots
+ * arrive; ko_kr/ru_ru have none yet) mis-reads — the checksum is best-effort until templates complete.
+ */
+export function readOwnedCount(
+  cv: CV,
+  frame: CvMat,
+  asset: LoadedGemAsset,
+  anchorX: number,
+  anchorY: number,
+  locale: GemRecognitionLocale
+): OwnedCount | null {
+  const band = FOOTER_COUNT_BAND[locale];
+  const atlas = asset.atlasOwnedDigit[locale];
+  if (!band || !atlas) return null;
+  const rx = anchorX + band.x;
+  const ry = anchorY + band.y;
+  if (rx < 0 || ry < 0 || rx + band.width > frame.cols || ry + band.height > frame.rows) return null;
+
+  const roi = frame.roi(new cv.Rect(rx, ry, band.width, band.height));
+  try {
+    // 1. Digit candidates: slide each template, keep peaks above threshold.
+    const cands: { d: string; x: number; score: number }[] = [];
+    for (const d of Object.keys(atlas.entries)) {
+      const tpl = atlas.entries[d].template;
+      if (tpl.cols > roi.cols || tpl.rows > roi.rows) continue;
+      const res = new cv.Mat();
+      cv.matchTemplate(roi, tpl, res, cv.TM_CCOEFF_NORMED);
+      const data = res.data32F;
+      const cols = res.cols;
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] > OWNED_DIGIT_THRESHOLD) cands.push({ d, x: i % cols, score: data[i] });
+      }
+      res.delete();
+    }
+    // Non-max suppression by x-proximity (keep the highest-scoring digit per location).
+    cands.sort((a, b) => b.score - a.score);
+    const kept: { d: string; x: number; score: number }[] = [];
+    for (const c of cands) if (kept.every((k) => Math.abs(k.x - c.x) >= 4)) kept.push(c);
+
+    // 2. Column-segment the line into glyph runs (a run = contiguous columns containing text).
+    const runs: { x0: number; x1: number }[] = [];
+    let s = -1;
+    for (let x = 0; x <= roi.cols; x++) {
+      let on = false;
+      if (x < roi.cols) for (let y = 0; y < roi.rows; y++) if (roi.ucharAt(y, x) >= FOOTER_PIX_THRESHOLD) { on = true; break; }
+      if (on && s < 0) s = x;
+      if (!on && s >= 0) {
+        runs.push({ x0: s, x1: x - 1 });
+        s = -1;
+      }
+    }
+
+    // 3. Group runs into space-delimited tokens; read each token's LEADING digit run.
+    const digitAt = (run: { x0: number; x1: number }) =>
+      kept.find((k) => k.x >= run.x0 - 2 && k.x <= run.x0 + 3);
+    const numbers: string[] = [];
+    let token = '';
+    let leading = true; // still inside the token's leading run of digits
+    for (let i = 0; i < runs.length; i++) {
+      const gap = i > 0 ? runs[i].x0 - runs[i - 1].x1 - 1 : 99;
+      if (gap > FOOTER_TOKEN_GAP) {
+        if (token) numbers.push(token);
+        token = '';
+        leading = true;
+      }
+      if (leading) {
+        const c = digitAt(runs[i]);
+        if (c) token += c.d;
+        else leading = false; // first non-digit glyph ends this token's number
+      }
+    }
+    if (token) numbers.push(token);
+
+    const toNum = (str: string | undefined) => (str && str.length > 0 ? parseInt(str, 10) : null);
+    if (numbers.length < 2) return { order: toNum(numbers[0]), chaos: null };
+    return { order: toNum(numbers[0]), chaos: toNum(numbers[numbers.length - 1]) };
+  } finally {
+    roi.delete();
+  }
+}
+
 /**
  * Recognize all gems in a single decoded grayscale frame. Measures the UI scale fresh every call
  * (no caching), normalizes the frame to FHD scale, locates the anchor over the full frame, then
@@ -341,7 +448,8 @@ export function recognizeGems(
       opts.thresholds,
       detectionMargin
     );
-    return { locale, gemAttr: gemAttr.key, gems };
+    const owned = readOwnedCount(cv, resizedFrame, asset, anchorX, anchorY, locale);
+    return { locale, gemAttr: gemAttr.key, gems, owned };
   } finally {
     if (resizedFrame) resizedFrame.delete();
   }

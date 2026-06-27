@@ -27,10 +27,16 @@ export const enUsCoords = {
   'lv4.png': { x: 150, y: 115, w: 11, h: 13 },
   'lv5.png': { x: 187, y: 115, w: 10, h: 13 },
   'order.png': { x: 150, y: 0, w: 50, h: 15 },
+  'owned-0.png': { x: 150, y: 130, w: 8, h: 11 },
+  'owned-1.png': { x: 196, y: 17, w: 3, h: 10 },
+  'owned-2.png': { x: 160, y: 130, w: 8, h: 11 },
+  'owned-3.png': { x: 180, y: 130, w: 7, h: 11 },
+  'owned-4.png': { x: 170, y: 130, w: 8, h: 11 },
+  'owned-7.png': { x: 189, y: 130, w: 7, h: 11 },
   'solidity.png': { x: 150, y: 17, w: 14, h: 25 },
   'stability.png': { x: 150, y: 44, w: 12, h: 26 },
 } as const;
 
 export type EnUsTemplateName = keyof typeof enUsCoords;
 
-export const enUsFileName = 'opencv_template_en_us_1780596317334.png';
+export const enUsFileName = 'opencv_template_en_us_1782522307629.png';

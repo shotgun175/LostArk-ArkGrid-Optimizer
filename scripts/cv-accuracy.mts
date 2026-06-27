@@ -85,6 +85,8 @@ interface ExpectedGem {
 interface ExpectedFixture {
   gemAttr: string;
   gems: ExpectedGem[];
+  /** In-game footer "Astrogems Owned" per-attr totals (count checksum); optional in ground truth. */
+  owned?: { order: number | null; chaos: number | null } | null;
 }
 type GroundTruth = Record<string, ExpectedFixture>;
 
@@ -142,6 +144,7 @@ async function main(): Promise<void> {
       recognized[key] = result
         ? {
             gemAttr: result.gemAttr,
+            owned: result.owned,
             gems: result.gems.map((g) => ({
               name: g.name,
               gemAttr: g.gemAttr,
@@ -231,6 +234,23 @@ async function main(): Promise<void> {
     `\nField accuracy ${pct(totFieldsOk, totFields).trim()}, ` +
       `exact-gem accuracy ${pct(totExact, totExpectedGems).trim()} (${totExact}/${totExpectedGems}).`
   );
+
+  // Footer owned-count (count-checksum) accuracy — only over fixtures whose ground truth declares it.
+  const withOwned = Object.keys(groundTruth).filter((k) => groundTruth[k].owned);
+  if (withOwned.length > 0) {
+    let ownedOk = 0;
+    console.log('\nFooter owned-count (count checksum):');
+    for (const key of withOwned) {
+      const e = groundTruth[key].owned!;
+      const r = recognized[key]?.owned ?? null;
+      const ok = !!r && r.order === e.order && r.chaos === e.chaos;
+      if (ok) ownedOk++;
+      console.log(
+        `  ${ok ? 'ok  ' : 'X   '}${key.padEnd(14)} read ${JSON.stringify(r)} expect order:${e.order} chaos:${e.chaos}`
+      );
+    }
+    console.log(`Owned-count accuracy ${pct(ownedOk, withOwned.length).trim()} (${ownedOk}/${withOwned.length}).`);
+  }
   process.exit(0);
 }
 

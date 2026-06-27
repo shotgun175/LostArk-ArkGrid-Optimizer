@@ -185,6 +185,25 @@ export async function loadGemAsset(decode: SpriteDecoder = browserSpriteDecoder)
     {} as Record<GemRecognitionLocale, MatchingAtlas<KeyOptionLevel>>
   );
 
+  // Footer "Astrogems Owned" count digits (separate, larger font than the in-row digits). Built
+  // only from the owned-<d>.png templates that exist for a locale: en_us currently ships a partial
+  // set; ko_kr / ru_ru ship none yet (null atlas → the count reader no-ops for them). See the
+  // footer-OCR NEEDS note for what completes each locale.
+  const ownedDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
+  const atlasOwnedDigit = supportedGemRecognitionLocales.reduce(
+    (acc, locale) => {
+      const mats = gt[locale] as Record<string, CvMat>;
+      const entries: Record<string, CvMat> = {};
+      for (const d of ownedDigits) {
+        const mat = mats[`owned-${d}.png`];
+        if (mat) entries[d] = mat;
+      }
+      acc[locale] = Object.keys(entries).length > 0 ? generateMatchingAtlas(entries) : null;
+      return acc;
+    },
+    {} as Record<GemRecognitionLocale, MatchingAtlas<string> | null>
+  );
+
   return {
     atlasAnchor,
     atlasGemAttr,
@@ -193,5 +212,6 @@ export async function loadGemAsset(decode: SpriteDecoder = browserSpriteDecoder)
     atlasCorePoint,
     atlasOptionName,
     atlasOptionLevel,
+    atlasOwnedDigit,
   };
 }

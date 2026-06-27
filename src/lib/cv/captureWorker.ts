@@ -351,7 +351,9 @@ class FrameProcessor {
         detectionMargin,
         debugCtx
       );
-      return { locale: currentLocale, gemAttr: gemAttr.key, gems: currentGems };
+      // owned-count is read only on the static-image upload path (recognizeGems); the live frame
+      // stream doesn't need the checksum, so leave it null here.
+      return { locale: currentLocale, gemAttr: gemAttr.key, gems: currentGems, owned: null };
     } finally {
       // OpenCV.js Mats are WASM-heap allocations that are never GC'd; an
       // exception between creation and the happy-path deletes above would
