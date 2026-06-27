@@ -30,13 +30,17 @@ export const enUsCoords = {
   'owned-0.png': { x: 150, y: 130, w: 8, h: 11 },
   'owned-1.png': { x: 196, y: 17, w: 3, h: 10 },
   'owned-2.png': { x: 160, y: 130, w: 8, h: 11 },
-  'owned-3.png': { x: 180, y: 130, w: 7, h: 11 },
+  'owned-3.png': { x: 190, y: 130, w: 7, h: 11 },
   'owned-4.png': { x: 170, y: 130, w: 8, h: 11 },
-  'owned-7.png': { x: 189, y: 130, w: 7, h: 11 },
+  'owned-5.png': { x: 136, y: 38, w: 7, h: 11 },
+  'owned-6.png': { x: 117, y: 57, w: 7, h: 11 },
+  'owned-7.png': { x: 126, y: 57, w: 7, h: 11 },
+  'owned-8.png': { x: 180, y: 130, w: 8, h: 11 },
+  'owned-9.png': { x: 135, y: 57, w: 7, h: 11 },
   'solidity.png': { x: 150, y: 17, w: 14, h: 25 },
   'stability.png': { x: 150, y: 44, w: 12, h: 26 },
 } as const;
 
 export type EnUsTemplateName = keyof typeof enUsCoords;
 
-export const enUsFileName = 'opencv_template_en_us_1782522307629.png';
+export const enUsFileName = 'opencv_template_en_us_1782587145309.png';

@@ -272,21 +272,21 @@ const FOOTER_COUNT_BAND: Partial<
 > = {
   en_us: { x: -132, y: 819, width: 150, height: 20 },
 };
-const OWNED_DIGIT_THRESHOLD = 0.78; // real digits score ≥0.89; letter strokes (h/d→1) score ≤0.80
-const FOOTER_PIX_THRESHOLD = 120; // grayscale value above which a footer pixel counts as "text"
-const FOOTER_TOKEN_GAP = 3; // a column gap wider than this separates space-delimited tokens
+const OWNED_DIGIT_THRESHOLD = 0.85; // real footer digits score ≥0.89; spurious letter/bracket strokes ≤0.81
+const OWNED_DIGIT_NMS_X = 4; // suppress overlapping matches within this many px (one digit per spot)
+const OWNED_DIGIT_MAX_PITCH = 18; // adjacent digits ≤this px apart = same number; a wider gap (the
+//   ", Chaos " / " owned" words between the two counts) starts the next number
 
 /**
  * Read the per-attribute owned counts from the in-game footer ("Astrogems Owned … (Order N, Chaos N
  * owned)") — the count-checksum source. Approach: slide the footer-digit templates over the count
- * line and keep peaks above threshold (letter strokes score lower and drop out); column-segment the
- * line into glyph runs grouped into space-delimited TOKENS; then read each token's LEADING run of
- * digit glyphs. A word token ("Chaos"/"owned") starts with a non-digit so contributes no number, and
- * a trailing comma ends "24,". The first number is Order, the last is Chaos. Returns null when the
- * locale has no footer-digit atlas / geometry.
+ * line, keep peaks above threshold (letters/brackets score lower and drop out), non-max-suppress to
+ * one digit per spot, then group the surviving digits left-to-right by x-pitch — digits close
+ * together form one number, the wide gaps over ", Chaos " / " owned" split them. The first number is
+ * Order, the last is Chaos. Returns null when the locale has no footer-digit atlas / geometry.
  *
- * NOTE: a count containing a digit with no template (en_us is missing 5/6/8/9 until more screenshots
- * arrive; ko_kr/ru_ru have none yet) mis-reads — the checksum is best-effort until templates complete.
+ * NOTE: a count containing a digit with no template (ko_kr/ru_ru have none yet) mis-reads — the
+ * checksum is best-effort until a locale's templates are complete. (en_us ships the full 0–9 set.)
  */
 export function readOwnedCount(
   cv: CV,
@@ -319,48 +319,35 @@ export function readOwnedCount(
       }
       res.delete();
     }
-    // Non-max suppression by x-proximity (keep the highest-scoring digit per location).
+    // 2. Non-max suppression by x-proximity (keep the highest-scoring digit per location).
     cands.sort((a, b) => b.score - a.score);
-    const kept: { d: string; x: number; score: number }[] = [];
-    for (const c of cands) if (kept.every((k) => Math.abs(k.x - c.x) >= 4)) kept.push(c);
+    const kept: { d: string; x: number }[] = [];
+    for (const c of cands) if (kept.every((k) => Math.abs(k.x - c.x) >= OWNED_DIGIT_NMS_X)) kept.push(c);
 
-    // 2. Column-segment the line into glyph runs (a run = contiguous columns containing text).
-    const runs: { x0: number; x1: number }[] = [];
-    let s = -1;
-    for (let x = 0; x <= roi.cols; x++) {
-      let on = false;
-      if (x < roi.cols) for (let y = 0; y < roi.rows; y++) if (roi.ucharAt(y, x) >= FOOTER_PIX_THRESHOLD) { on = true; break; }
-      if (on && s < 0) s = x;
-      if (!on && s >= 0) {
-        runs.push({ x0: s, x1: x - 1 });
-        s = -1;
-      }
-    }
-
-    // 3. Group runs into space-delimited tokens; read each token's LEADING digit run.
-    const digitAt = (run: { x0: number; x1: number }) =>
-      kept.find((k) => k.x >= run.x0 - 2 && k.x <= run.x0 + 3);
+    // 3. Order the kept digits left-to-right and group them into numbers by x-pitch: digits within
+    //    OWNED_DIGIT_MAX_PITCH px are one number; the wide gaps over ", Chaos " / " owned" split
+    //    them. The first number is Order, the last is Chaos. (Pitch-grouping the matched digits is
+    //    robust to the narrow "1", whose inter-digit gap rivals a word space — a column-gap
+    //    tokenizer can't tell those apart and would split e.g. "18" into "1" and "8".)
+    kept.sort((a, b) => a.x - b.x);
     const numbers: string[] = [];
-    let token = '';
-    let leading = true; // still inside the token's leading run of digits
-    for (let i = 0; i < runs.length; i++) {
-      const gap = i > 0 ? runs[i].x0 - runs[i - 1].x1 - 1 : 99;
-      if (gap > FOOTER_TOKEN_GAP) {
-        if (token) numbers.push(token);
-        token = '';
-        leading = true;
+    let cur = '';
+    let prevX = -Infinity;
+    for (const k of kept) {
+      if (k.x - prevX > OWNED_DIGIT_MAX_PITCH && cur) {
+        numbers.push(cur);
+        cur = '';
       }
-      if (leading) {
-        const c = digitAt(runs[i]);
-        if (c) token += c.d;
-        else leading = false; // first non-digit glyph ends this token's number
-      }
+      cur += k.d;
+      prevX = k.x;
     }
-    if (token) numbers.push(token);
+    if (cur) numbers.push(cur);
 
     const toNum = (str: string | undefined) => (str && str.length > 0 ? parseInt(str, 10) : null);
-    if (numbers.length < 2) return { order: toNum(numbers[0]), chaos: null };
-    return { order: toNum(numbers[0]), chaos: toNum(numbers[numbers.length - 1]) };
+    return {
+      order: toNum(numbers[0]),
+      chaos: numbers.length >= 2 ? toNum(numbers[numbers.length - 1]) : null,
+    };
   } finally {
     roi.delete();
   }
