@@ -118,7 +118,7 @@
       binding === 'nrb'
         ? ` · fodder L/R/A ${pctOf(cell.fLeg)}/${pctOf(cell.fRelic)}/${pctOf(cell.fAnc)}`
         : '';
-    return `${effectPair(data.meta, cost, bkt)} · avg ${cell.expScore.toFixed(2)}% dmg${fodder}`;
+    return `${effectPair(data.meta, axis, cost, bkt)} · avg ${cell.expScore.toFixed(2)}% dmg${fodder}`;
   };
 </script>
 

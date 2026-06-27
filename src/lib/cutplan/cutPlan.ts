@@ -137,9 +137,9 @@ export function getThru(
   };
 }
 
-/** The two effects that define a bucket at a base cost (for tooltips). */
-export function effectPair(meta: PipelineMeta, cost: number, bucket: BucketKey): string {
-  const pair = meta.effectBuckets[String(cost)]?.[bucket];
+/** The two effects that define a bucket at a base cost, for the given axis (for tooltips). */
+export function effectPair(meta: PipelineMeta, axis: CutAxis, cost: number, bucket: BucketKey): string {
+  const pair = meta.effectBuckets[axis]?.[String(cost)]?.[bucket];
   return pair ? `${pair.effect1} + ${pair.effect2}` : '';
 }
 

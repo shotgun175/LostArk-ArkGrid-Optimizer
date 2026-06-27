@@ -30,11 +30,21 @@ const meta: PipelineMeta = {
   buckets: ['2_damage', 'no_damage'],
   bucketLabels: { '2_damage': '2D', optimal_damage: 'Op', suboptimal_damage: 'Sub', no_damage: 'No' },
   effectBuckets: {
-    '8': {
-      '2_damage': { effect1: 'Additional Damage', effect2: 'Attack Power' },
-      optimal_damage: { effect1: 'Additional Damage', effect2: 'Brand Power' },
-      suboptimal_damage: { effect1: 'Attack Power', effect2: 'Brand Power' },
-      no_damage: { effect1: 'Brand Power', effect2: 'Ally Damage Enh.' },
+    dps: {
+      '8': {
+        '2_damage': { effect1: 'Additional Damage', effect2: 'Attack Power' },
+        optimal_damage: { effect1: 'Additional Damage', effect2: 'Brand Power' },
+        suboptimal_damage: { effect1: 'Attack Power', effect2: 'Brand Power' },
+        no_damage: { effect1: 'Brand Power', effect2: 'Ally Damage Enh.' },
+      },
+    },
+    support: {
+      '8': {
+        '2_damage': { effect1: 'Ally Attack Enh.', effect2: 'Brand Power' },
+        optimal_damage: { effect1: 'Ally Attack Enh.', effect2: 'Ally Damage Enh.' },
+        suboptimal_damage: { effect1: 'Brand Power', effect2: 'Ally Damage Enh.' },
+        no_damage: { effect1: 'Ally Damage Enh.', effect2: 'Attack Power' },
+      },
     },
   },
   verdict,
@@ -162,8 +172,10 @@ describe('getThru', () => {
 });
 
 describe('labels / bands', () => {
-  it('effectPair reads the bucket’s two effects', () => {
-    expect(effectPair(meta, 8, '2_damage')).toBe('Additional Damage + Attack Power');
+  it('effectPair reads the per-axis bucket effects', () => {
+    expect(effectPair(meta, 'dps', 8, '2_damage')).toBe('Additional Damage + Attack Power');
+    // Regression: a support build must show the SUPPORT effect pairing, not the DPS one.
+    expect(effectPair(meta, 'support', 8, '2_damage')).toBe('Ally Attack Enh. + Brand Power');
   });
   it('actionLabel / bracketLabel / weeksBand', () => {
     expect(actionLabel('cut-reset')).toBe('Cut + reset');

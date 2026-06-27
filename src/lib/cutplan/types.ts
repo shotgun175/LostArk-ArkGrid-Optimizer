@@ -47,7 +47,9 @@ export interface PipelineMeta {
   rarities: Rarity[];
   buckets: BucketKey[];
   bucketLabels: Record<BucketKey, string>;
-  effectBuckets: Record<string, Record<BucketKey, { effect1: string; effect2: string }>>;
+  // Per-axis: the DPS and support tables pair different effects into each bucket, so the
+  // tooltip labels are keyed by axis (every other meta field is identical across the two).
+  effectBuckets: Record<CutAxis, Record<string, Record<BucketKey, { effect1: string; effect2: string }>>>;
   verdict: { green: number; yellowHi: number; yellowMid: number; yellowLo: number; red: number };
   slots: number;
   cutsPerWeek: Record<Rarity, number>;

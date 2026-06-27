@@ -136,7 +136,9 @@ const out = {
     rarities: meta.rarities,
     buckets: meta.buckets,
     bucketLabels: meta.bucketLabels,
-    effectBuckets: meta.effectBuckets,
+    // Per-axis effect-pair labels: each source file pairs different effects into each bucket
+    // (DPS vs support). Every OTHER meta field is identical across the two, so only this is split.
+    effectBuckets: { dps: meta.effectBuckets, support: support.json.meta.effectBuckets },
     verdict: meta.verdict,
     slots: meta.slots,
     cutsPerWeek: meta.cutsPerWeek,
