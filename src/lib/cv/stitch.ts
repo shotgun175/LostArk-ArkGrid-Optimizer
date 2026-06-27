@@ -99,6 +99,84 @@ export interface CountStatus {
   remaining: number | null;
 }
 
+/** Relaxed overlap used once a target count is available to vouch for the assembly (see
+ *  {@link assembleScreenshots}). Low enough to bridge the real 3-gem `Order 2/3` overlap, above the
+ *  1-gem coincidence floor; the exact-count acceptance test is the actual safety net. */
+export const RELAXED_MIN_OVERLAP = 2;
+
+export interface AssemblyResult {
+  /** The de-duplicated sequence (a single fragment when count-confirmed; else the longest fragment). */
+  gems: ArkGridGem[];
+  /** Checksum status of `gems.length` vs the target. NOTE: `status.complete` reflects only the
+   *  returned fragment — a UI must also require `fragments === 1` before showing "complete". */
+  status: CountStatus;
+  /** `count-confirmed`: a relaxed assembly whose length the target vouches for; else `conservative`. */
+  method: 'count-confirmed' | 'conservative';
+  /** Disjoint fragments in the chosen assembly; > 1 means an unbridged gap (a shot didn't connect). */
+  fragments: number;
+}
+
+/**
+ * Order-tolerant greedy overlap assembly: treat each screenshot as a fragment and repeatedly merge
+ * the fragment pair with the largest suffix→prefix overlap (any ordering) ≥ `minOverlap`, until no
+ * pair qualifies. Returns the surviving fragments, longest first. A fully-contained fragment is
+ * absorbed (its remainder is empty). Pure; n (screenshots) is small so the O(n²·merges) loop is fine.
+ */
+export function greedyAssemble(screens: ArkGridGem[][], minOverlap: number): ArkGridGem[][] {
+  const minOv = Math.max(1, minOverlap); // floor at 1: a zero-overlap pair must never merge (no double-count)
+  let frags = screens.filter((s) => s.length > 0).map((s) => s.slice());
+  for (;;) {
+    let bi = -1;
+    let bj = -1;
+    let bestOverlap = minOv - 1;
+    let merged: ArkGridGem[] | null = null;
+    for (let i = 0; i < frags.length; i++) {
+      for (let j = 0; j < frags.length; j++) {
+        if (i === j) continue;
+        const ov = suffixPrefixOverlap(frags[i], frags[j]); // frags[i] above frags[j]
+        if (ov > bestOverlap) {
+          bestOverlap = ov;
+          bi = i;
+          bj = j;
+          merged = frags[i].concat(frags[j].slice(ov)); // slice(ov)=[] when j is fully contained
+        }
+      }
+    }
+    if (bi < 0 || !merged) break;
+    frags = frags.filter((_, k) => k !== bi && k !== bj);
+    frags.push(merged);
+  }
+  return frags.sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Assemble several single-attribute screenshots into one de-duplicated inventory, using the in-game
+ * owned-count footer as the referee (the "B with A fallback" model):
+ * - With a `target`: a RELAXED pass (≥ {@link RELAXED_MIN_OVERLAP}) is trusted ONLY when it yields a
+ *   single fragment whose length exactly equals the target → `count-confirmed`. The exact-length
+ *   check means a wrong/unreliable target (e.g. KO's narrow-"1") simply fails to confirm.
+ * - Otherwise (or no target): the CONSERVATIVE pass (≥ {@link DEFAULT_MIN_OVERLAP}) wins; its longest
+ *   fragment is returned (never concatenating an unproven overlap), and `fragments > 1` flags a gap.
+ */
+export function assembleScreenshots(
+  screens: ArkGridGem[][],
+  target: number | null | undefined,
+  opts: { conservativeMin?: number; relaxedMin?: number } = {}
+): AssemblyResult {
+  const conservativeMin = opts.conservativeMin ?? DEFAULT_MIN_OVERLAP;
+  const relaxedMin = opts.relaxedMin ?? RELAXED_MIN_OVERLAP;
+
+  if (target != null) {
+    const relaxed = greedyAssemble(screens, relaxedMin);
+    if (relaxed.length === 1 && relaxed[0].length === target) {
+      return { gems: relaxed[0], status: assessCount(relaxed[0].length, target), method: 'count-confirmed', fragments: 1 };
+    }
+  }
+  const conservative = greedyAssemble(screens, conservativeMin);
+  const gems = conservative[0] ?? [];
+  return { gems, status: assessCount(gems.length, target ?? null), method: 'conservative', fragments: conservative.length };
+}
+
 /** Compare an assembled gem count to the footer target (the checksum). */
 export function assessCount(count: number, target: number | null | undefined): CountStatus {
   if (target == null) {

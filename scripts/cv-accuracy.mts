@@ -22,7 +22,9 @@ import { getCv, initOpenCv } from '../src/lib/cv/cvRuntime';
 import { type SpriteDecoder, loadGemAsset } from '../src/lib/cv/matStore';
 import { recognizeGems } from '../src/lib/cv/recognize';
 import { buildScaleLadder } from '../src/lib/cv/scaleDetection';
+import { assembleScreenshots } from '../src/lib/cv/stitch';
 import type { CvMat } from '../src/lib/cv/types';
+import type { ArkGridGem } from '../src/lib/models/arkGridGems';
 
 // jpeg-js and pngjs are CommonJS; load them via require so Node's ESM↔CJS named-export interop
 // can't bite at runtime. jpeg-js ships types (typeof import); pngjs 3.x doesn't, so shape it inline.
@@ -250,6 +252,31 @@ async function main(): Promise<void> {
       );
     }
     console.log(`Owned-count accuracy ${pct(ownedOk, withOwned.length).trim()} (${ownedOk}/${withOwned.length}).`);
+  }
+
+  // Multi-screenshot stitch (count-checksum): assemble the overlapping fixtures via the count-aware
+  // assembler and verify the de-duplicated length against the footer target. Real recognize→assemble
+  // path; uses each fixture's recognized gems (reuses the work above). Skips if fixtures are absent.
+  const stitchScenarios: { label: string; keys: string[]; attr: 'order' | 'chaos' }[] = [
+    { label: 'Chaos 1+2+3', keys: ['Chaos 1', 'Chaos 2', 'Chaos 3'], attr: 'chaos' },
+    { label: 'Order 1+2+3', keys: ['Order 1', 'Order 2', 'Order 3'], attr: 'order' },
+  ];
+  const runnable = stitchScenarios.filter((s) => s.keys.every((k) => recognized[k]?.gems.length));
+  if (runnable.length > 0) {
+    console.log('\nMulti-screenshot stitch (count checksum):');
+    for (const sc of runnable) {
+      const shots = sc.keys.map((k) => recognized[k].gems as unknown as ArkGridGem[]);
+      const target = recognized[sc.keys[0]].owned?.[sc.attr] ?? null;
+      const r = assembleScreenshots(shots, target);
+      const verdict = r.status.complete
+        ? 'COMPLETE'
+        : r.status.overcount
+          ? 'OVERCOUNT'
+          : `+${r.status.remaining} more`;
+      console.log(
+        `  ${sc.label.padEnd(12)} method=${r.method.padEnd(15)} assembled=${r.gems.length}/${target} ${verdict} (fragments=${r.fragments})`
+      );
+    }
   }
   process.exit(0);
 }

@@ -4,6 +4,7 @@
   import Icon from '../../lib/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
+  import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';
   import type { OwnedCount } from '../../lib/cv/types';
   import {
     type ImportResult,
@@ -66,7 +67,7 @@
   };
   const LUploadHint = $derived(
     {
-      en_us: 'Drop a screenshot here, paste (Ctrl/⌘+V), or click to choose a file.',
+      en_us: 'Drop screenshots here (several at once is fine), paste (Ctrl/⌘+V), or click to choose files.',
     }[locale]
   );
   const LUploadProcessing = $derived(
@@ -110,6 +111,14 @@
   let bookmarklet = $state<string>('');
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
+  // Upload path (multi-file): keep the RAW recognized shots per attribute + the per-attr footer
+  // target, and re-derive the de-duplicated lists with the count-aware assembler on each upload.
+  let orderShots = $state<ArkGridGem[][]>([]);
+  let chaosShots = $state<ArkGridGem[][]>([]);
+  let orderTarget = $state<number | null>(null);
+  let chaosTarget = $state<number | null>(null);
+  let orderAssembly = $state<AssemblyResult | null>(null);
+  let chaosAssembly = $state<AssemblyResult | null>(null);
   let isRecording = $state<boolean>(false);
   let isDebugging = $state<boolean>(false);
   let isLoading = $state<boolean>(false);
@@ -226,29 +235,79 @@
     }
   }
 
-  // Recognize gems from a single uploaded / pasted / dropped screenshot. Works for everyone —
-  // including mobile / Safari / Firefox — since it needs only the worker, not screen sharing.
-  async function processImageFile(file: File | null | undefined) {
-    if (!file || !file.type.startsWith('image/')) return;
-    if (isProcessingUpload) return;
+  // Re-derive the de-duplicated per-attr lists from the raw uploaded shots via the count-aware
+  // assembler (B-with-A-fallback). Only touches an attribute that has uploads, so the live
+  // screen-share path (which fills totalOrderGems/totalChaosGems directly) is left intact.
+  function reassembleUploads() {
+    if (orderShots.length > 0) {
+      orderAssembly = assembleScreenshots(orderShots, orderTarget);
+      totalOrderGems = orderAssembly.gems;
+    }
+    if (chaosShots.length > 0) {
+      chaosAssembly = assembleScreenshots(chaosShots, chaosTarget);
+      totalChaosGems = chaosAssembly.gems;
+    }
+  }
+
+  // Recognize one screenshot into the raw per-attr shot list + update both footer targets (the
+  // footer carries Order AND Chaos totals regardless of which tab is shown). Returns true on success.
+  async function recognizeIntoShots(file: File): Promise<boolean> {
+    const controller = await getCaptureController();
+    const bitmap = await createImageBitmap(file);
+    const result = await controller.recognizeImage(bitmap);
+    if (!result || result.gems.length === 0) return false;
+    (result.gemAttr === 'Order' ? orderShots : chaosShots).push(result.gems);
+    if (result.owned?.order != null) orderTarget = Math.max(orderTarget ?? 0, result.owned.order);
+    if (result.owned?.chaos != null) chaosTarget = Math.max(chaosTarget ?? 0, result.owned.chaos);
+    return true;
+  }
+
+  // Recognize one OR MORE uploaded / pasted / dropped screenshots, then re-assemble. Works for
+  // everyone (mobile / Safari / Firefox) — needs only the worker, not screen sharing.
+  async function processImageFiles(files: FileList | File[] | null | undefined) {
+    const images = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0 || isProcessingUpload) return;
     isProcessingUpload = true;
+    let recognized = 0;
     try {
-      const controller = await getCaptureController();
-      const bitmap = await createImageBitmap(file);
-      const result = await controller.recognizeImage(bitmap);
-      detectedOwned = result?.owned ?? null;
-      if (result && result.gems.length > 0) {
-        applyCurrentGems(result.gemAttr, result.gems);
-      } else {
+      for (const file of images) {
+        try {
+          if (await recognizeIntoShots(file)) recognized++;
+        } catch {
+          // skip an unreadable file; the rest still process
+        }
+      }
+      if (recognized === 0) {
         window.alert(
           'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot.'
         );
+        return;
       }
-    } catch {
-      window.alert('Could not read that image file.');
+      reassembleUploads();
+      detectedOwned = { order: orderTarget, chaos: chaosTarget };
+      if (totalOrderGems.length > 0) gemListElem?.selectTab(0);
+      else if (totalChaosGems.length > 0) gemListElem?.selectTab(1);
+      gemListElem?.scroll('bottom');
     } finally {
       isProcessingUpload = false;
     }
+  }
+
+  // Single-file entry (paste handler / back-compat).
+  const processImageFile = (file: File | null | undefined) => processImageFiles(file ? [file] : []);
+
+  // Clear the upload session (wired to the GemList "Reset" button so the raw shots don't repopulate).
+  function resetUploads() {
+    orderShots = [];
+    chaosShots = [];
+    orderTarget = null;
+    chaosTarget = null;
+    orderAssembly = null;
+    chaosAssembly = null;
+    totalOrderGems = [];
+    totalChaosGems = [];
+    detectedOwned = null;
+    _prevGem = null;
   }
 
   // Merge an imported loadout into the working gem lists (same store recognition fills), deduping
@@ -521,7 +580,7 @@
         ondrop={(e) => {
           e.preventDefault();
           isDragging = false;
-          void processImageFile(e.dataTransfer?.files?.[0]);
+          void processImageFiles(e.dataTransfer?.files);
         }}
       >
         <span class="upload-zone-text">{isProcessingUpload ? LUploadProcessing : LUploadHint}</span>
@@ -530,14 +589,15 @@
           class="upload-file-input"
           type="file"
           accept="image/*"
+          multiple
           onchange={(e) => {
             const input = e.currentTarget;
-            void processImageFile(input.files?.[0]);
+            void processImageFiles(input.files);
             input.value = '';
           }}
         />
       </div>
-      {#if detectedOwned && (detectedOwned.order !== null || detectedOwned.chaos !== null)}
+      {#if detectedOwned && !orderAssembly && !chaosAssembly && (detectedOwned.order !== null || detectedOwned.chaos !== null)}
         <p class="owned-note">
           📋 Screenshot inventory: Order {detectedOwned.order ?? '?'}, Chaos
           {detectedOwned.chaos ?? '?'} owned
@@ -619,6 +679,8 @@
           orderGems: totalOrderGems,
           chaosGems: totalChaosGems,
         }}
+        assembly={{ order: orderAssembly, chaos: chaosAssembly }}
+        onReset={resetUploads}
         bind:this={gemListElem}
       />
     </div>

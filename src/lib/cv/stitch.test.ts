@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ArkGridGem } from '../models/arkGridGems';
 import {
+  assembleScreenshots,
   assessCount,
   stitchScreenshot,
   stitchScreenshots,
@@ -80,6 +81,77 @@ describe('stitchScreenshots (fold)', () => {
     const order3 = seq(7, 8, 9, 20, 21, 22, 23, 24, 25);
     expect(stitchScreenshots([order2, order3])).toHaveLength(9); // order3 unplaced
     expect(stitchScreenshots([order2, order3], 3)).toHaveLength(15); // relaxed: 9 + 6
+  });
+});
+
+describe('assembleScreenshots (count-driven, B-with-A-fallback)', () => {
+  const reqs = (gems: ArkGridGem[]) => gems.map((g) => g.req);
+
+  it('B: clean >=4 overlap, confirmed by the count', () => {
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(6, 7, 8, 9, 10, 11, 12, 13, 14)], 14);
+    expect(r.method).toBe('count-confirmed');
+    expect(r.fragments).toBe(1);
+    expect(reqs(r.gems)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(r.status.complete).toBe(true);
+  });
+
+  it('B: a 3-gem overlap is accepted when the count confirms it (Order 2 + Order 3)', () => {
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(7, 8, 9, 20, 21, 22, 23, 24, 25)], 15);
+    expect(r.method).toBe('count-confirmed');
+    expect(r.gems).toHaveLength(15);
+    expect(r.status.complete).toBe(true);
+  });
+
+  it('B: order-tolerant — assembles regardless of upload order', () => {
+    const r = assembleScreenshots([seq(6, 7, 8, 9, 10, 11, 12, 13, 14), seq(1, 2, 3, 4, 5, 6, 7, 8, 9)], 14);
+    expect(r.method).toBe('count-confirmed');
+    expect(reqs(r.gems)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  });
+
+  it('B: ignores duplicate / contained re-uploads', () => {
+    const r = assembleScreenshots(
+      [seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(6, 7, 8, 9, 10, 11, 12, 13, 14)],
+      14
+    );
+    expect(r.method).toBe('count-confirmed');
+    expect(r.gems).toHaveLength(14);
+  });
+
+  it('A fallback: 3-gem overlap with NO target -> conservative, gap flagged, longest only', () => {
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(7, 8, 9, 20, 21, 22, 23, 24, 25)], null);
+    expect(r.method).toBe('conservative');
+    expect(r.fragments).toBe(2); // unbridged gap
+    expect(r.gems).toHaveLength(9); // longest fragment only — never double-count an unproven overlap
+    expect(r.status.complete).toBeNull();
+  });
+
+  it('A fallback: target the relaxed pass cannot confirm -> conservative + undercount', () => {
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(7, 8, 9, 20, 21, 22, 23, 24, 25)], 20);
+    expect(r.method).toBe('conservative');
+    expect(r.gems).toHaveLength(9);
+    expect(r.status).toMatchObject({ complete: false, overcount: false, remaining: 11 });
+  });
+
+  it('overcount: a wrong-low target is flagged, not silently trusted', () => {
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(6, 7, 8, 9, 10, 11, 12, 13, 14)], 12);
+    expect(r.method).toBe('conservative'); // relaxed (14) != target (12)
+    expect(r.gems).toHaveLength(14);
+    expect(r.status.overcount).toBe(true);
+  });
+
+  it('empty input', () => {
+    const r = assembleScreenshots([], 23);
+    expect(r.gems).toHaveLength(0);
+    expect(r.fragments).toBe(0);
+  });
+
+  it('a gap whose longest fragment coincidentally equals the target stays fragments>1 (UI must not call it complete)', () => {
+    // Two disjoint 9-gem shots, target 9: longest fragment length == target, but fragments=2.
+    // status.complete is true (length match) — which is exactly why the footer ANDs it with fragments===1.
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(20, 21, 22, 23, 24, 25, 26, 27, 28)], 9);
+    expect(r.method).toBe('conservative');
+    expect(r.fragments).toBe(2);
+    expect(r.status.complete).toBe(true); // per longest fragment only — not a true "complete"
   });
 });
 
