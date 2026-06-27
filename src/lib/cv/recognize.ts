@@ -263,14 +263,17 @@ export function extractNineGems(
   return gems;
 }
 
-// Per-locale anchor-relative band over the "(Order N, Chaos N …)" footer line. The x-start is AFTER
-// the "(Order " prefix so the capital "O" can't be mistaken for a 0; width covers up to 3-digit
-// counts. ko_kr / ru_ru are pending footer-digit templates + their own geometry (different wording),
-// so they have no entry → readOwnedCount no-ops for them. See the footer-OCR NEEDS note.
+// Per-locale anchor-relative band over the footer count line(s). en_us: the "(Order N, Chaos N
+// owned)" line, x-start AFTER the "(Order " prefix so the capital "O" can't be mistaken for a 0.
+// ru_ru: the 2nd footer line "(В наличии: рунитов Порядка – N, рунитов Хаоса – N.)" (Order first,
+// Chaos last, lower than EN's line); the band spans both numbers and the Cyrillic between them
+// scores below the digit threshold. ko_kr is pending its templates + geometry → no entry, so
+// readOwnedCount no-ops for it. See the footer-OCR NEEDS note.
 const FOOTER_COUNT_BAND: Partial<
   Record<GemRecognitionLocale, { x: number; y: number; width: number; height: number }>
 > = {
   en_us: { x: -132, y: 819, width: 150, height: 20 },
+  ru_ru: { x: -74, y: 857, width: 170, height: 14 },
 };
 const OWNED_DIGIT_THRESHOLD = 0.85; // real footer digits score ≥0.89; spurious letter/bracket strokes ≤0.81
 const OWNED_DIGIT_NMS_X = 4; // suppress overlapping matches within this many px (one digit per spot)

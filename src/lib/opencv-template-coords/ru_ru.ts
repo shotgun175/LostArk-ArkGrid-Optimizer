@@ -21,16 +21,26 @@ export const ruRuCoords = {
   'destruction.png': { x: 13, y: 149, w: 10, h: 25 },
   'distortion.png': { x: 16, y: 94, w: 15, h: 23 },
   'immutability.png': { x: 0, y: 149, w: 11, h: 26 },
-  'lv1.png': { x: 244, y: 55, w: 6, h: 12 },
+  'lv1.png': { x: 91, y: 76, w: 6, h: 12 },
   'lv2.png': { x: 199, y: 55, w: 10, h: 12 },
   'lv3.png': { x: 291, y: 38, w: 10, h: 13 },
   'lv4.png': { x: 147, y: 55, w: 12, h: 12 },
   'lv5.png': { x: 68, y: 76, w: 10, h: 13 },
   'order.png': { x: 0, y: 55, w: 72, h: 19 },
+  'owned-0.png': { x: 244, y: 55, w: 9, h: 10 },
+  'owned-1.png': { x: 275, y: 55, w: 2, h: 9 },
+  'owned-2.png': { x: 141, y: 76, w: 5, h: 10 },
+  'owned-3.png': { x: 117, y: 76, w: 6, h: 10 },
+  'owned-4.png': { x: 99, y: 76, w: 7, h: 10 },
+  'owned-5.png': { x: 125, y: 76, w: 6, h: 10 },
+  'owned-6.png': { x: 108, y: 76, w: 7, h: 10 },
+  'owned-7.png': { x: 133, y: 76, w: 6, h: 10 },
+  'owned-8.png': { x: 255, y: 55, w: 8, h: 9 },
+  'owned-9.png': { x: 265, y: 55, w: 8, h: 9 },
   'solidity.png': { x: 0, y: 94, w: 14, h: 25 },
   'stability.png': { x: 0, y: 121, w: 12, h: 26 },
 } as const;
 
 export type RuRuTemplateName = keyof typeof ruRuCoords;
 
-export const ruRuFileName = 'opencv_template_ru_ru_1782587145309.png';
+export const ruRuFileName = 'opencv_template_ru_ru_1782588719080.png';

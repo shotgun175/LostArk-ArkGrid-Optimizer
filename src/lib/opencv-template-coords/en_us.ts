@@ -43,4 +43,4 @@ export const enUsCoords = {
 
 export type EnUsTemplateName = keyof typeof enUsCoords;
 
-export const enUsFileName = 'opencv_template_en_us_1782587145309.png';
+export const enUsFileName = 'opencv_template_en_us_1782588719080.png';
