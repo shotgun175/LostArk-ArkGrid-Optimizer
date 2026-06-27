@@ -5,10 +5,17 @@
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
   import type { OwnedCount } from '../../lib/cv/types';
+  import {
+    type ImportResult,
+    buildBookmarklet,
+    parseImportHash,
+    parseLoadout,
+  } from '../../lib/import/bibleImport';
   import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
   import {
     appConfig,
     sectionUI,
+    setSection,
     toggleDeferredScreenSharingInit,
     toggleSection,
   } from '../../lib/state/appConfig.state.svelte';
@@ -67,6 +74,15 @@
       en_us: 'Recognizing…',
     }[locale]
   );
+  const LImport: LocalizationName = {
+    en_us: 'Import Loadout',
+  };
+  const LImportHint = $derived(
+    {
+      en_us:
+        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr — no screen sharing, no server.',
+    }[locale]
+  );
   // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
   // MediaStreamTrackProcessor (Chromium-only). Detect once; gate the UI when missing so
   // mobile/Safari/Firefox users get a clear message instead of a button that throws.
@@ -86,6 +102,12 @@
   let isProcessingUpload = $state<boolean>(false);
   // The in-game "Astrogems Owned" total read from the last uploaded screenshot (count checksum).
   let detectedOwned = $state<OwnedCount | null>(null);
+  // Backend-free loadout import (paste page source / drop .html / bookmarklet hand-off).
+  let showImport = $state<boolean>(false);
+  let importText = $state<string>('');
+  let isImportDragging = $state<boolean>(false);
+  let importMsg = $state<string | null>(null);
+  let bookmarklet = $state<string>('');
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
   let isRecording = $state<boolean>(false);
@@ -229,6 +251,61 @@
     }
   }
 
+  // Merge an imported loadout into the working gem lists (same store recognition fills), deduping
+  // against gems already present. Returns how many new gems were added.
+  function applyImportedGems(result: ImportResult): number {
+    let added = 0;
+    let addedOrder = false;
+    let addedChaos = false;
+    for (const gem of result.gems) {
+      const list = gem.gemAttr === 'Order' ? totalOrderGems : totalChaosGems;
+      if (list.some((g) => isSameArkGridGem(g, gem))) continue;
+      list.push(gem);
+      added++;
+      if (gem.gemAttr === 'Order') addedOrder = true;
+      else addedChaos = true;
+    }
+    if (addedOrder) gemListElem?.selectTab(0);
+    else if (addedChaos) gemListElem?.selectTab(1);
+    gemListElem?.scroll('bottom');
+    return added;
+  }
+
+  // Parse a pasted/dropped/bookmarklet-supplied page source and apply the gems it contains.
+  function importFromText(text: string, hint?: { region?: string | null; name?: string | null }) {
+    const result = parseLoadout(text, hint);
+    if (!result) {
+      window.alert(
+        'That doesn’t look like a lostark.bible or lopec.kr character page. Paste the page source (Ctrl/⌘+U → select all → copy), or drop the saved .html file.'
+      );
+      return;
+    }
+    if (result.gems.length === 0) {
+      window.alert(
+        'No Ark Grid gems found. Make sure the character has an Ark Grid equipped — the “📥 Import Astrogems” bookmarklet is the most reliable way to import (it reads that exact character fresh).'
+      );
+      return;
+    }
+    const added = applyImportedGems(result);
+    const who = result.name
+      ? `${result.name}${result.region ? ` (${result.region})` : ''}`
+      : result.source;
+    const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
+    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}`;
+  }
+
+  async function onImportDrop(e: DragEvent) {
+    e.preventDefault();
+    isImportDragging = false;
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      importFromText(await file.text());
+      return;
+    }
+    const text = e.dataTransfer?.getData('text');
+    if (text) importFromText(text);
+  }
+
   async function startGemCapture() {
     // The button is hidden when unsupported; guard defensively anyway.
     if (!captureSupported) return;
@@ -292,6 +369,17 @@
     controller.detectionMargin = detectionMargin;
   }
   onMount(() => {
+    // Build the bookmarklet against the live app URL, and accept a #import= hand-off from it.
+    bookmarklet = buildBookmarklet(location.origin + location.pathname);
+    const fromHash = parseImportHash(location.hash);
+    if (fromHash) {
+      showImport = true;
+      setSection('showGemRecognitionPanel', true);
+      importFromText(fromHash.src, { region: fromHash.region, name: fromHash.name });
+      // Clear the hash so a refresh doesn't re-import.
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+
     // Paste-to-recognize: only acts while the upload panel is open, so it never hijacks paste
     // elsewhere. Reads the first image item off the clipboard and runs it through recognition.
     const onPaste = (e: ClipboardEvent) => {
@@ -404,6 +492,9 @@
         <button class:active={showUpload} onclick={() => (showUpload = !showUpload)}>
           📷 {LUpload[locale]}
         </button>
+        <button class:active={showImport} onclick={() => (showImport = !showImport)}>
+          📥 {LImport[locale]}
+        </button>
       </div>
     </div>
     {#if showUpload}
@@ -452,6 +543,51 @@
           {detectedOwned.chaos ?? '?'} owned
         </p>
       {/if}
+    {/if}
+    {#if showImport}
+      <div class="import-panel">
+        <p class="import-intro">{LImportHint}</p>
+        <ol class="import-steps">
+          <li>
+            Drag this to your bookmarks bar, then click it while viewing your character on
+            <strong>lostark.bible</strong> — it reads that exact character fresh (no refresh needed):
+            <a class="bookmarklet" href={bookmarklet} onclick={(e) => e.preventDefault()}
+              >📥 Import Astrogems</a
+            >
+          </li>
+          <li>
+            …or drop a saved <strong>.html</strong> of the character page below, or paste its source
+            (also works for <strong>lopec.kr</strong> / KR).
+          </li>
+        </ol>
+        <div
+          class="upload-zone import-drop"
+          class:dragging={isImportDragging}
+          role="button"
+          tabindex="0"
+          aria-label="Drop a saved character page (.html)"
+          ondragover={(e) => {
+            e.preventDefault();
+            isImportDragging = true;
+          }}
+          ondragleave={() => (isImportDragging = false)}
+          ondrop={onImportDrop}
+        >
+          <span class="upload-zone-text">Drop a saved .html of the character page here</span>
+        </div>
+        <textarea
+          class="import-textarea"
+          bind:value={importText}
+          placeholder="…or paste the page source here (Ctrl/⌘+U → select all → copy)"
+          rows="3"
+        ></textarea>
+        <button class="import-go" disabled={!importText.trim()} onclick={() => importFromText(importText)}>
+          Import from pasted source
+        </button>
+        {#if importMsg}
+          <p class="owned-note">✅ {importMsg}</p>
+        {/if}
+      </div>
     {/if}
     <div hidden={!isDebugging}>
       <div class="debug-screen">
@@ -598,6 +734,62 @@
     color: var(--text);
     opacity: 0.9;
     font-size: 0.9rem;
+  }
+
+  .import-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .import-intro {
+    margin: 0;
+    opacity: 0.9;
+  }
+  .import-steps {
+    margin: 0;
+    padding-left: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+  .bookmarklet {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 0.4rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: grab;
+    color: #fff;
+    background: #2e7d32;
+    border: 1px solid #2e7d32;
+  }
+  .bookmarklet:active {
+    cursor: grabbing;
+  }
+  .import-drop {
+    padding: 1rem;
+  }
+  .import-textarea {
+    width: 100%;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--text);
+    background: var(--card, transparent);
+    color: var(--text);
+  }
+  .import-go {
+    align-self: flex-start;
+    width: auto;
+  }
+  .import-go:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .panel > .content {
