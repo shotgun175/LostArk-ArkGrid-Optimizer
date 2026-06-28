@@ -4,14 +4,59 @@ import type { GemRecognitionLocale } from '../constants/enums';
 import { getCv, initOpenCv } from './cvRuntime';
 import { loadGemAsset } from './matStore';
 import { multiScaleAnchorMatch } from './matcher';
-import { type RecognizeResult, extractNineGems, findBest, recognizeGems } from './recognize';
+import { type RecognizeResult, extractNineGems, findBest } from './recognize';
+import { recognizeGemsOcr, type OcrResult, type OcrRunner } from './recognizeOcr';
 import { buildScaleLadder, rawScaleToResolutionScale, snapResolutionScale } from './scaleDetection';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types';
+
+/**
+ * Lazy tesseract.js wrapper for the client-agnostic upload OCR path. tesseract (wasm core + English
+ * data, multi-MB) loads only on the FIRST image recognition, then one worker is reused across the
+ * ~30 column/cell OCR calls per image. Each cv.Mat is rendered to ImageData for tesseract.
+ */
+class BrowserOcrRunner implements OcrRunner {
+  private worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | null = null;
+  private psmMap: Record<number, unknown> = {};
+  private initPromise: Promise<void> | null = null;
+
+  private async ensure(): Promise<void> {
+    if (this.worker) return;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const T = await import('tesseract.js');
+        this.psmMap = { 6: T.PSM.SINGLE_BLOCK, 7: T.PSM.SINGLE_LINE, 10: T.PSM.SINGLE_CHAR };
+        this.worker = await T.createWorker('eng');
+      })();
+    }
+    await this.initPromise;
+  }
+
+  async recognizeMat(mat: CvMat, opts: { psm: number; whitelist?: string }): Promise<OcrResult> {
+    await this.ensure();
+    const cv = getCv();
+    await this.worker!.setParameters({
+      tessedit_pageseg_mode: (this.psmMap[opts.psm] ?? this.psmMap[6]) as never,
+      tessedit_char_whitelist: opts.whitelist ?? '',
+    });
+    const rgba = new cv.Mat();
+    cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
+    const img = new ImageData(new Uint8ClampedArray(rgba.data), rgba.cols, rgba.rows);
+    rgba.delete();
+    const { data } = await this.worker!.recognize(img, {}, { blocks: true });
+    const lines: OcrResult['lines'] = [];
+    for (const b of (data.blocks ?? []) as Array<{ paragraphs?: Array<{ lines?: Array<{ text: string; bbox: { y0: number; y1: number } }> }> }>)
+      for (const p of b.paragraphs ?? [])
+        for (const l of p.lines ?? []) lines.push({ text: String(l.text).trim(), cy: (l.bbox.y0 + l.bbox.y1) / 2 });
+    return { text: String(data.text).trim(), lines };
+  }
+}
 
 class FrameProcessor {
   // init
   private loadedAsset: Awaited<ReturnType<typeof loadGemAsset>> | null = null;
   private initPromise: Promise<void> | null = null;
+  // Lazy OCR engine for the upload path (created on first uploaded image; live path never uses it).
+  private ocrRunner: BrowserOcrRunner | null = null;
 
   // debug
   debugCanvas: OffscreenCanvas = new OffscreenCanvas(0, 0);
@@ -366,22 +411,19 @@ class FrameProcessor {
     }
   }
 
-  // Recognize gems from a single uploaded/pasted screenshot. Each image is independent, so this
-  // forgets any cached anchor location / measured scale from a prior live session and runs a fresh
-  // full-frame multi-scale search via the shared recognize.ts core (the exact path the accuracy
-  // harness tests). Closes the bitmap.
-  processImage(bitmap: ImageBitmap, detectionMargin: number = 0): RecognizeResult | undefined {
+  // Recognize gems from a single uploaded/pasted screenshot via the CLIENT-AGNOSTIC OCR path
+  // (recognizeOcr.ts): the gem text is read by OCR (rendering-invariant) so an upload works on ANY
+  // client, unlike the template-matching live path. Closes the bitmap. (`detectionMargin` is unused
+  // here — OCR has no per-match threshold to relax.)
+  async processImage(bitmap: ImageBitmap): Promise<RecognizeResult | undefined> {
     const cv = this.cv;
-    this.previousInfo = null;
-    this.cachedResolutionScale = null;
     let gray: CvMat | null = null;
     try {
       if (!cv || !this.loadedAsset) return undefined;
       gray = this.decodeToGray(bitmap, bitmap.width, bitmap.height);
-      const result = recognizeGems(cv, gray, this.loadedAsset, {
-        thresholds: this.thresholdSet,
+      if (!this.ocrRunner) this.ocrRunner = new BrowserOcrRunner();
+      const result = await recognizeGemsOcr(cv, gray, this.loadedAsset, this.ocrRunner, {
         anchorScaleLadder: this.anchorScaleLadder,
-        detectionMargin,
       });
       return result ?? undefined;
     } finally {
@@ -432,12 +474,12 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
       }
       break;
 
-    case 'image':
-      // Static-image (upload/paste) recognition request — independent of the live frame loop.
-      postToMain({
-        type: 'image:done',
-        result: processor.processImage(data.bitmap, data.detectionMargin),
-      });
+    case 'image': {
+      // Static-image (upload/paste) recognition request — independent of the live frame loop. Async:
+      // the OCR path lazy-loads tesseract and runs many OCR calls.
+      const result = await processor.processImage(data.bitmap);
+      postToMain({ type: 'image:done', result });
       break;
+    }
   }
 };

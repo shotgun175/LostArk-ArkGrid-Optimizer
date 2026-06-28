@@ -32,3 +32,6 @@ docs/
 # Dev-only CV harness — not part of the app build; kept on disk, not shipped.
 harness.html
 src/harness.ts
+
+# tesseract.js Node cache (downloaded on demand by the OCR harness)
+*.traineddata

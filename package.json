@@ -12,6 +12,7 @@
     "test:unit": "vitest run",
     "test:cv": "tsx scripts/cv-tests.mts",
     "test:cv-accuracy": "tsx scripts/cv-accuracy.mts",
+    "test:cv-ocr": "tsx scripts/cv-ocr-accuracy.mts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -44,6 +45,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@techstark/opencv-js": "^4.12.0-release.1",
     "@zerodevx/svelte-toast": "^0.9.6",
-    "svelte-persisted-state": "^1.2.0"
+    "svelte-persisted-state": "^1.2.0",
+    "tesseract.js": "^5.1.1"
   }
 }
