@@ -2,6 +2,9 @@
   import type { LocalizationName } from '../../lib/constants/enums';
   import { appLocale } from '../../lib/state/locale.state.svelte';
 
+  // The Guide mirrors the active recognition mode so its steps match the button the user picked.
+  let { mode = 'capture' }: { mode?: 'capture' | 'upload' | 'import' } = $props();
+
   const LTitle: LocalizationName = {
     en_us: 'Guide',
   };
@@ -13,7 +16,49 @@
     <span>🎓️ {LTitle[locale]}</span>
   </div>
   <div class="content">
-    <div class="content">
+    {#if mode === 'upload'}
+      <h2>Upload screenshots</h2>
+      <p>1. Open your Astrogem list in game, full screen and uncropped.</p>
+      <p>
+        2. Take a screenshot. If the list is longer than one screen, scroll down and take more.
+        <b>Keep a few gems overlapping between consecutive screenshots</b> so they can be linked,
+        and make sure the bottom <b>"Astrogems Owned"</b> count is visible in at least one shot.
+      </p>
+      <p>
+        3. Upload them all together (drag, paste with Ctrl/⌘+V, or click to choose). They are
+        stitched into one inventory and de-duplicated using the owned count as a checksum.
+      </p>
+      <p>4. Check the totals, then click [✅ Apply to Current Profile] to save them.</p>
+      <br />
+      <h2>FAQ</h2>
+      <p>
+        Q. It says a screenshot did not connect.<br />
+        A. Two screenshots had no gems in common, so they could not be linked. Re-take them so a few
+        gems repeat between scrolls, and include the "Astrogems Owned" footer so the total can be
+        verified.
+      </p>
+      <p>
+        Q. Which clients work?<br />
+        A. Any client and language. The gems are read by their shapes, not by matching one client's
+        exact text.
+      </p>
+    {:else if mode === 'import'}
+      <h2>Import a loadout</h2>
+      <p>
+        Bring your equipped Ark Grid over from lostark.bible or lopec.kr. No screen sharing and no
+        server are involved; the gems are read from the page you supply.
+      </p>
+      <p>
+        The <b>📥 Import Astrogems bookmarklet</b> (in the panel above) is the most reliable way: it
+        reads that exact character fresh. You can also drop a saved <b>.html</b> of the character
+        page, or paste its source.
+      </p>
+      <p>
+        This imports only the gems your character has <b>equipped</b>, so it is a quick way to seed
+        the optimizer without screenshots.
+      </p>
+    {:else}
+      <h2>Live screen sharing</h2>
       <p>
         1. Open an Astrogem list and unequip all.<br />
         You can switch to an unused Ark Grid preset to quickly unequip all astrogems.
@@ -28,7 +73,7 @@
       <h2>FAQ</h2>
       <p>
         Q. I get a message saying screen sharing failed or was denied.<br />
-        A. Please use Chrome or Edge browser.
+        A. Please use Chrome or Edge browser, or use [📷 Upload Screenshot] instead.
       </p>
       <p>
         Q. Astrogems are not being recognized.<br />
@@ -50,7 +95,7 @@
           interact with the astrogems.
         </li>
       </ol>
-    </div>
+    {/if}
   </div>
 </div>
 

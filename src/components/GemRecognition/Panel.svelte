@@ -98,13 +98,17 @@
 
   let debugCanvas: HTMLCanvasElement | null;
   let fileInput = $state<HTMLInputElement | null>(null);
-  let showUpload = $state<boolean>(false);
+  // Active recognition mode. The three inputs (live screen sharing, screenshot upload, loadout
+  // import) are mutually exclusive; screen sharing is the default. The section flags derive from it
+  // so only one is ever open at a time.
+  let mode = $state<'capture' | 'upload' | 'import'>('capture');
+  let showUpload = $derived(mode === 'upload');
   let isDragging = $state<boolean>(false);
   let isProcessingUpload = $state<boolean>(false);
   // The in-game "Astrogems Owned" total read from the last uploaded screenshot (count checksum).
   let detectedOwned = $state<OwnedCount | null>(null);
   // Backend-free loadout import (paste page source / drop .html / bookmarklet hand-off).
-  let showImport = $state<boolean>(false);
+  let showImport = $derived(mode === 'import');
   let importText = $state<string>('');
   let isImportDragging = $state<boolean>(false);
   let importMsg = $state<string | null>(null);
@@ -432,7 +436,7 @@
     bookmarklet = buildBookmarklet(location.origin + location.pathname);
     const fromHash = parseImportHash(location.hash);
     if (fromHash) {
-      showImport = true;
+      mode = 'import';
       setSection('showGemRecognitionPanel', true);
       importFromText(fromHash.src, { region: fromHash.region, name: fromHash.name });
       // Clear the hash so a refresh doesn't re-import.
@@ -526,7 +530,7 @@
   >
     <div class="buttons">
       <div class="left">
-        {#if captureSupported}
+        {#if captureSupported && mode === 'capture'}
           {#if !isRecording}
             <button onclick={startGemCapture}>🖥️ {LStartCapture[locale]}</button>
           {:else}
@@ -548,10 +552,18 @@
       <div class="right">
         <!-- Available to everyone (not gated on captureSupported): static-image recognition is the
              path mobile / Safari / Firefox users have, and a convenience for desktop too. -->
-        <button class:active={showUpload} onclick={() => (showUpload = !showUpload)}>
+        <button
+          class:active={showUpload}
+          disabled={isRecording}
+          onclick={() => (mode = mode === 'upload' ? 'capture' : 'upload')}
+        >
           📷 {LUpload[locale]}
         </button>
-        <button class:active={showImport} onclick={() => (showImport = !showImport)}>
+        <button
+          class:active={showImport}
+          disabled={isRecording}
+          onclick={() => (mode = mode === 'import' ? 'capture' : 'import')}
+        >
           📥 {LImport[locale]}
         </button>
       </div>
@@ -672,7 +684,7 @@
     </div>
     <div class="dual-panel">
       <div>
-        <GemRecognitionGuide></GemRecognitionGuide>
+        <GemRecognitionGuide {mode}></GemRecognitionGuide>
       </div>
       <GemRecognitionGemList
         gems={{
