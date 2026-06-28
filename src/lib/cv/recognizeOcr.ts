@@ -46,6 +46,8 @@ export interface RecognizeOcrOptions {
   iconThreshold?: number;
   /** Dev-only per-row failure logging (harness use). */
   debug?: (msg: string) => void;
+  /** Coarse 0..1 progress for a determinate UI bar (rows -> effects -> digits -> footer). */
+  onProgress?: (fraction: number) => void;
 }
 
 /** Up-scale factors before OCR (small game text needs enlarging for tesseract). */
@@ -197,7 +199,8 @@ async function readDigits(
   ocr: OcrRunner,
   colX: number,
   rows: { y: number }[],
-  scale: number
+  scale: number,
+  onStep?: (fraction01: number) => void
 ): Promise<{ willpower: (number | null)[]; points: (number | null)[] }> {
   const r0 = rows[0].y;
   const r8 = rows[rows.length - 1].y;
@@ -219,6 +222,10 @@ async function readDigits(
     const maxH = 30 * scale * UP_DIGIT;
     const minA = 12 * scale * scale * UP_DIGIT * UP_DIGIT;
     const comps: { cy: number; digit: number | null; sig: Uint8Array }[] = [];
+    // Each row contributes a willpower + a points digit, so ~rows*2 single-char OCR calls — the bulk of
+    // the per-image time. Report progress against that estimate so the bar moves through this phase.
+    const expectedDigits = Math.max(1, rows.length * 2);
+    let ocrDone = 0;
     for (let i = 1; i < n; i++) {
       const x = stats.intAt(i, 0);
       const y = stats.intAt(i, 1);
@@ -239,6 +246,7 @@ async function readDigits(
       const res = await ocr.recognizeMat(inv, { psm: PSM_SINGLE_CHAR, whitelist: '0123456789' });
       inv.delete();
       comps.push({ cy: y + h / 2, digit: parseBoundedDigit(res.text, 0, 99), sig });
+      onStep?.(Math.min(1, ++ocrDone / expectedDigits));
     }
     labels.delete();
     stats.delete();
@@ -345,6 +353,7 @@ export async function recognizeGemsOcr(
   const locale: GemRecognitionLocale = opts.locale ?? 'en_us';
   const iconThreshold = opts.iconThreshold ?? 0.82;
   const gemAtlas = asset.atlasGemImage[locale];
+  const report = opts.onProgress;
 
   // 1. Find the UI scale + a seed icon (icons are language-independent fixed assets).
   const seed = multiScaleAnchorMatch(cv, gray, gemAtlas, opts.anchorScaleLadder);
@@ -355,6 +364,7 @@ export async function recognizeGemsOcr(
   const { colX, rows } = findIconRows(cv, gray, gemAtlas, scale, seed.loc.x, seed.loc.y, iconThreshold);
   if (rows.length === 0) return null;
   opts.debug?.(`scale=${scale.toFixed(3)} colX=${colX} rows=${rows.length}`);
+  report?.(0.05); // rows located
 
   // 3. Effect-name column OCR (both option lines per row, all rows in one block); map lines to rows.
   const r0 = rows[0].y;
@@ -380,12 +390,16 @@ export async function recognizeGemsOcr(
     }
     return best && bd < 16 * scale ? best.text : null;
   };
+  report?.(0.2); // effect names read
 
-  // 4. Digits (willpower + points) via connected components.
-  const digits = await readDigits(cv, gray, ocr, colX, rows, scale);
+  // 4. Digits (willpower + points) via connected components — the bulk; map its 0..1 onto 0.2..0.9.
+  const digits = await readDigits(cv, gray, ocr, colX, rows, scale, (f) => report?.(0.2 + 0.7 * f));
+
+  report?.(0.9); // digits read
 
   // 4b. Footer owned-count (the stitch checksum) — best-effort; null degrades to overlap-only.
   const owned = await readFooterCount(cv, gray, asset, scale, locale, ocr);
+  report?.(1); // done
 
   // 5. Assemble + validate per row.
   const gems: ArkGridGem[] = [];

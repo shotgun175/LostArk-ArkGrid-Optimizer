@@ -427,6 +427,7 @@ class FrameProcessor {
       if (!this.ocrRunner) this.ocrRunner = new BrowserOcrRunner();
       const result = await recognizeGemsOcr(cv, gray, this.loadedAsset, this.ocrRunner, {
         anchorScaleLadder: this.anchorScaleLadder,
+        onProgress: (fraction) => postToMain({ type: 'image:progress', fraction }),
       });
       return result ?? undefined;
     } finally {

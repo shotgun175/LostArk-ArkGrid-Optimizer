@@ -105,6 +105,9 @@
   let showUpload = $derived(mode === 'upload');
   let isDragging = $state<boolean>(false);
   let isProcessingUpload = $state<boolean>(false);
+  // Determinate progress of the in-flight upload recognition (null when idle). `frac` is the overall
+  // 0..1 across all files; `index`/`total` drive the "screenshot N of M" label.
+  let uploadProg = $state<{ frac: number; index: number; total: number } | null>(null);
   // The in-game "Astrogems Owned" total read from the last uploaded screenshot (count checksum).
   let detectedOwned = $state<OwnedCount | null>(null);
   // Backend-free loadout import (paste page source / drop .html / bookmarklet hand-off).
@@ -272,15 +275,21 @@
     const images = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
     if (images.length === 0 || isProcessingUpload) return;
     isProcessingUpload = true;
+    uploadProg = { frac: 0, index: 0, total: images.length };
     let recognized = 0;
+    const controller = await getCaptureController();
     try {
-      for (const file of images) {
+      for (let i = 0; i < images.length; i++) {
+        // Map this file's 0..1 recognition progress into the overall bar across all files.
+        controller.onImageProgress = (f) => (uploadProg = { frac: (i + f) / images.length, index: i, total: images.length });
         try {
-          if (await recognizeIntoShots(file)) recognized++;
+          if (await recognizeIntoShots(images[i])) recognized++;
         } catch {
           // skip an unreadable file; the rest still process
         }
+        uploadProg = { frac: (i + 1) / images.length, index: i, total: images.length };
       }
+      controller.onImageProgress = null;
       if (recognized === 0) {
         window.alert(
           'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot.'
@@ -293,7 +302,9 @@
       else if (totalChaosGems.length > 0) gemListElem?.selectTab(1);
       gemListElem?.scroll('bottom');
     } finally {
+      controller.onImageProgress = null;
       isProcessingUpload = false;
+      uploadProg = null;
     }
   }
 
@@ -597,7 +608,21 @@
           void processImageFiles(e.dataTransfer?.files);
         }}
       >
-        <span class="upload-zone-text">{isProcessingUpload ? LUploadProcessing : LUploadHint}</span>
+        {#if uploadProg}
+          <div class="upload-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(uploadProg.frac * 100)}>
+            <span class="upload-zone-text">
+              {uploadProg.total > 1
+                ? `Recognizing screenshot ${Math.min(uploadProg.index + 1, uploadProg.total)} of ${uploadProg.total}…`
+                : LUploadProcessing}
+              {Math.round(uploadProg.frac * 100)}%
+            </span>
+            <div class="upload-progress-track">
+              <div class="upload-progress-fill" style:width={`${Math.max(3, uploadProg.frac * 100)}%`}></div>
+            </div>
+          </div>
+        {:else}
+          <span class="upload-zone-text">{LUploadHint}</span>
+        {/if}
         <input
           bind:this={fileInput}
           class="upload-file-input"
@@ -801,6 +826,28 @@
   }
   .upload-zone-text {
     pointer-events: none;
+  }
+  .upload-progress {
+    pointer-events: none;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .upload-progress-track {
+    width: min(100%, 22rem);
+    height: 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--card-inner);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .upload-progress-fill {
+    height: 100%;
+    background-color: var(--primary);
+    border-radius: inherit;
+    transition: width 0.2s ease;
   }
   .upload-file-input {
     display: none;
