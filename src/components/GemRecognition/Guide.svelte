@@ -27,17 +27,18 @@
         least one shot.
       </p>
       <p>
-        3. Upload them all together (drag, paste with Ctrl/⌘+V, or click to choose). They are
-        stitched into one inventory and de-duplicated using the owned count as a checksum.
+        3. Upload them all together (drag, paste with Ctrl/⌘+V, or click to choose), or one at a
+        time. Either way, and in any order, they are stitched into one inventory and de-duplicated
+        using the owned count as a checksum.
       </p>
       <p>4. Check the totals, then click [✅ Apply to Current Profile] to save them.</p>
       <br />
       <h2>FAQ</h2>
       <p>
-        Q. It says a screenshot did not connect.<br />
-        A. Two screenshots had fewer than {RELAXED_MIN_OVERLAP} gems in common, so they could not be
-        linked. Re-take them so at least {RELAXED_MIN_OVERLAP} gems repeat between scrolls, and
-        include the "Astrogems Owned" footer so the total can be verified.
+        Q. It says the screenshots did not all link.<br />
+        A. Some screenshots do not share enough gems for the tool to tell how they fit together.
+        Re-take them so at least {RELAXED_MIN_OVERLAP} gems repeat between scrolls, and keep the
+        "Astrogems Owned" footer visible so the total can be checked.
       </p>
       <p>
         Q. Which clients work?<br />
