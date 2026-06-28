@@ -18,6 +18,9 @@ class BrowserOcrRunner implements OcrRunner {
   private worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | null = null;
   private psmMap: Record<number, unknown> = {};
   private initPromise: Promise<void> | null = null;
+  // Set per-call so the worker's recognition logger can drive a determinate progress bar for the slow
+  // block reads (effect names, footer); the fast single-char digit reads report per-component instead.
+  private onProgress: ((fraction: number) => void) | null = null;
 
   private async ensure(): Promise<void> {
     if (this.worker) return;
@@ -25,14 +28,22 @@ class BrowserOcrRunner implements OcrRunner {
       this.initPromise = (async () => {
         const T = await import('tesseract.js');
         this.psmMap = { 6: T.PSM.SINGLE_BLOCK, 7: T.PSM.SINGLE_LINE, 10: T.PSM.SINGLE_CHAR };
-        this.worker = await T.createWorker('eng');
+        this.worker = await T.createWorker('eng', 1, {
+          logger: (m: { status?: string; progress?: number }) => {
+            if (m.status === 'recognizing text' && typeof m.progress === 'number') this.onProgress?.(m.progress);
+          },
+        });
       })();
     }
     await this.initPromise;
   }
 
-  async recognizeMat(mat: CvMat, opts: { psm: number; whitelist?: string }): Promise<OcrResult> {
+  async recognizeMat(
+    mat: CvMat,
+    opts: { psm: number; whitelist?: string; onProgress?: (fraction: number) => void }
+  ): Promise<OcrResult> {
     await this.ensure();
+    this.onProgress = opts.onProgress ?? null;
     const cv = getCv();
     await this.worker!.setParameters({
       tessedit_pageseg_mode: (this.psmMap[opts.psm] ?? this.psmMap[6]) as never,
@@ -46,6 +57,7 @@ class BrowserOcrRunner implements OcrRunner {
     const canvas = new OffscreenCanvas(imgData.width, imgData.height);
     canvas.getContext('2d')!.putImageData(imgData, 0, 0);
     const { data } = await this.worker!.recognize(canvas, {}, { blocks: true });
+    this.onProgress = null;
     const lines: OcrResult['lines'] = [];
     for (const b of (data.blocks ?? []) as Array<{ paragraphs?: Array<{ lines?: Array<{ text: string; bbox: { y0: number; y1: number } }> }> }>)
       for (const p of b.paragraphs ?? [])

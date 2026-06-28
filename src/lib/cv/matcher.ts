@@ -104,9 +104,17 @@ export function multiScaleAnchorMatch<K extends string>(
   frame: CvMat,
   matchingAtlas: MatchingAtlas<K>,
   ladder: number[],
-  maxSearchWidth = 1600
+  maxSearchWidth = 1600,
+  // Optional 0..1 progress over the coarse sweep — the slow first step of upload recognition. The
+  // worker posts these while it runs, so the main-thread bar can move instead of sitting at 0.
+  onProgress?: (fraction: number) => void
 ): ScaleCandidate<K> | null {
-  const searchScales = (scales: number[], downscale: number, onlyKey?: K): ScaleCandidate<K>[] => {
+  const searchScales = (
+    scales: number[],
+    downscale: number,
+    onlyKey?: K,
+    onScale?: (fraction: number) => void
+  ): ScaleCandidate<K>[] => {
     let small = frame;
     if (downscale < 1) {
       small = new cv.Mat();
@@ -121,7 +129,8 @@ export function multiScaleAnchorMatch<K extends string>(
     }
     const keys = onlyKey ? [onlyKey] : (Object.keys(matchingAtlas.entries) as K[]);
     const out: ScaleCandidate<K>[] = [];
-    for (const f of scales) {
+    for (let si = 0; si < scales.length; si++) {
+      const f = scales[si];
       for (const key of keys) {
         const tpl = matchingAtlas.entries[key].template;
         const tw = Math.round(tpl.cols * f * downscale);
@@ -148,25 +157,33 @@ export function multiScaleAnchorMatch<K extends string>(
         scaledTpl.delete();
         res.delete();
       }
+      onScale?.((si + 1) / scales.length);
     }
     if (small !== frame) small.delete();
     return out;
   };
 
-  // Coarse pass over the ladder, downscaled for speed.
+  // Coarse pass over the ladder, downscaled for speed (reports 0..0.7 of this match's progress).
   const coarse = chooseBestScale(
-    searchScales(ladder, computeSearchDownscale(frame.cols, maxSearchWidth))
+    searchScales(
+      ladder,
+      computeSearchDownscale(frame.cols, maxSearchWidth),
+      undefined,
+      onProgress && ((f) => onProgress(0.7 * f))
+    )
   );
   if (!coarse) return null;
 
   // Fine pass at full resolution around the coarse winner (winning locale only), to beat
-  // ladder quantization and recover the true sub-step scale.
+  // ladder quantization and recover the true sub-step scale (reports 0.7..1.0).
   const step = ladder.length > 1 ? Math.abs(ladder[1] - ladder[0]) : 0.05;
   const fineLadder = buildScaleLadder(
     Math.max(0.05, coarse.scale - step),
     coarse.scale + step,
     step / 10
   );
-  const fine = chooseBestScale(searchScales(fineLadder, 1, coarse.key));
+  const fine = chooseBestScale(
+    searchScales(fineLadder, 1, coarse.key, onProgress && ((f) => onProgress(0.7 + 0.3 * f)))
+  );
   return fine && fine.score >= coarse.score ? fine : coarse;
 }
