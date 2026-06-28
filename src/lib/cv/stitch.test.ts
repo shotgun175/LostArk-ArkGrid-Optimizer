@@ -117,19 +117,35 @@ describe('assembleScreenshots (count-driven, B-with-A-fallback)', () => {
     expect(r.gems).toHaveLength(14);
   });
 
-  it('A fallback: 3-gem overlap with NO target -> conservative, gap flagged, longest only', () => {
+  it('relaxed recovery: a sub-conservative overlap with NO target links (flagged relaxed), not dropped', () => {
     const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(7, 8, 9, 20, 21, 22, 23, 24, 25)], null);
-    expect(r.method).toBe('conservative');
-    expect(r.fragments).toBe(2); // unbridged gap
-    expect(r.gems).toHaveLength(9); // longest fragment only — never double-count an unproven overlap
+    expect(r.method).toBe('relaxed'); // recovered the full chain at the 3-gem overlap, flagged unverified
+    expect(r.fragments).toBe(1);
+    expect(r.gems).toHaveLength(15); // 1-9 + 20-25, de-duplicated — not the lone 9-gem fragment
     expect(r.status.complete).toBeNull();
   });
 
-  it('A fallback: target the relaxed pass cannot confirm -> conservative + undercount', () => {
+  it('relaxed recovery: a 2-gem overlap (the documented floor) links', () => {
+    const r = assembleScreenshots(
+      [seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(8, 9, 10, 11, 12, 13, 14, 15, 16)],
+      null
+    );
+    expect(r.method).toBe('relaxed'); // conservative (>=4) gaps at overlap 2; relaxed (>=2) chains them
+    expect(r.gems).toHaveLength(16);
+  });
+
+  it('relaxed recovery: an unconfirmable target still links via relaxed overlap, count shows the gap', () => {
     const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(7, 8, 9, 20, 21, 22, 23, 24, 25)], 20);
+    expect(r.method).toBe('relaxed');
+    expect(r.gems).toHaveLength(15);
+    expect(r.status).toMatchObject({ complete: false, overcount: false, remaining: 5 });
+  });
+
+  it('relaxed recovery does NOT merge truly disjoint shots (no shared run)', () => {
+    const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(20, 21, 22, 23, 24, 25, 26, 27, 28)], null);
     expect(r.method).toBe('conservative');
+    expect(r.fragments).toBe(2); // no overlap even at the relaxed floor — stays split, never false-merged
     expect(r.gems).toHaveLength(9);
-    expect(r.status).toMatchObject({ complete: false, overcount: false, remaining: 11 });
   });
 
   it('overcount: a wrong-low target is flagged, not silently trusted', () => {

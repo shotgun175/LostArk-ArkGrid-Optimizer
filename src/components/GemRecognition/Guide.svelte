@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { LocalizationName } from '../../lib/constants/enums';
+  import { RELAXED_MIN_OVERLAP } from '../../lib/cv/stitch';
   import { appLocale } from '../../lib/state/locale.state.svelte';
 
   // The Guide mirrors the active recognition mode so its steps match the button the user picked.
@@ -21,8 +22,9 @@
       <p>1. Open your Astrogem list in game, full screen and uncropped.</p>
       <p>
         2. Take a screenshot. If the list is longer than one screen, scroll down and take more.
-        <b>Keep a few gems overlapping between consecutive screenshots</b> so they can be linked,
-        and make sure the bottom <b>"Astrogems Owned"</b> count is visible in at least one shot.
+        <b>Make sure at least {RELAXED_MIN_OVERLAP} gems overlap between consecutive screenshots</b>
+        so they can be linked, and keep the bottom <b>"Astrogems Owned"</b> count visible in at
+        least one shot.
       </p>
       <p>
         3. Upload them all together (drag, paste with Ctrl/⌘+V, or click to choose). They are
@@ -33,9 +35,9 @@
       <h2>FAQ</h2>
       <p>
         Q. It says a screenshot did not connect.<br />
-        A. Two screenshots had no gems in common, so they could not be linked. Re-take them so a few
-        gems repeat between scrolls, and include the "Astrogems Owned" footer so the total can be
-        verified.
+        A. Two screenshots had fewer than {RELAXED_MIN_OVERLAP} gems in common, so they could not be
+        linked. Re-take them so at least {RELAXED_MIN_OVERLAP} gems repeat between scrolls, and
+        include the "Astrogems Owned" footer so the total can be verified.
       </p>
       <p>
         Q. Which clients work?<br />

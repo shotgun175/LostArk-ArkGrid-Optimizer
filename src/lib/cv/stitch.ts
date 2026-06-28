@@ -110,8 +110,13 @@ export interface AssemblyResult {
   /** Checksum status of `gems.length` vs the target. NOTE: `status.complete` reflects only the
    *  returned fragment — a UI must also require `fragments === 1` before showing "complete". */
   status: CountStatus;
-  /** `count-confirmed`: a relaxed assembly whose length the target vouches for; else `conservative`. */
-  method: 'count-confirmed' | 'conservative';
+  /** How the sequence was assembled:
+   *  - `count-confirmed`: a relaxed assembly whose length the footer target vouches for (trusted);
+   *  - `conservative`: a clean chain at the ≥{@link DEFAULT_MIN_OVERLAP} overlap (or, when fragmented,
+   *     the longest fragment, with `fragments` > 1 flagging the unbridged gap);
+   *  - `relaxed`: a single sequence recovered only at the ≥{@link RELAXED_MIN_OVERLAP} floor with no
+   *     count to confirm it — the UI surfaces it as unverified rather than dropping the orphaned shot. */
+  method: 'count-confirmed' | 'conservative' | 'relaxed';
   /** Disjoint fragments in the chosen assembly; > 1 means an unbridged gap (a shot didn't connect). */
   fragments: number;
 }
@@ -155,8 +160,13 @@ export function greedyAssemble(screens: ArkGridGem[][], minOverlap: number): Ark
  * - With a `target`: a RELAXED pass (≥ {@link RELAXED_MIN_OVERLAP}) is trusted ONLY when it yields a
  *   single fragment whose length exactly equals the target → `count-confirmed`. The exact-length
  *   check means a wrong/unreliable target (e.g. KO's narrow-"1") simply fails to confirm.
- * - Otherwise (or no target): the CONSERVATIVE pass (≥ {@link DEFAULT_MIN_OVERLAP}) wins; its longest
- *   fragment is returned (never concatenating an unproven overlap), and `fragments > 1` flags a gap.
+ * - A clean CONSERVATIVE chain (≥ {@link DEFAULT_MIN_OVERLAP} throughout) → `conservative`, fragments 1.
+ * - When conservative leaves a gap, RELAXED RECOVERY: if the shots chain at ≥ {@link RELAXED_MIN_OVERLAP}
+ *   into a single sequence, return that (fuller) result flagged `relaxed` — unverified, but never
+ *   silently dropping the orphaned shot. Requiring ONE fragment rejects a coincidental short match
+ *   between two genuinely-disjoint groups.
+ * - Truly disjoint shots (no shared run even at the relaxed floor) → `conservative` longest fragment,
+ *   `fragments > 1` flagging the gap.
  */
 export function assembleScreenshots(
   screens: ArkGridGem[][],
@@ -166,15 +176,27 @@ export function assembleScreenshots(
   const conservativeMin = opts.conservativeMin ?? DEFAULT_MIN_OVERLAP;
   const relaxedMin = opts.relaxedMin ?? RELAXED_MIN_OVERLAP;
 
+  // With a footer count, a relaxed assembly that hits the target exactly is fully trusted.
   if (target != null) {
     const relaxed = greedyAssemble(screens, relaxedMin);
     if (relaxed.length === 1 && relaxed[0].length === target) {
       return { gems: relaxed[0], status: assessCount(relaxed[0].length, target), method: 'count-confirmed', fragments: 1 };
     }
   }
+
   const conservative = greedyAssemble(screens, conservativeMin);
-  const gems = conservative[0] ?? [];
-  return { gems, status: assessCount(gems.length, target ?? null), method: 'conservative', fragments: conservative.length };
+  if (conservative.length === 1) {
+    return { gems: conservative[0], status: assessCount(conservative[0].length, target ?? null), method: 'conservative', fragments: 1 };
+  }
+  // Conservative left a gap. Retry at the relaxed floor and, if the shots actually chain into ONE
+  // sequence, return it flagged `relaxed` (the count couldn't vouch for it) rather than dropping gems.
+  const relaxed = greedyAssemble(screens, relaxedMin);
+  if (relaxed.length === 1) {
+    return { gems: relaxed[0], status: assessCount(relaxed[0].length, target ?? null), method: 'relaxed', fragments: 1 };
+  }
+  // Genuinely disjoint: surface the longest fragment and flag the gap.
+  const longest = conservative[0] ?? [];
+  return { gems: longest, status: assessCount(longest.length, target ?? null), method: 'conservative', fragments: conservative.length };
 }
 
 /** Compare an assembled gem count to the footer target (the checksum). */

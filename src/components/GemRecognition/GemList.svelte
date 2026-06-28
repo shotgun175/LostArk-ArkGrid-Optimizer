@@ -66,6 +66,8 @@
       const tgt = s.target != null ? ` / ${s.target}` : '';
       return `${label}: ${len}${tgt}. A screenshot did not connect; add a shot that overlaps the others by a few gems.`;
     }
+    if (a.method === 'relaxed' && s.target == null)
+      return `${label}: ${len} owned (linked by minimal overlap; add the footer count to verify)`;
     if (s.target == null) return `${label}: ${len} owned (count not read; linked by overlap only)`;
     if (s.complete) return `${label}: ${len} / ${s.target} complete`;
     return `${label}: ${len} / ${s.target} · ${s.remaining} more to capture`;
