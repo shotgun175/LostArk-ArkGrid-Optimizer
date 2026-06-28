@@ -40,9 +40,12 @@ class BrowserOcrRunner implements OcrRunner {
     });
     const rgba = new cv.Mat();
     cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
-    const img = new ImageData(new Uint8ClampedArray(rgba.data), rgba.cols, rgba.rows);
+    const imgData = new ImageData(new Uint8ClampedArray(rgba.data), rgba.cols, rgba.rows);
     rgba.delete();
-    const { data } = await this.worker!.recognize(img, {}, { blocks: true });
+    // tesseract.js won't read a raw ImageData; hand it an OffscreenCanvas (supported in workers).
+    const canvas = new OffscreenCanvas(imgData.width, imgData.height);
+    canvas.getContext('2d')!.putImageData(imgData, 0, 0);
+    const { data } = await this.worker!.recognize(canvas, {}, { blocks: true });
     const lines: OcrResult['lines'] = [];
     for (const b of (data.blocks ?? []) as Array<{ paragraphs?: Array<{ lines?: Array<{ text: string; bbox: { y0: number; y1: number } }> }> }>)
       for (const p of b.paragraphs ?? [])
