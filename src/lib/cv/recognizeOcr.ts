@@ -16,7 +16,7 @@ import { type ArkGridGem } from '../models/arkGridGems';
 import { ArkGridGemSpecs, determineGemGradeByGem } from '../models/arkGridGemSpecs';
 import { multiScaleAnchorMatch } from './matcher';
 import type { LoadedGemAsset, RecognizeResult } from './recognize';
-import type { CvMat } from './types';
+import type { CvMat, OwnedCount } from './types';
 import { parseBoundedDigit, snapEffect } from './ocr/vocab';
 
 /** One OCR'd text line with its vertical centre in the supplied Mat's pixel coords. */
@@ -283,11 +283,57 @@ async function readDigits(
   return { willpower, points };
 }
 
+/** FHD anchor-relative band over the whole footer block ("Astrogems Owned: X / 100 (Order N, Chaos M
+ *  owned)"), deliberately wide + tall so per-client text-position drift can't push the counts out of
+ *  frame. tesseract reads the block; the two counts are parsed by keyword (Order / Chaos). */
+const FOOTER_BAND = { x: -272, y: 785, width: 510, height: 68 };
+const UP_FOOTER = 4;
+
+/**
+ * Read the in-game owned-count footer for the count checksum. en_us only in v1 — the Order/Chaos words
+ * are English; other locales return null and the stitch degrades to overlap-only (which the relaxed
+ * recovery now handles). The footer sits at a fixed spot relative to the "Astrogem" tab, so we locate
+ * that tab AT THE ICON SCALE (the gem icons fix the scale client-agnostically; the tab text itself
+ * correlates poorly across clients, but its location at the right scale is enough to frame the band).
+ * Returns null off the calibrated scales (the band misses), which the checksum tolerates.
+ */
+async function readFooterCount(
+  cv: CV,
+  frame: CvMat,
+  asset: LoadedGemAsset,
+  scale: number,
+  locale: GemRecognitionLocale,
+  ocr: OcrRunner
+): Promise<OwnedCount | null> {
+  if (locale !== 'en_us') return null;
+  const anchor = multiScaleAnchorMatch(cv, frame, asset.atlasAnchor, [scale]);
+  if (!anchor) return null;
+  const band = cropMat(
+    cv,
+    frame,
+    anchor.loc.x + FOOTER_BAND.x * scale,
+    anchor.loc.y + FOOTER_BAND.y * scale,
+    FOOTER_BAND.width * scale,
+    FOOTER_BAND.height * scale,
+    UP_FOOTER,
+    false
+  );
+  if (!band) return null;
+  try {
+    const { text } = await ocr.recognizeMat(band, { psm: PSM_SINGLE_BLOCK });
+    const order = parseBoundedDigit(text.match(/Order\D{0,4}(\d+)/i)?.[1] ?? '', 0, 100);
+    const chaos = parseBoundedDigit(text.match(/Chaos\D{0,4}(\d+)/i)?.[1] ?? '', 0, 100);
+    return order == null && chaos == null ? null : { order, chaos };
+  } finally {
+    band.delete();
+  }
+}
+
 /**
  * Recognize all gems in a single decoded grayscale frame via OCR. Returns the same {@link
  * RecognizeResult} shape as the template path (so the stitcher / Panel are unchanged), or null when no
- * gem icons are found. Borrows `gray` (does not delete it). `owned` is null in v1 (footer OCR is a
- * follow-up); the count-checksum degrades gracefully to the conservative stitch.
+ * gem icons are found. Borrows `gray` (does not delete it). `owned` carries the footer count-checksum
+ * when the en_us footer reads (see {@link readFooterCount}); null otherwise, which the stitch tolerates.
  */
 export async function recognizeGemsOcr(
   cv: CV,
@@ -338,6 +384,9 @@ export async function recognizeGemsOcr(
   // 4. Digits (willpower + points) via connected components.
   const digits = await readDigits(cv, gray, ocr, colX, rows, scale);
 
+  // 4b. Footer owned-count (the stitch checksum) — best-effort; null degrades to overlap-only.
+  const owned = await readFooterCount(cv, gray, asset, scale, locale, ocr);
+
   // 5. Assemble + validate per row.
   const gems: ArkGridGem[] = [];
   let orderCount = 0;
@@ -372,5 +421,5 @@ export async function recognizeGemsOcr(
   });
 
   const gemAttr = chaosCount >= orderCount ? 'Chaos' : 'Order';
-  return { locale, gemAttr, gems, owned: null };
+  return { locale, gemAttr, gems, owned };
 }

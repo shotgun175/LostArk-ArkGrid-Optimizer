@@ -103,7 +103,9 @@ interface ExpectedGem {
   option1: GemOption;
   option2: GemOption;
 }
-type GroundTruth = Record<string, { gemAttr: string; gems: ExpectedGem[] }>;
+type OwnedGT = { order: number | null; chaos: number | null };
+type FixtureResult = { gemAttr: string; gems: ExpectedGem[]; owned?: OwnedGT | null };
+type GroundTruth = Record<string, FixtureResult>;
 
 function gemFields(a: ExpectedGem | undefined, b: ExpectedGem | undefined): boolean[] {
   return [
@@ -120,7 +122,7 @@ const fmt = (g: ExpectedGem) =>
   `${(g.name ?? '?').replace('Astrogem: ', '').padEnd(20)} req=${g.req} pt=${g.point}  ${g.option1.optionType}+${g.option1.value} / ${g.option2.optionType}+${g.option2.value}`;
 
 async function recognizeDir(cv: CV, asset: Awaited<ReturnType<typeof loadGemAsset>>, ocr: OcrRunner, dir: string) {
-  const out: Record<string, { gemAttr: string; gems: ExpectedGem[] }> = {};
+  const out: Record<string, FixtureResult> = {};
   const files = fs.readdirSync(dir).filter((f) => /\.jpe?g$/i.test(f)).sort();
   for (const file of files) {
     const gray = decodeGray(cv, path.join(dir, file));
@@ -128,7 +130,7 @@ async function recognizeDir(cv: CV, asset: Awaited<ReturnType<typeof loadGemAsse
       const dbg = process.env.OCR_DEBUG ? (m: string) => console.error(`[${file}] ${m}`) : undefined;
       const r = await recognizeGemsOcr(cv, gray, asset, ocr, { anchorScaleLadder: LADDER, debug: dbg });
       out[file.replace(/\.[^.]+$/, '')] = r
-        ? { gemAttr: r.gemAttr, gems: r.gems.map((g) => ({ name: g.name, gemAttr: g.gemAttr, req: g.req, point: g.point, option1: g.option1, option2: g.option2 })) }
+        ? { gemAttr: r.gemAttr, gems: r.gems.map((g) => ({ name: g.name, gemAttr: g.gemAttr, req: g.req, point: g.point, option1: g.option1, option2: g.option2 })), owned: r.owned }
         : { gemAttr: '(none)', gems: [] };
     } finally {
       gray.delete();
@@ -137,10 +139,10 @@ async function recognizeDir(cv: CV, asset: Awaited<ReturnType<typeof loadGemAsse
   return out;
 }
 
-function score(label: string, recognized: Record<string, { gemAttr: string; gems: ExpectedGem[] }>, gt: GroundTruth) {
+function score(label: string, recognized: Record<string, FixtureResult>, gt: GroundTruth) {
   console.log(`\n=== ${label} (scored vs ground truth) ===`);
-  console.log(`${'Fixture'.padEnd(14)} ${'attr'.padEnd(5)} ${'gems'.padEnd(7)} fields    exact`);
-  let okF = 0, totF = 0, okE = 0, totG = 0;
+  console.log(`${'Fixture'.padEnd(14)} ${'attr'.padEnd(5)} ${'gems'.padEnd(7)} fields    exact     owned`);
+  let okF = 0, totF = 0, okE = 0, totG = 0, ownedOk = 0, ownedTot = 0;
   for (const key of Object.keys(gt)) {
     const exp = gt[key], rec = recognized[key] ?? { gemAttr: '(missing)', gems: [] };
     let f = 1, fo = rec.gemAttr === exp.gemAttr ? 1 : 0, ex = 0;
@@ -151,9 +153,17 @@ function score(label: string, recognized: Record<string, { gemAttr: string; gems
       else if (process.env.OCR_DEBUG) console.error(`  [${key} #${i}] exp ${fmt(exp.gems[i])} | got ${rec.gems[i] ? fmt(rec.gems[i]) : '(none)'}`);
     }
     okF += fo; totF += f; okE += ex; totG += exp.gems.length;
-    console.log(`${key.padEnd(14)} ${(rec.gemAttr === exp.gemAttr ? 'ok' : 'X').padEnd(5)} ${`${rec.gems.length}/${exp.gems.length}`.padEnd(7)} ${`${fo}/${f}`.padEnd(9)} ${ex}/${exp.gems.length}`);
+    let ownedStr = '';
+    if (exp.owned) {
+      const oOk = (exp.owned.order ?? null) === (rec.owned?.order ?? null);
+      const cOk = (exp.owned.chaos ?? null) === (rec.owned?.chaos ?? null);
+      ownedOk += (oOk ? 1 : 0) + (cOk ? 1 : 0); ownedTot += 2;
+      ownedStr = `O ${rec.owned?.order ?? '-'}/${exp.owned.order} C ${rec.owned?.chaos ?? '-'}/${exp.owned.chaos} ${oOk && cOk ? 'ok' : 'X'}`;
+    }
+    console.log(`${key.padEnd(14)} ${(rec.gemAttr === exp.gemAttr ? 'ok' : 'X').padEnd(5)} ${`${rec.gems.length}/${exp.gems.length}`.padEnd(7)} ${`${fo}/${f}`.padEnd(9)} ${`${ex}/${exp.gems.length}`.padEnd(9)} ${ownedStr}`);
   }
-  console.log(`TOTAL field ${((100 * okF) / totF).toFixed(1)}%  exact-gem ${okE}/${totG} (${((100 * okE) / totG).toFixed(1)}%)`);
+  const ownedPct = ownedTot ? ` · owned ${ownedOk}/${ownedTot} (${((100 * ownedOk) / ownedTot).toFixed(0)}%)` : '';
+  console.log(`TOTAL field ${((100 * okF) / totF).toFixed(1)}%  exact-gem ${okE}/${totG} (${((100 * okE) / totG).toFixed(1)}%)${ownedPct}`);
 }
 
 function dump(label: string, recognized: Record<string, { gemAttr: string; gems: ExpectedGem[] }>) {
