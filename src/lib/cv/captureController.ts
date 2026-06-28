@@ -50,6 +50,7 @@ export class CaptureController {
   onStartCaptureError: ((err: StartCaptureErrorType) => void) | null = null; // worker failed to start
   onReady: (() => void) | null = null; // first frame consumed
   onStop: (() => void) | null = null; // recording stopped
+  onImageProgress: ((fraction: number) => void) | null = null; // 0..1 progress of a recognizeImage() call
 
   constructor(debugCanvas?: HTMLCanvasElement | null) {
     if (debugCanvas) this.debugCanvas = debugCanvas;
@@ -74,6 +75,12 @@ export class CaptureController {
           queueMicrotask(() => onLoad());
         }
         break;
+
+      case 'image:progress': {
+        const onImageProgress = this.onImageProgress;
+        if (onImageProgress) queueMicrotask(() => onImageProgress(data.fraction));
+        break;
+      }
 
       case 'image:done':
         // Resolve the pending recognizeImage() promise with the gems + owned-count (or null).

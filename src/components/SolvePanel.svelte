@@ -71,7 +71,7 @@
   const LFailed = $derived(
     {
       en_us:
-        "These minimum points can't be reached with your current astrogems — each astrogem adds at most 5 points to one core, and a core needs enough astrogems to meet its minimum. Lower the minimums or add more astrogems.",
+        "These minimum points can't be reached with your current astrogems. Each astrogem adds at most 5 points to one core, and a core needs enough astrogems to meet its minimum. Lower the minimums or add more astrogems.",
     }[locale]
   );
   const LOrderFailed = $derived(
@@ -380,7 +380,7 @@
       </button>
       {#if solveStale && !isSolving}
         <div class="stale-badge">
-          ⟳ Inputs changed since the last optimization — re-run to refresh the results.
+          ⟳ Inputs changed since the last optimization. Re-run to refresh the results.
         </div>
       {/if}
       <div class="optimize-hint">

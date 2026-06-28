@@ -81,7 +81,7 @@
   const LImportHint = $derived(
     {
       en_us:
-        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr — no screen sharing, no server.',
+        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr. No screen sharing, no server.',
     }[locale]
   );
   // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
@@ -98,13 +98,20 @@
 
   let debugCanvas: HTMLCanvasElement | null;
   let fileInput = $state<HTMLInputElement | null>(null);
-  let showUpload = $state<boolean>(false);
+  // Active recognition mode. The three inputs (live screen sharing, screenshot upload, loadout
+  // import) are mutually exclusive; screen sharing is the default. The section flags derive from it
+  // so only one is ever open at a time.
+  let mode = $state<'capture' | 'upload' | 'import'>('capture');
+  let showUpload = $derived(mode === 'upload');
   let isDragging = $state<boolean>(false);
   let isProcessingUpload = $state<boolean>(false);
+  // Determinate progress of the in-flight upload recognition (null when idle). `frac` is the overall
+  // 0..1 across all files; `index`/`total` drive the "screenshot N of M" label.
+  let uploadProg = $state<{ frac: number; index: number; total: number } | null>(null);
   // The in-game "Astrogems Owned" total read from the last uploaded screenshot (count checksum).
   let detectedOwned = $state<OwnedCount | null>(null);
   // Backend-free loadout import (paste page source / drop .html / bookmarklet hand-off).
-  let showImport = $state<boolean>(false);
+  let showImport = $derived(mode === 'import');
   let importText = $state<string>('');
   let isImportDragging = $state<boolean>(false);
   let importMsg = $state<string | null>(null);
@@ -268,15 +275,21 @@
     const images = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
     if (images.length === 0 || isProcessingUpload) return;
     isProcessingUpload = true;
+    uploadProg = { frac: 0, index: 0, total: images.length };
     let recognized = 0;
+    const controller = await getCaptureController();
     try {
-      for (const file of images) {
+      for (let i = 0; i < images.length; i++) {
+        // Map this file's 0..1 recognition progress into the overall bar across all files.
+        controller.onImageProgress = (f) => (uploadProg = { frac: (i + f) / images.length, index: i, total: images.length });
         try {
-          if (await recognizeIntoShots(file)) recognized++;
+          if (await recognizeIntoShots(images[i])) recognized++;
         } catch {
           // skip an unreadable file; the rest still process
         }
+        uploadProg = { frac: (i + 1) / images.length, index: i, total: images.length };
       }
+      controller.onImageProgress = null;
       if (recognized === 0) {
         window.alert(
           'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot.'
@@ -289,7 +302,9 @@
       else if (totalChaosGems.length > 0) gemListElem?.selectTab(1);
       gemListElem?.scroll('bottom');
     } finally {
+      controller.onImageProgress = null;
       isProcessingUpload = false;
+      uploadProg = null;
     }
   }
 
@@ -341,7 +356,7 @@
     }
     if (result.gems.length === 0) {
       window.alert(
-        'No Ark Grid gems found. Make sure the character has an Ark Grid equipped — the “📥 Import Astrogems” bookmarklet is the most reliable way to import (it reads that exact character fresh).'
+        'No Ark Grid gems found. Make sure the character has an Ark Grid equipped. The “📥 Import Astrogems” bookmarklet is the most reliable way to import (it reads that exact character fresh).'
       );
       return;
     }
@@ -432,7 +447,7 @@
     bookmarklet = buildBookmarklet(location.origin + location.pathname);
     const fromHash = parseImportHash(location.hash);
     if (fromHash) {
-      showImport = true;
+      mode = 'import';
       setSection('showGemRecognitionPanel', true);
       importFromText(fromHash.src, { region: fromHash.region, name: fromHash.name });
       // Clear the hash so a refresh doesn't re-import.
@@ -526,13 +541,13 @@
   >
     <div class="buttons">
       <div class="left">
-        {#if captureSupported}
+        {#if captureSupported && mode === 'capture'}
           {#if !isRecording}
             <button onclick={startGemCapture}>🖥️ {LStartCapture[locale]}</button>
           {:else}
             <button onclick={stopGemCapture}>🖥️ {LStopCapture[locale]}</button>
           {/if}
-          <button class:active={isDebugging} onclick={toggleDrawDebug}>
+          <button class:active={isDebugging} aria-pressed={isDebugging} onclick={toggleDrawDebug}>
             🔨 {isDebugging ? LHideScreen[locale] : LShowScreen[locale]}
           </button>
           <button onclick={toggleDeferredScreenSharingInit}>
@@ -548,10 +563,20 @@
       <div class="right">
         <!-- Available to everyone (not gated on captureSupported): static-image recognition is the
              path mobile / Safari / Firefox users have, and a convenience for desktop too. -->
-        <button class:active={showUpload} onclick={() => (showUpload = !showUpload)}>
+        <button
+          class:active={showUpload}
+          aria-pressed={showUpload}
+          disabled={isRecording}
+          onclick={() => (mode = mode === 'upload' ? 'capture' : 'upload')}
+        >
           📷 {LUpload[locale]}
         </button>
-        <button class:active={showImport} onclick={() => (showImport = !showImport)}>
+        <button
+          class:active={showImport}
+          aria-pressed={showImport}
+          disabled={isRecording}
+          onclick={() => (mode = mode === 'import' ? 'capture' : 'import')}
+        >
           📥 {LImport[locale]}
         </button>
       </div>
@@ -583,7 +608,21 @@
           void processImageFiles(e.dataTransfer?.files);
         }}
       >
-        <span class="upload-zone-text">{isProcessingUpload ? LUploadProcessing : LUploadHint}</span>
+        {#if uploadProg}
+          <div class="upload-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(uploadProg.frac * 100)}>
+            <span class="upload-zone-text">
+              {uploadProg.total > 1
+                ? `Recognizing screenshot ${Math.min(uploadProg.index + 1, uploadProg.total)} of ${uploadProg.total}…`
+                : LUploadProcessing}
+              {Math.round(uploadProg.frac * 100)}%
+            </span>
+            <div class="upload-progress-track">
+              <div class="upload-progress-fill" style:width={`${Math.max(3, uploadProg.frac * 100)}%`}></div>
+            </div>
+          </div>
+        {:else}
+          <span class="upload-zone-text">{LUploadHint}</span>
+        {/if}
         <input
           bind:this={fileInput}
           class="upload-file-input"
@@ -610,7 +649,7 @@
         <ol class="import-steps">
           <li>
             Drag this to your bookmarks bar, then click it while viewing your character on
-            <strong>lostark.bible</strong> — it reads that exact character fresh (no refresh needed):
+            <strong>lostark.bible</strong>. It reads that exact character fresh (no refresh needed):
             <a class="bookmarklet" href={bookmarklet} onclick={(e) => e.preventDefault()}
               >📥 Import Astrogems</a
             >
@@ -672,7 +711,7 @@
     </div>
     <div class="dual-panel">
       <div>
-        <GemRecognitionGuide></GemRecognitionGuide>
+        <GemRecognitionGuide {mode}></GemRecognitionGuide>
       </div>
       <GemRecognitionGemList
         gems={{
@@ -788,6 +827,28 @@
   .upload-zone-text {
     pointer-events: none;
   }
+  .upload-progress {
+    pointer-events: none;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .upload-progress-track {
+    width: min(100%, 22rem);
+    height: 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--card-inner);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .upload-progress-fill {
+    height: 100%;
+    background-color: var(--primary);
+    border-radius: inherit;
+    transition: width 0.2s ease;
+  }
   .upload-file-input {
     display: none;
   }
@@ -877,6 +938,20 @@
   }
   .buttons > div > button {
     flex-basis: auto;
+  }
+  /* Toggle buttons (Upload / Import / debug screen): a filled accent makes the "on" state
+     unmistakable, which matters once the Start Screen Sharing button hides on mode switch. */
+  .buttons button.active {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .buttons button.active:hover {
+      background-color: var(--primary);
+      filter: brightness(1.08);
+    }
   }
   .debug-screen {
     display: flex;

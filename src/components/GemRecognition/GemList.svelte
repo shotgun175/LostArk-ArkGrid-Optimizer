@@ -61,12 +61,14 @@
   function attrLine(label: string, len: number, a: AssemblyResult | null | undefined): string {
     if (!a) return `${label}: ${len} owned`;
     const s = a.status;
-    if (s.overcount) return `⚠ ${label}: ${len} / ${s.target} — possible duplicate; Reset & re-upload`;
+    if (s.overcount) return `⚠ ${label}: ${len} / ${s.target}, possible duplicate. Reset and re-upload.`;
     if (a.fragments > 1) {
       const tgt = s.target != null ? ` / ${s.target}` : '';
-      return `${label}: ${len}${tgt} · a screenshot didn’t connect — upload an overlapping slice`;
+      return `${label}: ${len}${tgt} shown, but the screenshots did not all link. Overlap them by a few gems or include the footer count to verify nothing is missing or duplicated.`;
     }
-    if (s.target == null) return `${label}: ${len} owned (count not read — overlap only)`;
+    if (a.method === 'relaxed' && s.target == null)
+      return `${label}: ${len} owned (linked by minimal overlap; add the footer count to verify)`;
+    if (s.target == null) return `${label}: ${len} owned (count not read; linked by overlap only)`;
     if (s.complete) return `${label}: ${len} / ${s.target} complete`;
     return `${label}: ${len} / ${s.target} · ${s.remaining} more to capture`;
   }

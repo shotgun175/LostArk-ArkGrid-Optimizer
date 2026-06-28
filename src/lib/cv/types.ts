@@ -36,6 +36,7 @@ export type CaptureWorkerResponse =
           }
         | undefined;
     }
+  | { type: 'image:progress'; fraction: number } // 0..1 progress of the in-flight upload recognition
   | {
       type: 'image:done';
       result:

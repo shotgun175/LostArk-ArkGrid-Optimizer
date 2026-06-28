@@ -16,7 +16,7 @@ import { type ArkGridGem } from '../models/arkGridGems';
 import { ArkGridGemSpecs, determineGemGradeByGem } from '../models/arkGridGemSpecs';
 import { multiScaleAnchorMatch } from './matcher';
 import type { LoadedGemAsset, RecognizeResult } from './recognize';
-import type { CvMat } from './types';
+import type { CvMat, OwnedCount } from './types';
 import { parseBoundedDigit, snapEffect } from './ocr/vocab';
 
 /** One OCR'd text line with its vertical centre in the supplied Mat's pixel coords. */
@@ -31,7 +31,10 @@ export interface OcrResult {
 /** tesseract.js wrapped for the current platform (Node harness / browser worker). The runner owns the
  *  Mat -> tesseract-input rendering (pngjs in Node, canvas in the worker) plus the OCR call. */
 export interface OcrRunner {
-  recognizeMat(mat: CvMat, opts: { psm: number; whitelist?: string }): Promise<OcrResult>;
+  recognizeMat(
+    mat: CvMat,
+    opts: { psm: number; whitelist?: string; onProgress?: (fraction: number) => void }
+  ): Promise<OcrResult>;
 }
 
 // tesseract PSM constants we use (avoids importing the enum into this cv-only module).
@@ -46,6 +49,8 @@ export interface RecognizeOcrOptions {
   iconThreshold?: number;
   /** Dev-only per-row failure logging (harness use). */
   debug?: (msg: string) => void;
+  /** Coarse 0..1 progress for a determinate UI bar (rows -> effects -> digits -> footer). */
+  onProgress?: (fraction: number) => void;
 }
 
 /** Up-scale factors before OCR (small game text needs enlarging for tesseract). */
@@ -100,7 +105,8 @@ function findIconRows(
   scale: number,
   seedX: number,
   seedY: number,
-  threshold: number
+  threshold: number,
+  onProgress?: (fraction: number) => void
 ): { colX: number; rows: { y: number; key: string }[] } {
   const pitch = 63 * scale;
   const scaled: { key: string; tpl: CvMat; w: number; h: number }[] = [];
@@ -147,6 +153,7 @@ function findIconRows(
   const seed = probe(seedX, seedY, tight);
   if (seed && seed.score > threshold) {
     rows.push(seed);
+    onProgress?.(1 / 9);
     // Walk DOWN then UP from the seed, re-anchoring on each found icon's actual position.
     for (const dir of [1, -1]) {
       let last = seed;
@@ -154,6 +161,7 @@ function findIconRows(
         const p = probe(last.x, last.y + dir * pitch, wide);
         if (!p || p.score <= threshold) break;
         rows.push(p);
+        onProgress?.(Math.min(1, rows.length / 9)); // ~9 rows per page; clamps for shorter lists
         last = p;
       }
     }
@@ -197,7 +205,8 @@ async function readDigits(
   ocr: OcrRunner,
   colX: number,
   rows: { y: number }[],
-  scale: number
+  scale: number,
+  onStep?: (fraction01: number) => void
 ): Promise<{ willpower: (number | null)[]; points: (number | null)[] }> {
   const r0 = rows[0].y;
   const r8 = rows[rows.length - 1].y;
@@ -219,6 +228,10 @@ async function readDigits(
     const maxH = 30 * scale * UP_DIGIT;
     const minA = 12 * scale * scale * UP_DIGIT * UP_DIGIT;
     const comps: { cy: number; digit: number | null; sig: Uint8Array }[] = [];
+    // Each row contributes a willpower + a points digit, so ~rows*2 single-char OCR calls — the bulk of
+    // the per-image time. Report progress against that estimate so the bar moves through this phase.
+    const expectedDigits = Math.max(1, rows.length * 2);
+    let ocrDone = 0;
     for (let i = 1; i < n; i++) {
       const x = stats.intAt(i, 0);
       const y = stats.intAt(i, 1);
@@ -239,6 +252,7 @@ async function readDigits(
       const res = await ocr.recognizeMat(inv, { psm: PSM_SINGLE_CHAR, whitelist: '0123456789' });
       inv.delete();
       comps.push({ cy: y + h / 2, digit: parseBoundedDigit(res.text, 0, 99), sig });
+      onStep?.(Math.min(1, ++ocrDone / expectedDigits));
     }
     labels.delete();
     stats.delete();
@@ -283,11 +297,68 @@ async function readDigits(
   return { willpower, points };
 }
 
+/** FHD anchor-relative band over the whole footer block ("Astrogems Owned: X / 100 (Order N, Chaos M
+ *  owned)"), deliberately wide + tall so per-client text-position drift can't push the counts out of
+ *  frame. tesseract reads the block; the two counts are parsed by keyword (Order / Chaos). */
+const FOOTER_BAND = { x: -272, y: 785, width: 510, height: 68 };
+const UP_FOOTER = 4;
+
+/**
+ * Read the in-game owned-count footer for the count checksum. en_us only in v1 — the Order/Chaos words
+ * are English; other locales return null and the stitch degrades to overlap-only (which the relaxed
+ * recovery now handles). The footer sits at a fixed spot relative to the "Astrogem" tab, so we locate
+ * that tab AT THE ICON SCALE (the gem icons fix the scale client-agnostically; the tab text itself
+ * correlates poorly across clients, but its location at the right scale is enough to frame the band).
+ * Returns null off the calibrated scales (the band misses), which the checksum tolerates.
+ */
+async function readFooterCount(
+  cv: CV,
+  frame: CvMat,
+  asset: LoadedGemAsset,
+  scale: number,
+  locale: GemRecognitionLocale,
+  ocr: OcrRunner,
+  onProgress?: (fraction: number) => void
+): Promise<OwnedCount | null> {
+  if (locale !== 'en_us') return null;
+  const anchor = multiScaleAnchorMatch(
+    cv,
+    frame,
+    asset.atlasAnchor,
+    [scale],
+    1600,
+    onProgress && ((f) => onProgress(0.5 * f))
+  );
+  if (!anchor) return null;
+  const band = cropMat(
+    cv,
+    frame,
+    anchor.loc.x + FOOTER_BAND.x * scale,
+    anchor.loc.y + FOOTER_BAND.y * scale,
+    FOOTER_BAND.width * scale,
+    FOOTER_BAND.height * scale,
+    UP_FOOTER,
+    false
+  );
+  if (!band) return null;
+  try {
+    const { text } = await ocr.recognizeMat(band, {
+      psm: PSM_SINGLE_BLOCK,
+      onProgress: onProgress && ((f) => onProgress(0.5 + 0.5 * f)),
+    });
+    const order = parseBoundedDigit(text.match(/Order\D{0,4}(\d+)/i)?.[1] ?? '', 0, 100);
+    const chaos = parseBoundedDigit(text.match(/Chaos\D{0,4}(\d+)/i)?.[1] ?? '', 0, 100);
+    return order == null && chaos == null ? null : { order, chaos };
+  } finally {
+    band.delete();
+  }
+}
+
 /**
  * Recognize all gems in a single decoded grayscale frame via OCR. Returns the same {@link
  * RecognizeResult} shape as the template path (so the stitcher / Panel are unchanged), or null when no
- * gem icons are found. Borrows `gray` (does not delete it). `owned` is null in v1 (footer OCR is a
- * follow-up); the count-checksum degrades gracefully to the conservative stitch.
+ * gem icons are found. Borrows `gray` (does not delete it). `owned` carries the footer count-checksum
+ * when the en_us footer reads (see {@link readFooterCount}); null otherwise, which the stitch tolerates.
  */
 export async function recognizeGemsOcr(
   cv: CV,
@@ -299,16 +370,24 @@ export async function recognizeGemsOcr(
   const locale: GemRecognitionLocale = opts.locale ?? 'en_us';
   const iconThreshold = opts.iconThreshold ?? 0.82;
   const gemAtlas = asset.atlasGemImage[locale];
+  const report = opts.onProgress;
 
-  // 1. Find the UI scale + a seed icon (icons are language-independent fixed assets).
-  const seed = multiScaleAnchorMatch(cv, gray, gemAtlas, opts.anchorScaleLadder);
+  // 1. Find the UI scale + a seed icon (icons are language-independent fixed assets). The multi-scale
+  //    sweep is by far the slowest step (~half the time), so it drives the bar across 0..0.5 rather
+  //    than leaving it stuck. Phase weights below are tuned to measured wall-clock, not even thirds.
+  const seed = multiScaleAnchorMatch(cv, gray, gemAtlas, opts.anchorScaleLadder, 1600, (f) =>
+    report?.(0.5 * f)
+  );
   if (!seed) return null;
   const scale = seed.scale;
 
   // 2. Enumerate the gem rows from the seed; each row yields gem identity (name + Order/Chaos).
-  const { colX, rows } = findIconRows(cv, gray, gemAtlas, scale, seed.loc.x, seed.loc.y, iconThreshold);
+  const { colX, rows } = findIconRows(cv, gray, gemAtlas, scale, seed.loc.x, seed.loc.y, iconThreshold, (f) =>
+    report?.(0.5 + 0.12 * f)
+  );
   if (rows.length === 0) return null;
   opts.debug?.(`scale=${scale.toFixed(3)} colX=${colX} rows=${rows.length}`);
+  report?.(0.62); // rows located
 
   // 3. Effect-name column OCR (both option lines per row, all rows in one block); map lines to rows.
   const r0 = rows[0].y;
@@ -317,7 +396,10 @@ export async function recognizeGemsOcr(
   const effCol = cropMat(cv, gray, colX + 102 * scale, effCropY0, 272 * scale, (r8 - r0) + 66 * scale, UP_EFFECT, false);
   const effLines: OcrLine[] = [];
   if (effCol) {
-    const res = await ocr.recognizeMat(effCol, { psm: PSM_SINGLE_BLOCK });
+    const res = await ocr.recognizeMat(effCol, {
+      psm: PSM_SINGLE_BLOCK,
+      onProgress: (f) => report?.(0.62 + 0.1 * f),
+    });
     effCol.delete();
     // Convert each line's centre back to screen y.
     for (const ln of res.lines) effLines.push({ text: ln.text, cy: effCropY0 + ln.cy / UP_EFFECT });
@@ -334,9 +416,17 @@ export async function recognizeGemsOcr(
     }
     return best && bd < 16 * scale ? best.text : null;
   };
+  report?.(0.72); // effect names read
 
-  // 4. Digits (willpower + points) via connected components.
-  const digits = await readDigits(cv, gray, ocr, colX, rows, scale);
+  // 4. Digits (willpower + points) via connected components; map its 0..1 onto 0.72..0.84.
+  const digits = await readDigits(cv, gray, ocr, colX, rows, scale, (f) => report?.(0.72 + 0.12 * f));
+
+  report?.(0.84); // digits read
+
+  // 4b. Footer owned-count (the stitch checksum) — best-effort; null degrades to overlap-only. Its
+  // anchor match + OCR are ~the last sixth of the time, so they drive the bar across 0.84..1.0.
+  const owned = await readFooterCount(cv, gray, asset, scale, locale, ocr, (f) => report?.(0.84 + 0.16 * f));
+  report?.(1); // done
 
   // 5. Assemble + validate per row.
   const gems: ArkGridGem[] = [];
@@ -372,5 +462,5 @@ export async function recognizeGemsOcr(
   });
 
   const gemAttr = chaosCount >= orderCount ? 'Chaos' : 'Order';
-  return { locale, gemAttr, gems, owned: null };
+  return { locale, gemAttr, gems, owned };
 }

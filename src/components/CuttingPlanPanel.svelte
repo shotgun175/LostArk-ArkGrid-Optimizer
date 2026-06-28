@@ -153,7 +153,7 @@
               <section>
                 <h4>Baseline (% damage)</h4>
                 <p>
-                  The % damage of your weakest equipped astrogem — a fresh cut must beat it to be an
+                  The % damage of your weakest equipped astrogem. A fresh cut must beat it to be an
                   upgrade (the same real-%-damage scoring the Gem Triage uses). A perfect gem is ≈
                   1.4%.
                 </p>
@@ -162,17 +162,17 @@
                 <h4>Archetype cards</h4>
                 <p>
                   Each card is a gem rarity (Uncommon / Rare / Epic) at a base cost (8 / 9 / 10). The
-                  four rows are the effect-pair buckets — the gem's archetype:
+                  four rows are the effect-pair buckets, the gem's archetype:
                 </p>
                 <ul>
-                  <li><strong>{role === 'support' ? '2S' : '2D'}</strong> — both effects are {statWord}</li>
-                  <li><strong>Op</strong> — the better single {statWord} effect</li>
-                  <li><strong>Sub</strong> — the weaker single {statWord} effect</li>
-                  <li><strong>No</strong> — no {statWord} effect (worthless)</li>
+                  <li><strong>{role === 'support' ? '2S' : '2D'}</strong>: both effects are {statWord}</li>
+                  <li><strong>Op</strong>: the better single {statWord} effect</li>
+                  <li><strong>Sub</strong>: the weaker single {statWord} effect</li>
+                  <li><strong>No</strong>: no {statWord} effect (worthless)</li>
                 </ul>
                 <p>
                   Each row shows the <strong>cut value</strong> (expected gold from optimally cutting
-                  a fresh gem of that archetype) and <strong>P(above)</strong> — the chance the cut
+                  a fresh gem of that archetype) and <strong>P(above)</strong>, the chance the cut
                   clears your baseline.
                 </p>
               </section>
@@ -180,7 +180,7 @@
                 <h4>Actions</h4>
                 <ul class="ch-actions">
                   <li>
-                    <span class="act" data-action="cut-reset">↻ Reset</span> high value (≥ 18k) — reset
+                    <span class="act" data-action="cut-reset">↻ Reset</span> high value (≥ 18k), reset
                     if it lands below baseline
                   </li>
                   <li><span class="act" data-action="cut">Cut</span> worth cutting, don't reset</li>
@@ -195,9 +195,9 @@
               <section>
                 <h4>Weekly throughput (non-roster-bound)</h4>
                 <ul>
-                  <li><strong>Total / wk</strong> — above-baseline gems per week (direct cuts + fusion)</li>
-                  <li><strong>Weeks</strong> — weeks to fill all 24 slots at this budget</li>
-                  <li><strong>Gold / wk</strong> — gold spent per week to sustain it</li>
+                  <li><strong>Total / wk</strong>: above-baseline gems per week (direct cuts + fusion)</li>
+                  <li><strong>Weeks</strong>: weeks to fill all 24 slots at this budget</li>
+                  <li><strong>Gold / wk</strong>: gold spent per week to sustain it</li>
                 </ul>
               </section>
               <section>
