@@ -81,7 +81,7 @@
   const LImportHint = $derived(
     {
       en_us:
-        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr — no screen sharing, no server.',
+        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr. No screen sharing, no server.',
     }[locale]
   );
   // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
@@ -341,7 +341,7 @@
     }
     if (result.gems.length === 0) {
       window.alert(
-        'No Ark Grid gems found. Make sure the character has an Ark Grid equipped — the “📥 Import Astrogems” bookmarklet is the most reliable way to import (it reads that exact character fresh).'
+        'No Ark Grid gems found. Make sure the character has an Ark Grid equipped. The “📥 Import Astrogems” bookmarklet is the most reliable way to import (it reads that exact character fresh).'
       );
       return;
     }
@@ -610,7 +610,7 @@
         <ol class="import-steps">
           <li>
             Drag this to your bookmarks bar, then click it while viewing your character on
-            <strong>lostark.bible</strong> — it reads that exact character fresh (no refresh needed):
+            <strong>lostark.bible</strong>. It reads that exact character fresh (no refresh needed):
             <a class="bookmarklet" href={bookmarklet} onclick={(e) => e.preventDefault()}
               >📥 Import Astrogems</a
             >

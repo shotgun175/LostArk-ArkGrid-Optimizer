@@ -2,7 +2,7 @@
      (local change: font stacks use the app's shipped Inter/JetBrains Mono
      instead of the hub's Cinzel/IBM Plex Mono, which this app never loads). -->
 <a class="lat-badge" href="https://shotgun175.github.io/" target="_blank" rel="noopener"
-   aria-label="Part of Lost Ark Tools — see all tools">
+   aria-label="Part of Lost Ark Tools, see all tools">
   <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
     <rect width="32" height="32" rx="7" fill="#0a0b13"/>
     <g stroke="#54d8d2" stroke-opacity=".45" stroke-width="1.4" stroke-linecap="round">

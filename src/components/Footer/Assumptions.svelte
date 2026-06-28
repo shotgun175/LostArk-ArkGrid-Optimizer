@@ -24,7 +24,7 @@
   // All values are imported live from the modules below, so this panel can't drift from the solver.
   // Scoring is real % damage in log space (D = 100·ln(multiplier)).
   const scoring: Row[] = [
-    { label: 'Willpower per cost-level — (4 − req) ×', value: D_WILLPOWER.toFixed(4) },
+    { label: 'Willpower per cost-level (4 − req) ×', value: D_WILLPOWER.toFixed(4) },
     { label: 'Order per point ×', value: D_ORDER.toFixed(4) },
     { label: 'Support order per point ×', value: SUPPORT_ORDER_D.toFixed(4) },
     { label: 'Support willpower factor', value: SUPPORT_WILLPOWER_FACTOR.toFixed(3) },

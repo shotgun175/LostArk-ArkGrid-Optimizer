@@ -96,24 +96,24 @@ export function triageGem({
   if (isEquipped) {
     return {
       action: 'equipped',
-      rationale: 'Currently equipped — part of your solved loadout.',
+      rationale: 'Currently equipped, part of your solved loadout.',
     };
   }
   if (score >= baseline) {
     return {
       action: 'upgrade',
-      rationale: `Beats your weakest equipped gem (${round2(score)} >= ${baseline}) — a slot-able upgrade.`,
+      rationale: `Beats your weakest equipped gem (${round2(score)} >= ${baseline}), a slot-able upgrade.`,
     };
   }
   if (hasHeadroom) {
     return {
       action: 'keep',
-      rationale: `Below your weakest equipped (${round2(score)} < ${baseline}), but a core upgrade could still slot it — hold for now.`,
+      rationale: `Below your weakest equipped (${round2(score)} < ${baseline}), but a core upgrade could still slot it, so hold for now.`,
     };
   }
   return {
     action: 'remove',
-    rationale: `Below your weakest equipped (${round2(score)} < ${baseline}) and your cores are maxed — it will never be slotted.`,
+    rationale: `Below your weakest equipped (${round2(score)} < ${baseline}) and your cores are maxed, so it will never be slotted.`,
   };
 }
 
@@ -136,6 +136,6 @@ export function reconcileDualBuild(
   }
   return {
     action: 'keep',
-    rationale: `Below baseline for your active build, but your ${ROLE_LABEL[otherRoleName]} build still uses it — keep.`,
+    rationale: `Below baseline for your active build, but your ${ROLE_LABEL[otherRoleName]} build still uses it, so keep.`,
   };
 }
