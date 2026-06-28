@@ -64,7 +64,7 @@
     if (s.overcount) return `⚠ ${label}: ${len} / ${s.target}, possible duplicate. Reset and re-upload.`;
     if (a.fragments > 1) {
       const tgt = s.target != null ? ` / ${s.target}` : '';
-      return `${label}: ${len}${tgt}. A screenshot did not connect; add a shot that overlaps the others by a few gems.`;
+      return `${label}: ${len}${tgt} shown, but the screenshots did not all link. Overlap them by a few gems or include the footer count to verify nothing is missing or duplicated.`;
     }
     if (a.method === 'relaxed' && s.target == null)
       return `${label}: ${len} owned (linked by minimal overlap; add the footer count to verify)`;

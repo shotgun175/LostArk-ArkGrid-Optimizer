@@ -156,17 +156,18 @@ export function greedyAssemble(screens: ArkGridGem[][], minOverlap: number): Ark
 
 /**
  * Assemble several single-attribute screenshots into one de-duplicated inventory, using the in-game
- * owned-count footer as the referee (the "B with A fallback" model):
- * - With a `target`: a RELAXED pass (≥ {@link RELAXED_MIN_OVERLAP}) is trusted ONLY when it yields a
- *   single fragment whose length exactly equals the target → `count-confirmed`. The exact-length
- *   check means a wrong/unreliable target (e.g. KO's narrow-"1") simply fails to confirm.
+ * owned-count footer as the referee:
+ * - With a `target`: progressively RELAX the overlap floor (from {@link RELAXED_MIN_OVERLAP} down to a
+ *   single shared gem) and accept the first assembly that collapses to ONE sequence whose length equals
+ *   the count exactly → `count-confirmed`. The exact-count match is the safety net: it lets a 1-gem
+ *   bridge through (which a dropped row can shrink a real overlap to) because a coincidental short match
+ *   almost never lands on the exact owned total.
  * - A clean CONSERVATIVE chain (≥ {@link DEFAULT_MIN_OVERLAP} throughout) → `conservative`, fragments 1.
- * - When conservative leaves a gap, RELAXED RECOVERY: if the shots chain at ≥ {@link RELAXED_MIN_OVERLAP}
- *   into a single sequence, return that (fuller) result flagged `relaxed` — unverified, but never
- *   silently dropping the orphaned shot. Requiring ONE fragment rejects a coincidental short match
- *   between two genuinely-disjoint groups.
- * - Truly disjoint shots (no shared run even at the relaxed floor) → `conservative` longest fragment,
- *   `fragments > 1` flagging the gap.
+ * - A single RELAXED chain (≥ {@link RELAXED_MIN_OVERLAP}) with no confirming count → `relaxed` (unverified).
+ * - Otherwise the UNION of every fragment's gems (overlap-deduped within each fragment) is returned —
+ *   uploads always accumulate rather than dropping the orphaned shot — with `fragments > 1` flagging the
+ *   unverified contiguity. Boundary gems shared below the floor may double-count; a present count flags
+ *   that as an overcount.
  */
 export function assembleScreenshots(
   screens: ArkGridGem[][],
@@ -176,11 +177,13 @@ export function assembleScreenshots(
   const conservativeMin = opts.conservativeMin ?? DEFAULT_MIN_OVERLAP;
   const relaxedMin = opts.relaxedMin ?? RELAXED_MIN_OVERLAP;
 
-  // With a footer count, a relaxed assembly that hits the target exactly is fully trusted.
+  // With a footer count, relax the overlap floor step by step until one sequence matches the count.
   if (target != null) {
-    const relaxed = greedyAssemble(screens, relaxedMin);
-    if (relaxed.length === 1 && relaxed[0].length === target) {
-      return { gems: relaxed[0], status: assessCount(relaxed[0].length, target), method: 'count-confirmed', fragments: 1 };
+    for (let min = relaxedMin; min >= 1; min--) {
+      const frags = greedyAssemble(screens, min);
+      if (frags.length === 1 && frags[0].length === target) {
+        return { gems: frags[0], status: assessCount(target, target), method: 'count-confirmed', fragments: 1 };
+      }
     }
   }
 
@@ -188,15 +191,14 @@ export function assembleScreenshots(
   if (conservative.length === 1) {
     return { gems: conservative[0], status: assessCount(conservative[0].length, target ?? null), method: 'conservative', fragments: 1 };
   }
-  // Conservative left a gap. Retry at the relaxed floor and, if the shots actually chain into ONE
-  // sequence, return it flagged `relaxed` (the count couldn't vouch for it) rather than dropping gems.
+  // Conservative left a gap. A single relaxed chain is the next-best (unverified) assembly.
   const relaxed = greedyAssemble(screens, relaxedMin);
   if (relaxed.length === 1) {
     return { gems: relaxed[0], status: assessCount(relaxed[0].length, target ?? null), method: 'relaxed', fragments: 1 };
   }
-  // Genuinely disjoint: surface the longest fragment and flag the gap.
-  const longest = conservative[0] ?? [];
-  return { gems: longest, status: assessCount(longest.length, target ?? null), method: 'conservative', fragments: conservative.length };
+  // Still fragmented: return the UNION of all gems rather than dropping orphans, so uploads accumulate.
+  const union = relaxed.flat();
+  return { gems: union, status: assessCount(union.length, target ?? null), method: 'relaxed', fragments: relaxed.length };
 }
 
 /** Compare an assembled gem count to the footer target (the checksum). */

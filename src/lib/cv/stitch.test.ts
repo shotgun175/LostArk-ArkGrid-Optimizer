@@ -141,11 +141,30 @@ describe('assembleScreenshots (count-driven, B-with-A-fallback)', () => {
     expect(r.status).toMatchObject({ complete: false, overcount: false, remaining: 5 });
   });
 
-  it('relaxed recovery does NOT merge truly disjoint shots (no shared run)', () => {
+  it('count-driven: a 1-gem overlap (a dropped row shrank a real overlap) links when the count confirms', () => {
+    const c1 = seq(1, 2, 3, 4, 5, 6, 7, 8); // 8 gems — a row dropped, so it overlaps c2 by only 1
+    const c2 = seq(8, 9, 10, 11, 12, 13, 14, 15, 16); // shares gem 8 with c1
+    const c3 = seq(15, 16, 17, 18, 19, 20, 21, 22, 23); // shares 15,16 with c2 (overlap 2)
+    const r = assembleScreenshots([c1, c2, c3], 23);
+    expect(r.method).toBe('count-confirmed'); // chains only at the 1-gem floor, trusted by the exact count
+    expect(r.fragments).toBe(1);
+    expect(r.gems).toHaveLength(23);
+    expect(r.status.complete).toBe(true);
+  });
+
+  it('a 1-gem bridge is NOT taken without a confirming count (stays the >=2 relaxed union)', () => {
+    const c1 = seq(1, 2, 3, 4, 5, 6, 7, 8);
+    const c2 = seq(8, 9, 10, 11, 12, 13, 14, 15, 16);
+    const c3 = seq(15, 16, 17, 18, 19, 20, 21, 22, 23);
+    const r = assembleScreenshots([c1, c2, c3], null);
+    expect(r.fragments).toBe(2); // c2+c3 merge at >=2; c1's 1-gem overlap is not bridged
+    expect(r.gems).toHaveLength(24); // union of 8 + 16, the shared gem counted twice (the count would flag it)
+  });
+
+  it('disjoint shots are not merged but both are surfaced (union, not the longest only)', () => {
     const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(20, 21, 22, 23, 24, 25, 26, 27, 28)], null);
-    expect(r.method).toBe('conservative');
-    expect(r.fragments).toBe(2); // no overlap even at the relaxed floor — stays split, never false-merged
-    expect(r.gems).toHaveLength(9);
+    expect(r.fragments).toBe(2); // not false-merged into one
+    expect(r.gems).toHaveLength(18); // both shots accumulate (union) instead of dropping one
   });
 
   it('overcount: a wrong-low target is flagged, not silently trusted', () => {
@@ -161,13 +180,13 @@ describe('assembleScreenshots (count-driven, B-with-A-fallback)', () => {
     expect(r.fragments).toBe(0);
   });
 
-  it('a gap whose longest fragment coincidentally equals the target stays fragments>1 (UI must not call it complete)', () => {
-    // Two disjoint 9-gem shots, target 9: longest fragment length == target, but fragments=2.
-    // status.complete is true (length match) — which is exactly why the footer ANDs it with fragments===1.
+  it('two disjoint shots whose count is too low surface the union and flag the overcount', () => {
+    // No overlap even at the 1-gem floor, so the count cannot confirm; the union of both (18) exceeds
+    // the target (9) and is flagged, rather than silently trusting a lone 9-gem fragment as "complete".
     const r = assembleScreenshots([seq(1, 2, 3, 4, 5, 6, 7, 8, 9), seq(20, 21, 22, 23, 24, 25, 26, 27, 28)], 9);
-    expect(r.method).toBe('conservative');
     expect(r.fragments).toBe(2);
-    expect(r.status.complete).toBe(true); // per longest fragment only — not a true "complete"
+    expect(r.gems).toHaveLength(18); // union, not the lone 9-gem fragment
+    expect(r.status.overcount).toBe(true);
   });
 });
 
