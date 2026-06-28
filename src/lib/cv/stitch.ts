@@ -20,6 +20,34 @@ import type { ArkGridGem } from '../models/arkGridGems';
 /** Minimum consecutive-gem overlap to accept a merge (matches the live path's SAME_COUNT_THRESHOLD). */
 export const DEFAULT_MIN_OVERLAP = 4;
 
+/** Merge fragments, dropping only gems that duplicate (by `eq`) one from an EARLIER fragment. Within a
+ *  fragment nothing is removed, so a fragment's own legitimate repeats (e.g. two cuts that differ only
+ *  in willpower) survive; only the cross-fragment overlap a sequence merge couldn't reach is collapsed. */
+function crossDedupeFragments(
+  fragments: ArkGridGem[][],
+  eq: (a: ArkGridGem, b: ArkGridGem) => boolean
+): ArkGridGem[] {
+  const out: ArkGridGem[] = [];
+  for (const frag of fragments) {
+    const keep = frag.filter((g) => !out.some((o) => eq(o, g)));
+    out.push(...keep);
+  }
+  return out;
+}
+/** Gem equality ignoring willpower (req) — the OCR-fragile digit that can read differently between
+ *  shots of the same gem, making one gem look like two. Used only as a count-gated last resort. */
+function sameGemIgnoringWillpower(a: ArkGridGem, b: ArkGridGem): boolean {
+  return (
+    a.name === b.name &&
+    a.gemAttr === b.gemAttr &&
+    a.point === b.point &&
+    a.option1.optionType === b.option1.optionType &&
+    a.option1.value === b.option1.value &&
+    a.option2.optionType === b.option2.optionType &&
+    a.option2.value === b.option2.value
+  );
+}
+
 /** Largest k in [1..min(a,b)] for which a's LAST k gems equal b's FIRST k gems; 0 if none. */
 export function suffixPrefixOverlap(a: ArkGridGem[], b: ArkGridGem[]): number {
   const max = Math.min(a.length, b.length);
@@ -198,6 +226,19 @@ export function assembleScreenshots(
   }
   // Still fragmented: return the UNION of all gems rather than dropping orphans, so uploads accumulate.
   const union = relaxed.flat();
+  // A union over the count double-counts gems shared across non-merging fragments — overlapping or
+  // redundant captures whose shared run sits mid-sequence (the suffix/prefix merge can't absorb it),
+  // sometimes with a willpower digit read differently per shot. Remove duplicates with increasing
+  // tolerance and accept the level that hits the owned count EXACTLY (the checksum gates the looser pass
+  // so it never silently merges gems the player genuinely owns twice).
+  if (target != null && union.length > target) {
+    for (const eq of [isSameArkGridGem, sameGemIgnoringWillpower]) {
+      const merged = crossDedupeFragments(relaxed, eq);
+      if (merged.length === target) {
+        return { gems: merged, status: assessCount(target, target), method: 'count-confirmed', fragments: 1 };
+      }
+    }
+  }
   return { gems: union, status: assessCount(union.length, target ?? null), method: 'relaxed', fragments: relaxed.length };
 }
 

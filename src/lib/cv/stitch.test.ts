@@ -9,13 +9,14 @@ import {
   suffixPrefixOverlap,
 } from './stitch';
 
-// Distinct gem keyed by `req` (just an id for equality here — value ranges don't matter to the
-// stitcher, which only calls isSameArkGridGem). Same n => isSameArkGridGem true.
+// Distinct gem keyed by `n` (an id for equality here — value ranges don't matter to the stitcher).
+// The option value is `n` too, so each gem differs in CONTENT, not just willpower — i.e. like real
+// gems, so the willpower-tolerant cross-dedup treats distinct ids as distinct. Same n => equal.
 const G = (n: number): ArkGridGem => ({
   gemAttr: 'Order',
   req: n,
   point: 1,
-  option1: { optionType: 'AtkPower', value: 1 },
+  option1: { optionType: 'AtkPower', value: n },
   option2: { optionType: 'AddDamage', value: 1 },
 });
 const seq = (...ns: number[]) => ns.map(G);
@@ -187,6 +188,57 @@ describe('assembleScreenshots (count-driven, B-with-A-fallback)', () => {
     expect(r.fragments).toBe(2);
     expect(r.gems).toHaveLength(18); // union, not the lone 9-gem fragment
     expect(r.status.overcount).toBe(true);
+  });
+});
+
+describe('assembleScreenshots: cross-fragment dedup (overlapping / redundant captures)', () => {
+  // Richer gems (distinct by name + options) so dedup behaves realistically — unlike seq(), whose gems
+  // differ only by req. c5 / c6 are the SAME gem read at willpower 5 vs 6 (an OCR misread across shots).
+  const mk = (
+    name: ArkGridGem['name'],
+    req: number,
+    point: number,
+    option1: ArkGridGem['option1'],
+    option2: ArkGridGem['option2']
+  ): ArkGridGem => ({ gemAttr: 'Order', name, req, point, option1, option2 });
+  const a = mk('Order Astrogem: Stability', 3, 5, { optionType: 'AtkPower', value: 1 }, { optionType: 'AddDamage', value: 1 });
+  const b = mk('Order Astrogem: Stability', 3, 5, { optionType: 'AtkPower', value: 2 }, { optionType: 'AddDamage', value: 2 });
+  const c5 = mk('Order Astrogem: Stability', 5, 5, { optionType: 'BrandPower', value: 2 }, { optionType: 'AllyDamageEnh', value: 5 });
+  const c6 = mk('Order Astrogem: Stability', 6, 5, { optionType: 'BrandPower', value: 2 }, { optionType: 'AllyDamageEnh', value: 5 });
+  const d = mk('Order Astrogem: Solidity', 4, 5, { optionType: 'BossDamage', value: 3 }, { optionType: 'AllyDamageEnh', value: 3 });
+  const e = mk('Order Astrogem: Immutability', 5, 5, { optionType: 'BossDamage', value: 5 }, { optionType: 'AllyAttackEnh', value: 1 });
+  const f = mk('Order Astrogem: Solidity', 8, 5, { optionType: 'AllyAttackEnh', value: 4 }, { optionType: 'AllyDamageEnh', value: 4 });
+
+  it('collapses a mid-sequence overlap the suffix/prefix merge cannot reach, gated by the count', () => {
+    // [a,b,c5,d] and [e,b,c5,f] share b,c5 in the MIDDLE (overlap 0 at the boundaries → 2 fragments).
+    // The exact cross-dedup removes the shared pair to hit the count exactly.
+    const r = assembleScreenshots([[a, b, c5, d], [e, b, c5, f]], 6);
+    expect(r.method).toBe('count-confirmed');
+    expect(r.gems).toHaveLength(6);
+    expect(r.status.complete).toBe(true);
+  });
+
+  it('a willpower-misread duplicate (5 vs 6) is collapsed only at the tolerant, count-gated pass', () => {
+    // c5 in one shot, c6 in the other (same gem, willpower misread). Exact dedup leaves 7; the
+    // willpower-tolerant pass reaches 6 and the count vouches for it.
+    const r = assembleScreenshots([[a, b, c5, d], [e, b, c6, f]], 6);
+    expect(r.method).toBe('count-confirmed');
+    expect(r.gems).toHaveLength(6);
+  });
+
+  it('a fragment’s own legitimate willpower pair (c5 & c6 in one shot) is preserved', () => {
+    // c5 and c6 sit together in shot 1 (two real gems). Cross-dedup never merges within a fragment, so
+    // both survive; only shot 2’s redundant copies are dropped.
+    const r = assembleScreenshots([[a, c5, c6, d], [e, c5, c6, f]], 6);
+    expect(r.method).toBe('count-confirmed');
+    expect(r.gems).toHaveLength(6);
+    expect(r.gems.filter((g) => g.name === 'Order Astrogem: Stability' && g.option1.optionType === 'BrandPower')).toHaveLength(2);
+  });
+
+  it('without a footer count the overcounting union is NOT deduped (the count gates it)', () => {
+    const r = assembleScreenshots([[a, b, c5, d], [e, b, c5, f]], null);
+    expect(r.fragments).toBe(2);
+    expect(r.gems).toHaveLength(8); // raw union — no count to authorize the merge
   });
 });
 
