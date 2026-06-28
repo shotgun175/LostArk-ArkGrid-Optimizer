@@ -21,6 +21,12 @@ export type KeyOptionLevel = '1' | '2' | '3' | '4' | '5';
 export type KeyGemAttr = ArkGridAttr;
 export type KeyGemName = ArkGridGemName;
 
+/**
+ * Decode a sprite (by its `public/` file name) into a grayscale Mat. Pluggable so the Node-side
+ * accuracy harness can supply a filesystem + PNG decoder in place of the browser fetch path below.
+ */
+export type SpriteDecoder = (fileName: string) => Promise<CvMat>;
+
 async function fetchSpriteMat(url: string): Promise<CvMat> {
   // Read the image at the url, then convert it to a Mat
   const cv = getCv();
@@ -36,12 +42,17 @@ async function fetchSpriteMat(url: string): Promise<CvMat> {
   return mat;
 }
 
+// Default (browser) sprite decoder: fetch from public/ via Vite's BASE_URL. Referenced lazily so
+// `import.meta.env` is never evaluated when the harness injects its own decoder under plain Node.
+const browserSpriteDecoder: SpriteDecoder = (fileName) =>
+  fetchSpriteMat(`${import.meta.env.BASE_URL}/${fileName}`);
+
 type GemTemplates = {
   ko_kr: Record<KoKrTemplateName, CvMat>;
   en_us: Record<EnUsTemplateName, CvMat>;
   ru_ru: Record<RuRuTemplateName, CvMat>;
 };
-async function loadGemTemplates(): Promise<GemTemplates> {
+async function loadGemTemplates(decode: SpriteDecoder): Promise<GemTemplates> {
   const cv = getCv();
   // Crop the images out of each language's sprite.
   const result = {
@@ -50,19 +61,19 @@ async function loadGemTemplates(): Promise<GemTemplates> {
     ru_ru: {} as any,
   };
 
-  const koSprite = await fetchSpriteMat(`${import.meta.env.BASE_URL}/${koKrFileName}`);
+  const koSprite = await decode(koKrFileName);
   for (const [name, rect] of Object.entries(koKrCoords)) {
     result.ko_kr[name] = koSprite.roi(new cv.Rect(rect.x, rect.y, rect.w, rect.h));
   }
   koSprite.delete();
 
-  const enSprite = await fetchSpriteMat(`${import.meta.env.BASE_URL}/${enUsFileName}`);
+  const enSprite = await decode(enUsFileName);
   for (const [name, rect] of Object.entries(enUsCoords)) {
     result.en_us[name] = enSprite.roi(new cv.Rect(rect.x, rect.y, rect.w, rect.h));
   }
   enSprite.delete();
 
-  const ruSprite = await fetchSpriteMat(`${import.meta.env.BASE_URL}/${ruRuFileName}`);
+  const ruSprite = await decode(ruRuFileName);
   for (const [name, rect] of Object.entries(ruRuCoords)) {
     result.ru_ru[name] = ruSprite.roi(new cv.Rect(rect.x, rect.y, rect.w, rect.h));
   }
@@ -71,8 +82,8 @@ async function loadGemTemplates(): Promise<GemTemplates> {
   return result;
 }
 
-export async function loadGemAsset() {
-  const gt = await loadGemTemplates();
+export async function loadGemAsset(decode: SpriteDecoder = browserSpriteDecoder) {
+  const gt = await loadGemTemplates(decode);
 
   const matAnchors = supportedGemRecognitionLocales.reduce(
     (acc, locale) => {
@@ -174,6 +185,25 @@ export async function loadGemAsset() {
     {} as Record<GemRecognitionLocale, MatchingAtlas<KeyOptionLevel>>
   );
 
+  // Footer "Astrogems Owned" count digits (separate, larger font than the in-row digits). Built
+  // only from the owned-<d>.png templates that exist for a locale: en_us currently ships a partial
+  // set; ko_kr / ru_ru ship none yet (null atlas → the count reader no-ops for them). See the
+  // footer-OCR NEEDS note for what completes each locale.
+  const ownedDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
+  const atlasOwnedDigit = supportedGemRecognitionLocales.reduce(
+    (acc, locale) => {
+      const mats = gt[locale] as Record<string, CvMat>;
+      const entries: Record<string, CvMat> = {};
+      for (const d of ownedDigits) {
+        const mat = mats[`owned-${d}.png`];
+        if (mat) entries[d] = mat;
+      }
+      acc[locale] = Object.keys(entries).length > 0 ? generateMatchingAtlas(entries) : null;
+      return acc;
+    },
+    {} as Record<GemRecognitionLocale, MatchingAtlas<string> | null>
+  );
+
   return {
     atlasAnchor,
     atlasGemAttr,
@@ -182,5 +212,6 @@ export async function loadGemAsset() {
     atlasCorePoint,
     atlasOptionName,
     atlasOptionLevel,
+    atlasOwnedDigit,
   };
 }

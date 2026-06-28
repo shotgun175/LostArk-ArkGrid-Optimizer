@@ -4,6 +4,7 @@
 
   import { type LocalizationName } from '../../lib/constants/enums';
   import { LChaos, LOrder } from '../../lib/constants/localization';
+  import { type AssemblyResult } from '../../lib/cv/stitch';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import {
     type AllGems,
@@ -15,9 +16,12 @@
 
   interface Props {
     gems: AllGems;
+    /** Per-attr count-checksum from the multi-file upload assembler (null on live/import paths). */
+    assembly?: { order: AssemblyResult | null; chaos: AssemblyResult | null };
+    onReset?: () => void;
   }
 
-  let { gems }: Props = $props();
+  let { gems, assembly, onReset }: Props = $props();
 
   let locale = $derived(appLocale.current);
   const LTitle: LocalizationName = {
@@ -49,6 +53,33 @@
   const LGemTotalCount = $derived({
     en_us: `Astrogems Owned: ${orderGems.length + chaosGems.length} / 100<br>(Order ${orderGems.length}, Chaos ${chaosGems.length} owned)`,
   });
+
+  // Count-checksum footer (multi-file upload). Shows captured-vs-target per attribute with an
+  // actionable tail. A fragments>1 assembly is NEVER truly complete (a screenshot didn't connect)
+  // even if the longest fragment's length coincidentally equals the target — so the gap check
+  // precedes the complete check. With no readable target it still surfaces the gap / "count not read".
+  function attrLine(label: string, len: number, a: AssemblyResult | null | undefined): string {
+    if (!a) return `${label}: ${len} owned`;
+    const s = a.status;
+    if (s.overcount) return `⚠ ${label}: ${len} / ${s.target} — possible duplicate; Reset & re-upload`;
+    if (a.fragments > 1) {
+      const tgt = s.target != null ? ` / ${s.target}` : '';
+      return `${label}: ${len}${tgt} · a screenshot didn’t connect — upload an overlapping slice`;
+    }
+    if (s.target == null) return `${label}: ${len} owned (count not read — overlap only)`;
+    if (s.complete) return `${label}: ${len} / ${s.target} complete`;
+    return `${label}: ${len} / ${s.target} · ${s.remaining} more to capture`;
+  }
+  function attrState(a: AssemblyResult | null | undefined): 'complete' | 'over' | 'partial' | 'none' {
+    if (!a) return 'none';
+    const s = a.status;
+    if (s.overcount) return 'over';
+    if (a.fragments > 1 || s.target == null) return 'partial';
+    return s.complete ? 'complete' : 'partial';
+  }
+  // Rich checksum footer whenever uploads happened (an assembly exists for either attribute), even
+  // when the count couldn't be read — so a gap is never hidden behind the plain "/ 100" line.
+  let hasChecksum = $derived(assembly != null && (assembly.order != null || assembly.chaos != null));
   // Tab state
   let activeTab = $state(0);
   let tabs = $derived([LOrder[locale], LChaos[locale]]);
@@ -124,7 +155,20 @@
       bind:this={container}
     ></ArkGridGemList>
     <div class="gem-count">
-      {@html LGemTotalCount[locale]}
+      {#if hasChecksum}
+        {#if assembly?.order || orderGems.length > 0}
+          <div class="attr-line" data-state={attrState(assembly?.order)}>
+            {attrLine(LOrder[locale], orderGems.length, assembly?.order)}
+          </div>
+        {/if}
+        {#if assembly?.chaos || chaosGems.length > 0}
+          <div class="attr-line" data-state={attrState(assembly?.chaos)}>
+            {attrLine(LChaos[locale], chaosGems.length, assembly?.chaos)}
+          </div>
+        {/if}
+      {:else}
+        {@html LGemTotalCount[locale]}
+      {/if}
     </div>
     <div class="buttons">
       <div>
@@ -158,8 +202,11 @@
         <button
           disabled={orderGems.length == 0 && chaosGems.length == 0}
           onclick={() => {
-            orderGems.length = 0;
-            chaosGems.length = 0;
+            if (onReset) onReset();
+            else {
+              orderGems.length = 0;
+              chaosGems.length = 0;
+            }
           }}>{LReset[locale]}</button
         >
       </div>
@@ -189,6 +236,26 @@
   .gem-count {
     align-self: center;
     text-align: center;
+  }
+  .attr-line {
+    line-height: 1.5;
+  }
+  .attr-line[data-state='complete'] {
+    color: #2e7d32;
+    font-weight: 700;
+  }
+  .attr-line[data-state='over'] {
+    color: #8a3a3a;
+    font-weight: 700;
+  }
+  .attr-line[data-state='partial'] {
+    opacity: 0.9;
+  }
+  :global(.dark-mode) .attr-line[data-state='complete'] {
+    color: #4ade80;
+  }
+  :global(.dark-mode) .attr-line[data-state='over'] {
+    color: #ef8a8a;
   }
 
   /* Button group */

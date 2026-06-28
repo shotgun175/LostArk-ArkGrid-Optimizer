@@ -24,10 +24,9 @@ function gem(
   return { gemAttr: 'Chaos', req, point, option1: o1, option2: o2 };
 }
 
-// Known DPS scores (cross-checked in gemScore.test.ts):
-//  A: req5/point5 AddDamage4 + AtkPower3 = 13.14
-//  B: req8/point2 AtkPower1 + BrandPower1 = -18.88
-//  C: req3/point5 BossDamage5 + AddDamage5 = 29.54
+// Known DPS scores in % damage (cross-checked in gemScore.test.ts):
+//  A: req5/point5 AddDamage4 + AtkPower3 ≈ 1.06
+//  C: req3/point5 BossDamage5 + AddDamage5 ≈ 1.59
 const gemA = gem(5, 5, { optionType: 'AddDamage', value: 4 }, { optionType: 'AtkPower', value: 3 });
 const gemB = gem(
   8,
@@ -41,7 +40,14 @@ const gemC = gem(
   { optionType: 'BossDamage', value: 5 },
   { optionType: 'AddDamage', value: 5 }
 );
-// Support: AllyAttackEnh5 + BrandPower5 = 16.55 (support) / 0 (dps).
+// A junk DPS gem: high willpower cost + dead effects + low order → negative % damage.
+const junk = gem(
+  9,
+  1,
+  { optionType: 'BrandPower', value: 1 },
+  { optionType: 'AllyDamageEnh', value: 1 }
+);
+// Support: AllyAttackEnh5 + BrandPower5 ≈ 0.27 (support, per-DPS ÷3) / 0.64 (dps; only its order points count).
 const support = gem(
   4,
   4,
@@ -53,19 +59,16 @@ describe('autoBaselineFromLoadout', () => {
   it('returns null for an empty loadout', () => {
     expect(autoBaselineFromLoadout([], 'dps')).toBeNull();
   });
-  it('returns the rounded score of the weakest equipped gem', () => {
-    // weakest of {13.14, 29.54} = 13.14 -> round 13
-    expect(autoBaselineFromLoadout([gemA, gemC], 'dps')).toBe(13);
+  it('returns the 2-dp score of the weakest equipped gem', () => {
+    // weakest of {1.06, 1.59} = gemA ≈ 1.06
+    expect(autoBaselineFromLoadout([gemA, gemC], 'dps')).toBeCloseTo(1.06, 2);
   });
-  it('clamps negatives up to 0 and high scores down to 20', () => {
-    // weakest of {13.14, -18.88} = -18.88 -> round -19 -> clamp 0
-    expect(autoBaselineFromLoadout([gemA, gemB], 'dps')).toBe(0);
-    // only gemC (29.54) -> round 30 -> clamp 20
-    expect(autoBaselineFromLoadout([gemC], 'dps')).toBe(20);
+  it('clamps negative scores up to 0', () => {
+    expect(autoBaselineFromLoadout([gemA, junk], 'dps')).toBe(0); // weakest is junk (negative) -> 0
   });
-  it('respects role (DPS damage options count 0 under support)', () => {
-    expect(autoBaselineFromLoadout([support], 'support')).toBe(17); // 16.55 -> 17
-    expect(autoBaselineFromLoadout([support], 'dps')).toBe(0); // 0 under dps
+  it('respects role (DPS damage options count 0 under support, but order still counts)', () => {
+    expect(autoBaselineFromLoadout([support], 'support')).toBeCloseTo(0.27, 2); // per-DPS (÷3)
+    expect(autoBaselineFromLoadout([support], 'dps')).toBeCloseTo(0.64, 2); // order 4 × 0.159872
   });
 });
 

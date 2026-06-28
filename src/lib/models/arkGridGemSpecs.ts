@@ -1,7 +1,9 @@
 // Pure gem data: option types and per-gem specs. Kept free of Vite-only APIs
 // (import.meta.glob lives in arkGridGems.ts) so node-side tooling — the
-// support-table generator — can import the same canonical data the app uses.
+// support-table generator and the CV accuracy harness — can import the same
+// canonical data and grade logic the app uses.
 import { type ArkGridAttr, type LocalizationName } from '../constants/enums';
+import type { ArkGridGem, ArkGridGemOption } from './arkGridGems';
 
 export type ArkGridGemOptionType = {
   name: LocalizationName;
@@ -98,3 +100,40 @@ export const ArkGridGemSpecs = {
   },
 } as const satisfies Record<string, ArkGridGemSpec>;
 export type ArkGridGemName = keyof typeof ArkGridGemSpecs;
+
+// Grade is derived purely from the gem's numbers + base req, so it lives here with the
+// canonical specs (no Vite-only deps) and is re-exported from arkGridGems.ts for existing
+// importers. The accuracy harness needs it node-side to grade recognized gems.
+export function determineGemGrade(
+  req: number,
+  point: number,
+  option1: ArkGridGemOption,
+  option2: ArkGridGemOption,
+  name?: ArkGridGemName
+) {
+  const basePoint = name ? ArkGridGemSpecs[name].req : 8;
+  const totalPoint = basePoint - req + point + option1.value + option2.value;
+  return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
+}
+export function determineGemGradeByGem(gem: ArkGridGem) {
+  const basePoint = gem.name ? ArkGridGemSpecs[gem.name].req : 8;
+  const totalPoint = basePoint - gem.req + gem.point + gem.option1.value + gem.option2.value;
+  return totalPoint < 16 ? 'Legendary' : totalPoint < 19 ? 'Relic' : 'Ancient';
+}
+
+// Content equality of two gems (pure; here in the Vite-free module so node-side tooling — the
+// multi-screenshot stitcher / harness — can use it). Names compared only when both are known.
+export function isSameArkGridGem(a: ArkGridGem | undefined, b: ArkGridGem | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  return (
+    (a.name !== undefined && b.name !== undefined ? a.name === b.name : true) &&
+    a.gemAttr === b.gemAttr &&
+    a.req === b.req &&
+    a.point === b.point &&
+    isSameOption(a.option1, b.option1) &&
+    isSameOption(a.option2, b.option2)
+  );
+}
+function isSameOption(a: ArkGridGemOption, b: ArkGridGemOption): boolean {
+  return a.optionType === b.optionType && a.value === b.value;
+}

@@ -1,0 +1,192 @@
+/**
+ * Sequence-overlap stitching for multi-screenshot gem capture — the engine for the
+ * count-checksum iteration (see Reference Projects/count-checksum-stitching-spec.md).
+ *
+ * Generalizes the live Panel `applyCurrentGems` merge into a pure, testable function: gems sit in a
+ * fixed in-game order, so overlapping screenshots share a CONTIGUOUS run; we splice in only the
+ * non-overlapping remainder. Matching is SEQUENCE-based (a run of ≥ minOverlap consecutive content
+ * matches), NOT content-fingerprint — so two genuinely-identical gems that legitimately appear twice
+ * are preserved. The in-game owned-count footer (per attribute) is the eventual CHECKSUM:
+ * `assessCount` compares the assembled length to the target and flags under/over-count.
+ *
+ * First cut: an in-order fold with the same conservative ≥4-overlap rule as the live path (an
+ * unplaceable screenshot is left out, surfaced via the step `mode` / the count checksum rather than
+ * blindly concatenated). Order-tolerant jigsaw assembly + count-driven overlap relaxation are the
+ * documented next steps.
+ */
+import { isSameArkGridGem } from '../models/arkGridGemSpecs';
+import type { ArkGridGem } from '../models/arkGridGems';
+
+/** Minimum consecutive-gem overlap to accept a merge (matches the live path's SAME_COUNT_THRESHOLD). */
+export const DEFAULT_MIN_OVERLAP = 4;
+
+/** Largest k in [1..min(a,b)] for which a's LAST k gems equal b's FIRST k gems; 0 if none. */
+export function suffixPrefixOverlap(a: ArkGridGem[], b: ArkGridGem[]): number {
+  const max = Math.min(a.length, b.length);
+  for (let k = max; k >= 1; k--) {
+    let ok = true;
+    for (let i = 0; i < k; i++) {
+      if (!isSameArkGridGem(a[a.length - k + i], b[i])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return k;
+  }
+  return 0;
+}
+
+export type StitchMode = 'seed' | 'append' | 'prepend' | 'contained' | 'nomatch';
+export interface StitchStep {
+  gems: ArkGridGem[];
+  mode: StitchMode;
+  /** The contiguous overlap that was used (or the best found, for `nomatch`). */
+  overlap: number;
+}
+
+/**
+ * Merge one screenshot's gems into an accumulated sequence by maximal contiguous overlap:
+ * - empty `acc` → seed with `incoming`.
+ * - `acc` suffix == `incoming` prefix (scrolled DOWN) → append `incoming`'s remainder.
+ * - `acc` prefix == `incoming` suffix (scrolled UP) → prepend `incoming`'s remainder.
+ * - `incoming` fully overlaps `acc` (re-upload) → `contained`, no change.
+ * - best overlap < `minOverlap` → `nomatch`, `acc` returned unchanged (the count checksum flags the gap).
+ */
+export function stitchScreenshot(
+  acc: ArkGridGem[],
+  incoming: ArkGridGem[],
+  minOverlap: number = DEFAULT_MIN_OVERLAP
+): StitchStep {
+  if (incoming.length === 0) return { gems: acc, mode: 'nomatch', overlap: 0 };
+  if (acc.length === 0) return { gems: incoming.slice(), mode: 'seed', overlap: 0 };
+
+  const down = suffixPrefixOverlap(acc, incoming); // acc above, incoming below
+  const up = suffixPrefixOverlap(incoming, acc); // incoming above, acc below
+  const best = Math.max(down, up);
+  if (best < minOverlap) return { gems: acc, mode: 'nomatch', overlap: best };
+
+  if (down >= up) {
+    if (down === incoming.length) return { gems: acc, mode: 'contained', overlap: down };
+    return { gems: acc.concat(incoming.slice(down)), mode: 'append', overlap: down };
+  }
+  if (up === incoming.length) return { gems: acc, mode: 'contained', overlap: up };
+  return {
+    gems: incoming.slice(0, incoming.length - up).concat(acc),
+    mode: 'prepend',
+    overlap: up,
+  };
+}
+
+/** Fold screenshots left-to-right into one de-duplicated sequence (in-order, first cut). */
+export function stitchScreenshots(
+  screens: ArkGridGem[][],
+  minOverlap: number = DEFAULT_MIN_OVERLAP
+): ArkGridGem[] {
+  let acc: ArkGridGem[] = [];
+  for (const screen of screens) acc = stitchScreenshot(acc, screen, minOverlap).gems;
+  return acc;
+}
+
+export interface CountStatus {
+  /** Per-attribute owned count from the in-game footer (null until OCR provides it). */
+  target: number | null;
+  count: number;
+  /** count === target (null with no target). */
+  complete: boolean | null;
+  /** count > target — a stitch error or extra/foreign captures. */
+  overcount: boolean;
+  /** max(0, target − count) still to capture (null with no target). */
+  remaining: number | null;
+}
+
+/** Relaxed overlap used once a target count is available to vouch for the assembly (see
+ *  {@link assembleScreenshots}). Low enough to bridge the real 3-gem `Order 2/3` overlap, above the
+ *  1-gem coincidence floor; the exact-count acceptance test is the actual safety net. */
+export const RELAXED_MIN_OVERLAP = 2;
+
+export interface AssemblyResult {
+  /** The de-duplicated sequence (a single fragment when count-confirmed; else the longest fragment). */
+  gems: ArkGridGem[];
+  /** Checksum status of `gems.length` vs the target. NOTE: `status.complete` reflects only the
+   *  returned fragment — a UI must also require `fragments === 1` before showing "complete". */
+  status: CountStatus;
+  /** `count-confirmed`: a relaxed assembly whose length the target vouches for; else `conservative`. */
+  method: 'count-confirmed' | 'conservative';
+  /** Disjoint fragments in the chosen assembly; > 1 means an unbridged gap (a shot didn't connect). */
+  fragments: number;
+}
+
+/**
+ * Order-tolerant greedy overlap assembly: treat each screenshot as a fragment and repeatedly merge
+ * the fragment pair with the largest suffix→prefix overlap (any ordering) ≥ `minOverlap`, until no
+ * pair qualifies. Returns the surviving fragments, longest first. A fully-contained fragment is
+ * absorbed (its remainder is empty). Pure; n (screenshots) is small so the O(n²·merges) loop is fine.
+ */
+export function greedyAssemble(screens: ArkGridGem[][], minOverlap: number): ArkGridGem[][] {
+  const minOv = Math.max(1, minOverlap); // floor at 1: a zero-overlap pair must never merge (no double-count)
+  let frags = screens.filter((s) => s.length > 0).map((s) => s.slice());
+  for (;;) {
+    let bi = -1;
+    let bj = -1;
+    let bestOverlap = minOv - 1;
+    let merged: ArkGridGem[] | null = null;
+    for (let i = 0; i < frags.length; i++) {
+      for (let j = 0; j < frags.length; j++) {
+        if (i === j) continue;
+        const ov = suffixPrefixOverlap(frags[i], frags[j]); // frags[i] above frags[j]
+        if (ov > bestOverlap) {
+          bestOverlap = ov;
+          bi = i;
+          bj = j;
+          merged = frags[i].concat(frags[j].slice(ov)); // slice(ov)=[] when j is fully contained
+        }
+      }
+    }
+    if (bi < 0 || !merged) break;
+    frags = frags.filter((_, k) => k !== bi && k !== bj);
+    frags.push(merged);
+  }
+  return frags.sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Assemble several single-attribute screenshots into one de-duplicated inventory, using the in-game
+ * owned-count footer as the referee (the "B with A fallback" model):
+ * - With a `target`: a RELAXED pass (≥ {@link RELAXED_MIN_OVERLAP}) is trusted ONLY when it yields a
+ *   single fragment whose length exactly equals the target → `count-confirmed`. The exact-length
+ *   check means a wrong/unreliable target (e.g. KO's narrow-"1") simply fails to confirm.
+ * - Otherwise (or no target): the CONSERVATIVE pass (≥ {@link DEFAULT_MIN_OVERLAP}) wins; its longest
+ *   fragment is returned (never concatenating an unproven overlap), and `fragments > 1` flags a gap.
+ */
+export function assembleScreenshots(
+  screens: ArkGridGem[][],
+  target: number | null | undefined,
+  opts: { conservativeMin?: number; relaxedMin?: number } = {}
+): AssemblyResult {
+  const conservativeMin = opts.conservativeMin ?? DEFAULT_MIN_OVERLAP;
+  const relaxedMin = opts.relaxedMin ?? RELAXED_MIN_OVERLAP;
+
+  if (target != null) {
+    const relaxed = greedyAssemble(screens, relaxedMin);
+    if (relaxed.length === 1 && relaxed[0].length === target) {
+      return { gems: relaxed[0], status: assessCount(relaxed[0].length, target), method: 'count-confirmed', fragments: 1 };
+    }
+  }
+  const conservative = greedyAssemble(screens, conservativeMin);
+  const gems = conservative[0] ?? [];
+  return { gems, status: assessCount(gems.length, target ?? null), method: 'conservative', fragments: conservative.length };
+}
+
+/** Compare an assembled gem count to the footer target (the checksum). */
+export function assessCount(count: number, target: number | null | undefined): CountStatus {
+  if (target == null) {
+    return { target: null, count, complete: null, overcount: false, remaining: null };
+  }
+  return {
+    target,
+    count,
+    complete: count === target,
+    overcount: count > target,
+    remaining: Math.max(0, target - count),
+  };
+}

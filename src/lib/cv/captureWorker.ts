@@ -1,32 +1,65 @@
 import type { CV } from '@techstark/opencv-js';
 
 import type { GemRecognitionLocale } from '../constants/enums';
-import { type ArkGridGem, determineGemGradeByGem } from '../models/arkGridGems';
-import type { MatchingAtlas } from './atlas';
 import { getCv, initOpenCv } from './cvRuntime';
-import { showMatch } from './debug';
-import { type KeyOptionLevel, type KeyOptionString, loadGemAsset } from './matStore';
-import { type MatchingResult, getBestMatch, multiScaleAnchorMatch } from './matcher';
+import { loadGemAsset } from './matStore';
+import { multiScaleAnchorMatch } from './matcher';
+import { type RecognizeResult, extractNineGems, findBest } from './recognize';
+import { recognizeGemsOcr, type OcrResult, type OcrRunner } from './recognizeOcr';
 import { buildScaleLadder, rawScaleToResolutionScale, snapResolutionScale } from './scaleDetection';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types';
 
-type RecognitionTarget<K extends string> = {
-  roi: {
-    // Search-target roi within the full frame
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  // Atlas to use
-  atlas: MatchingAtlas<K>;
-  threshold: number;
-};
+/**
+ * Lazy tesseract.js wrapper for the client-agnostic upload OCR path. tesseract (wasm core + English
+ * data, multi-MB) loads only on the FIRST image recognition, then one worker is reused across the
+ * ~30 column/cell OCR calls per image. Each cv.Mat is rendered to ImageData for tesseract.
+ */
+class BrowserOcrRunner implements OcrRunner {
+  private worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | null = null;
+  private psmMap: Record<number, unknown> = {};
+  private initPromise: Promise<void> | null = null;
+
+  private async ensure(): Promise<void> {
+    if (this.worker) return;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const T = await import('tesseract.js');
+        this.psmMap = { 6: T.PSM.SINGLE_BLOCK, 7: T.PSM.SINGLE_LINE, 10: T.PSM.SINGLE_CHAR };
+        this.worker = await T.createWorker('eng');
+      })();
+    }
+    await this.initPromise;
+  }
+
+  async recognizeMat(mat: CvMat, opts: { psm: number; whitelist?: string }): Promise<OcrResult> {
+    await this.ensure();
+    const cv = getCv();
+    await this.worker!.setParameters({
+      tessedit_pageseg_mode: (this.psmMap[opts.psm] ?? this.psmMap[6]) as never,
+      tessedit_char_whitelist: opts.whitelist ?? '',
+    });
+    const rgba = new cv.Mat();
+    cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
+    const imgData = new ImageData(new Uint8ClampedArray(rgba.data), rgba.cols, rgba.rows);
+    rgba.delete();
+    // tesseract.js won't read a raw ImageData; hand it an OffscreenCanvas (supported in workers).
+    const canvas = new OffscreenCanvas(imgData.width, imgData.height);
+    canvas.getContext('2d')!.putImageData(imgData, 0, 0);
+    const { data } = await this.worker!.recognize(canvas, {}, { blocks: true });
+    const lines: OcrResult['lines'] = [];
+    for (const b of (data.blocks ?? []) as Array<{ paragraphs?: Array<{ lines?: Array<{ text: string; bbox: { y0: number; y1: number } }> }> }>)
+      for (const p of b.paragraphs ?? [])
+        for (const l of p.lines ?? []) lines.push({ text: String(l.text).trim(), cy: (l.bbox.y0 + l.bbox.y1) / 2 });
+    return { text: String(data.text).trim(), lines };
+  }
+}
 
 class FrameProcessor {
   // init
   private loadedAsset: Awaited<ReturnType<typeof loadGemAsset>> | null = null;
   private initPromise: Promise<void> | null = null;
+  // Lazy OCR engine for the upload path (created on first uploaded image; live path never uses it).
+  private ocrRunner: BrowserOcrRunner | null = null;
 
   // debug
   debugCanvas: OffscreenCanvas = new OffscreenCanvas(0, 0);
@@ -142,33 +175,24 @@ class FrameProcessor {
     }
   }
 
-  findBest<K extends string>(
-    t: RecognitionTarget<K>,
-    frame: CvMat,
-    debugCtx?: OffscreenCanvasRenderingContext2D | null,
-    option?: {
-      method?: number;
-      excludeKey?: K;
-    }
-  ): MatchingResult<K> | null {
-    // Find the given target
+  // Decode any CanvasImageSource (live VideoFrame or uploaded ImageBitmap) ONCE at native size
+  // into a grayscale Mat — the only source-specific step; everything downstream operates on Mats.
+  private decodeToGray(source: CanvasImageSource, srcWidth: number, srcHeight: number): CvMat {
     if (!this.cv) throw Error('cv is not ready');
-    const roi = new this.cv.Rect(t.roi.x, t.roi.y, t.roi.width, t.roi.height);
-    const match = getBestMatch(frame, t.atlas, roi, option);
-    if (!match) return null;
-    if (debugCtx) {
-      showMatch(debugCtx, roi, match, {
-        scoreThreshold: t.threshold,
-      });
-    }
-    if (match.score > t.threshold) return match;
-    return null;
+    const canvas = this.canvas;
+    const ctx = this.ctx;
+    canvas.width = srcWidth;
+    canvas.height = srcHeight;
+    ctx.drawImage(source, 0, 0, srcWidth, srcHeight);
+    const rawImageData = ctx.getImageData(0, 0, srcWidth, srcHeight);
+    const gray = this.cv.matFromImageData(rawImageData);
+    this.cv.cvtColor(gray, gray, this.cv.COLOR_RGBA2GRAY);
+    return gray;
   }
 
   processFrame(frame: VideoFrame, drawDebug: boolean = false, detectionMargin: number = 0) {
     const start = performance.now();
     const canvas = this.canvas;
-    const ctx = this.ctx;
     let resizedFrame: CvMat | null = null;
     let rawGray: CvMat | null = null;
     let debugCtx: OffscreenCanvasRenderingContext2D | null = null;
@@ -179,12 +203,7 @@ class FrameProcessor {
       if (!this.loadedAsset) return;
 
       // Decode the raw frame ONCE at native size into a grayscale Mat.
-      canvas.width = frame.displayWidth;
-      canvas.height = frame.displayHeight;
-      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-      const rawImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      rawGray = cv.matFromImageData(rawImageData);
-      cv.cvtColor(rawGray, rawGray, cv.COLOR_RGBA2GRAY);
+      rawGray = this.decodeToGray(frame, frame.displayWidth, frame.displayHeight);
 
       // Determine the UI scale: reuse the cached/persisted scale, else measure it once by
       // multi-scale matching the anchor over the full raw frame.
@@ -309,7 +328,8 @@ class FrameProcessor {
             height: this.loadedAsset.atlasAnchor.entries[this.previousInfo.locale].height,
           }
         : { x: 0, y: 0, width: canvas.width, height: canvas.height };
-      const anchor = this.findBest(
+      const anchor = findBest(
+        cv,
         {
           roi: roiAnchor,
           atlas: this.loadedAsset.atlasAnchor,
@@ -354,7 +374,8 @@ class FrameProcessor {
       const anchorY = this.previousInfo.anchorLoc.y;
 
       //2 Search for the Order or Chaos label
-      const gemAttr = this.findBest(
+      const gemAttr = findBest(
+        cv,
         {
           roi: { x: anchorX - 186, y: anchorY + 91, width: 224, height: 32 },
           atlas: this.loadedAsset.atlasGemAttr[currentLocale],
@@ -365,169 +386,22 @@ class FrameProcessor {
       );
       if (!gemAttr) return;
 
-      // 5. Find the 9 gems and do image matching
-      const currentGems: ArkGridGem[] = [];
-      for (let i = 0; i < 9; i++) {
-        // Compute the gem row position (height 61px, gap 2px)
-        const rowX = anchorX - 287;
-        const rowY = anchorY + 213 + 63 * i;
-
-        // 1) Gem type (name)
-        const gemName = this.findBest(
-          {
-            roi: { x: rowX + 9, y: rowY + 14, width: 30, height: 30 },
-            atlas: this.loadedAsset.atlasGemImage[currentLocale],
-            threshold: this.thresholdSet.gemImage - detectionMargin,
-          },
-          resizedFrame,
-          debugCtx
-        );
-
-        // 2) Willpower
-        const willPower = this.findBest(
-          {
-            roi: { x: rowX + 65, y: rowY, width: 18, height: 30 },
-            atlas: this.loadedAsset.atlasWillPower[currentLocale],
-            threshold: this.thresholdSet.willPower - detectionMargin,
-          },
-          resizedFrame,
-          debugCtx
-        );
-
-        // 3) Order/Chaos point
-        const corePoint = this.findBest(
-          {
-            roi: { x: rowX + 65, y: rowY + 30, width: 18, height: 30 },
-            atlas: this.loadedAsset.atlasCorePoint[currentLocale],
-            threshold: this.thresholdSet.corePoint - detectionMargin,
-          },
-          resizedFrame,
-          debugCtx
-        );
-
-        // 4) Extract gem options
-        type GemOptionResult = {
-          optionName: MatchingResult<KeyOptionString> | null;
-          optionLevel: MatchingResult<KeyOptionLevel> | null;
-          yOffset: number;
-        };
-        const optionTop: GemOptionResult = {
-          optionName: null,
-          optionLevel: null,
-          yOffset: 0,
-        };
-        const optionBottom: GemOptionResult = {
-          optionName: null,
-          optionLevel: null,
-          yOffset: 30, // the bottom option sits 30px below
-        };
-
-        for (const targetOption of [optionTop, optionBottom]) {
-          // Option name
-          const optionNameRoi = {
-            x: rowX + 125,
-            y: rowY + targetOption.yOffset,
-            width: 200,
-            height: 30,
-          };
-          let optionName = this.findBest(
-            {
-              roi: optionNameRoi,
-              atlas: this.loadedAsset.atlasOptionName[currentLocale],
-              threshold: this.thresholdSet.optionName - detectionMargin,
-            },
-            resizedFrame,
-            currentLocale === 'ru_ru' ? null : debugCtx
-          );
-
-          // For ru_ru, "AtkPower" gets captured from the "AllyAttackEnh" string
-          if (optionName !== null && currentLocale === 'ru_ru' && optionName.key === 'AtkPower') {
-            // So check again against an atlas that excludes "AtkPower"
-            const tempOptionName = this.findBest(
-              {
-                roi: optionNameRoi,
-                atlas: this.loadedAsset.atlasOptionName[currentLocale],
-                threshold: this.thresholdSet.optionName - detectionMargin,
-              },
-              resizedFrame,
-              null,
-              {
-                excludeKey: 'AtkPower',
-              }
-            );
-            if (tempOptionName) {
-              // If it's still found, this is actually "AllyAttackEnh"
-              optionName = tempOptionName;
-            } else {
-              // "AllyAttackEnh" wasn't found, so it's "AtkPower"
-            }
-          }
-
-          if (currentLocale === 'ru_ru') {
-            // Draw the debug that findBest didn't draw
-            // XXX When not found we'd want to show that it wasn't found, but we can't here
-            if (debugCtx && optionName) {
-              showMatch(debugCtx, optionNameRoi, optionName, {
-                scoreThreshold: this.thresholdSet.optionName - detectionMargin,
-              });
-            }
-          }
-
-          // Option level
-          // The level sits 16px past the position found above
-          const optionLevelXOffset = optionName
-            ? optionName.loc.x - optionNameRoi.x + optionName.template.cols + 16
-            : 60;
-
-          const optionLevel = this.findBest(
-            {
-              roi: {
-                x: rowX + 125 + optionLevelXOffset,
-                y: rowY + targetOption.yOffset,
-                width: 48,
-                height: 30,
-              },
-              atlas: this.loadedAsset.atlasOptionLevel[currentLocale],
-              threshold: this.thresholdSet.optionLevel - detectionMargin,
-            },
-            resizedFrame,
-            debugCtx
-          );
-
-          targetOption.optionName = optionName;
-          targetOption.optionLevel = optionLevel;
-        }
-
-        if (
-          gemName !== null &&
-          willPower !== null &&
-          corePoint !== null &&
-          optionTop.optionName !== null &&
-          optionTop.optionLevel !== null &&
-          optionBottom.optionName !== null &&
-          optionBottom.optionLevel !== null
-        ) {
-          const gem: ArkGridGem = {
-            gemAttr: gemAttr.key,
-            name: gemName.key,
-            req: Number(willPower.key),
-            point: Number(corePoint.key),
-            option1: {
-              optionType: optionTop.optionName.key,
-              value: Number(optionTop.optionLevel.key),
-            },
-            option2: {
-              optionType: optionBottom.optionName.key,
-              value: Number(optionBottom.optionLevel.key),
-            },
-          };
-          gem.grade = determineGemGradeByGem(gem);
-          currentGems.push(gem);
-        }
-      }
-      return { locale: currentLocale, gemAttr: gemAttr.key, gems: currentGems };
-      // ... other recognition
-      // return the recognized objects
+      // 5. Find the 9 gems and do image matching (shared with the static-image path).
+      const currentGems = extractNineGems(
+        cv,
+        resizedFrame,
+        this.loadedAsset,
+        currentLocale,
+        gemAttr.key,
+        anchorX,
+        anchorY,
+        this.thresholdSet,
+        detectionMargin,
+        debugCtx
+      );
+      // owned-count is read only on the static-image upload path (recognizeGems); the live frame
+      // stream doesn't need the checksum, so leave it null here.
+      return { locale: currentLocale, gemAttr: gemAttr.key, gems: currentGems, owned: null };
     } finally {
       // OpenCV.js Mats are WASM-heap allocations that are never GC'd; an
       // exception between creation and the happy-path deletes above would
@@ -537,6 +411,27 @@ class FrameProcessor {
       frame.close();
       this.frameTimes.push(performance.now() - start);
       if (this.frameTimes.length > 10) this.frameTimes.shift();
+    }
+  }
+
+  // Recognize gems from a single uploaded/pasted screenshot via the CLIENT-AGNOSTIC OCR path
+  // (recognizeOcr.ts): the gem text is read by OCR (rendering-invariant) so an upload works on ANY
+  // client, unlike the template-matching live path. Closes the bitmap. (`detectionMargin` is unused
+  // here — OCR has no per-match threshold to relax.)
+  async processImage(bitmap: ImageBitmap): Promise<RecognizeResult | undefined> {
+    const cv = this.cv;
+    let gray: CvMat | null = null;
+    try {
+      if (!cv || !this.loadedAsset) return undefined;
+      gray = this.decodeToGray(bitmap, bitmap.width, bitmap.height);
+      if (!this.ocrRunner) this.ocrRunner = new BrowserOcrRunner();
+      const result = await recognizeGemsOcr(cv, gray, this.loadedAsset, this.ocrRunner, {
+        anchorScaleLadder: this.anchorScaleLadder,
+      });
+      return result ?? undefined;
+    } finally {
+      if (gray) gray.delete();
+      bitmap.close();
     }
   }
 }
@@ -581,5 +476,13 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
         });
       }
       break;
+
+    case 'image': {
+      // Static-image (upload/paste) recognition request — independent of the live frame loop. Async:
+      // the OCR path lazy-loads tesseract and runs many OCR calls.
+      const result = await processor.processImage(data.bitmap);
+      postToMain({ type: 'image:done', result });
+      break;
+    }
   }
 };

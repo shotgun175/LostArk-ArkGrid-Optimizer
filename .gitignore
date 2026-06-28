@@ -25,12 +25,13 @@ secrets/
 # Provisional: revisit when Phase 1 scaffolds the app (track, move to /reference, or drop after porting).
 Reference Projects/
 
-# Design/session docs (specs, plans) — kept on disk, not part of the published release.
-docs/superpowers/
-
-# Internal maintainer runbook (deprecation/sunset plan) — kept on disk, not shipped.
-docs/DEPRECATION.md
+# Docs — design/session/analysis docs and the internal sunset runbook are kept on disk,
+# not part of the published release.
+docs/
 
 # Dev-only CV harness — not part of the app build; kept on disk, not shipped.
 harness.html
 src/harness.ts
+
+# tesseract.js Node cache (downloaded on demand by the OCR harness)
+*.traineddata

@@ -4,6 +4,14 @@
   import Icon from '../../lib/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
+  import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';
+  import type { OwnedCount } from '../../lib/cv/types';
+  import {
+    type ImportResult,
+    buildBookmarklet,
+    parseImportHash,
+    parseLoadout,
+  } from '../../lib/import/bibleImport';
   import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
   import {
     appConfig,
@@ -41,7 +49,7 @@
   const LUnsupported = $derived(
     {
       en_us:
-        'On-screen recognition needs a desktop Chromium browser (Chrome or Edge). You can still add gems manually below.',
+        'Live on-screen recognition needs a desktop Chromium browser (Chrome or Edge). On other browsers, use “📷 Upload Screenshot” below to recognize gems from a screenshot, or add gems manually.',
     }[locale]
   );
   const LSupportedClient = $derived(
@@ -54,6 +62,28 @@
       en_us: 'Prevent Screen Sharing Crash',
     }[locale]
   );
+  const LUpload: LocalizationName = {
+    en_us: 'Upload Screenshot',
+  };
+  const LUploadHint = $derived(
+    {
+      en_us: 'Drop screenshots here (several at once is fine), paste (Ctrl/⌘+V), or click to choose files.',
+    }[locale]
+  );
+  const LUploadProcessing = $derived(
+    {
+      en_us: 'Recognizing…',
+    }[locale]
+  );
+  const LImport: LocalizationName = {
+    en_us: 'Import Loadout',
+  };
+  const LImportHint = $derived(
+    {
+      en_us:
+        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr — no screen sharing, no server.',
+    }[locale]
+  );
   // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
   // MediaStreamTrackProcessor (Chromium-only). Detect once; gate the UI when missing so
   // mobile/Safari/Firefox users get a clear message instead of a button that throws.
@@ -62,16 +92,33 @@
     typeof navigator.mediaDevices?.getDisplayMedia === 'function' &&
     typeof (window as any).MediaStreamTrackProcessor === 'function';
 
-  // On devices that can't screen-capture, the whole recognition section is irrelevant (it only
-  // drives the desktop capture flow) — collapse it by default so it doesn't dominate the view.
-  // The unsupported note still shows on the collapsed bar so the user knows why.
-  if (!captureSupported) {
-    setSection('showGemRecognitionPanel', false);
-  }
+  // Note: the panel is no longer auto-collapsed when live capture is unsupported — the “📷 Upload
+  // Screenshot” path works for everyone (mobile / Safari / Firefox included), so the section stays
+  // expanded and the unsupported note simply points those users at upload.
 
   let debugCanvas: HTMLCanvasElement | null;
+  let fileInput = $state<HTMLInputElement | null>(null);
+  let showUpload = $state<boolean>(false);
+  let isDragging = $state<boolean>(false);
+  let isProcessingUpload = $state<boolean>(false);
+  // The in-game "Astrogems Owned" total read from the last uploaded screenshot (count checksum).
+  let detectedOwned = $state<OwnedCount | null>(null);
+  // Backend-free loadout import (paste page source / drop .html / bookmarklet hand-off).
+  let showImport = $state<boolean>(false);
+  let importText = $state<string>('');
+  let isImportDragging = $state<boolean>(false);
+  let importMsg = $state<string | null>(null);
+  let bookmarklet = $state<string>('');
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
+  // Upload path (multi-file): keep the RAW recognized shots per attribute + the per-attr footer
+  // target, and re-derive the de-duplicated lists with the count-aware assembler on each upload.
+  let orderShots = $state<ArkGridGem[][]>([]);
+  let chaosShots = $state<ArkGridGem[][]>([]);
+  let orderTarget = $state<number | null>(null);
+  let chaosTarget = $state<number | null>(null);
+  let orderAssembly = $state<AssemblyResult | null>(null);
+  let chaosAssembly = $state<AssemblyResult | null>(null);
   let isRecording = $state<boolean>(false);
   let isDebugging = $state<boolean>(false);
   let isLoading = $state<boolean>(false);
@@ -188,6 +235,136 @@
     }
   }
 
+  // Re-derive the de-duplicated per-attr lists from the raw uploaded shots via the count-aware
+  // assembler (B-with-A-fallback). Only touches an attribute that has uploads, so the live
+  // screen-share path (which fills totalOrderGems/totalChaosGems directly) is left intact.
+  function reassembleUploads() {
+    if (orderShots.length > 0) {
+      orderAssembly = assembleScreenshots(orderShots, orderTarget);
+      totalOrderGems = orderAssembly.gems;
+    }
+    if (chaosShots.length > 0) {
+      chaosAssembly = assembleScreenshots(chaosShots, chaosTarget);
+      totalChaosGems = chaosAssembly.gems;
+    }
+  }
+
+  // Recognize one screenshot into the raw per-attr shot list + update both footer targets (the
+  // footer carries Order AND Chaos totals regardless of which tab is shown). Returns true on success.
+  async function recognizeIntoShots(file: File): Promise<boolean> {
+    const controller = await getCaptureController();
+    const bitmap = await createImageBitmap(file);
+    const result = await controller.recognizeImage(bitmap);
+    if (!result || result.gems.length === 0) return false;
+    (result.gemAttr === 'Order' ? orderShots : chaosShots).push(result.gems);
+    if (result.owned?.order != null) orderTarget = Math.max(orderTarget ?? 0, result.owned.order);
+    if (result.owned?.chaos != null) chaosTarget = Math.max(chaosTarget ?? 0, result.owned.chaos);
+    return true;
+  }
+
+  // Recognize one OR MORE uploaded / pasted / dropped screenshots, then re-assemble. Works for
+  // everyone (mobile / Safari / Firefox) — needs only the worker, not screen sharing.
+  async function processImageFiles(files: FileList | File[] | null | undefined) {
+    const images = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0 || isProcessingUpload) return;
+    isProcessingUpload = true;
+    let recognized = 0;
+    try {
+      for (const file of images) {
+        try {
+          if (await recognizeIntoShots(file)) recognized++;
+        } catch {
+          // skip an unreadable file; the rest still process
+        }
+      }
+      if (recognized === 0) {
+        window.alert(
+          'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot.'
+        );
+        return;
+      }
+      reassembleUploads();
+      detectedOwned = { order: orderTarget, chaos: chaosTarget };
+      if (totalOrderGems.length > 0) gemListElem?.selectTab(0);
+      else if (totalChaosGems.length > 0) gemListElem?.selectTab(1);
+      gemListElem?.scroll('bottom');
+    } finally {
+      isProcessingUpload = false;
+    }
+  }
+
+  // Single-file entry (paste handler / back-compat).
+  const processImageFile = (file: File | null | undefined) => processImageFiles(file ? [file] : []);
+
+  // Clear the upload session (wired to the GemList "Reset" button so the raw shots don't repopulate).
+  function resetUploads() {
+    orderShots = [];
+    chaosShots = [];
+    orderTarget = null;
+    chaosTarget = null;
+    orderAssembly = null;
+    chaosAssembly = null;
+    totalOrderGems = [];
+    totalChaosGems = [];
+    detectedOwned = null;
+    _prevGem = null;
+  }
+
+  // Merge an imported loadout into the working gem lists (same store recognition fills), deduping
+  // against gems already present. Returns how many new gems were added.
+  function applyImportedGems(result: ImportResult): number {
+    let added = 0;
+    let addedOrder = false;
+    let addedChaos = false;
+    for (const gem of result.gems) {
+      const list = gem.gemAttr === 'Order' ? totalOrderGems : totalChaosGems;
+      if (list.some((g) => isSameArkGridGem(g, gem))) continue;
+      list.push(gem);
+      added++;
+      if (gem.gemAttr === 'Order') addedOrder = true;
+      else addedChaos = true;
+    }
+    if (addedOrder) gemListElem?.selectTab(0);
+    else if (addedChaos) gemListElem?.selectTab(1);
+    gemListElem?.scroll('bottom');
+    return added;
+  }
+
+  // Parse a pasted/dropped/bookmarklet-supplied page source and apply the gems it contains.
+  function importFromText(text: string, hint?: { region?: string | null; name?: string | null }) {
+    const result = parseLoadout(text, hint);
+    if (!result) {
+      window.alert(
+        'That doesn’t look like a lostark.bible or lopec.kr character page. Paste the page source (Ctrl/⌘+U → select all → copy), or drop the saved .html file.'
+      );
+      return;
+    }
+    if (result.gems.length === 0) {
+      window.alert(
+        'No Ark Grid gems found. Make sure the character has an Ark Grid equipped — the “📥 Import Astrogems” bookmarklet is the most reliable way to import (it reads that exact character fresh).'
+      );
+      return;
+    }
+    const added = applyImportedGems(result);
+    const who = result.name
+      ? `${result.name}${result.region ? ` (${result.region})` : ''}`
+      : result.source;
+    const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
+    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}`;
+  }
+
+  async function onImportDrop(e: DragEvent) {
+    e.preventDefault();
+    isImportDragging = false;
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      importFromText(await file.text());
+      return;
+    }
+    const text = e.dataTransfer?.getData('text');
+    if (text) importFromText(text);
+  }
+
   async function startGemCapture() {
     // The button is hidden when unsupported; guard defensively anyway.
     if (!captureSupported) return;
@@ -250,19 +427,57 @@
     const controller = await getCaptureController();
     controller.detectionMargin = detectionMargin;
   }
-  // On desktop, warm the recognition worker (download + JIT-compile the OpenCV WASM) shortly after
-  // load so the first "Start Screen Sharing" doesn't pay the cold ~5s cost. Deferred to idle so it
-  // never competes with first paint; gated on captureSupported so mobile never fetches the 10.8MB
-  // CV chunk. startGemCapture() reuses the warmed worker.
   onMount(() => {
-    if (!captureSupported) return;
-    const warm = () => void getCaptureController().then((c) => c.warmup());
-    if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(warm, { timeout: 3000 });
-      return () => cancelIdleCallback(id);
+    // Build the bookmarklet against the live app URL, and accept a #import= hand-off from it.
+    bookmarklet = buildBookmarklet(location.origin + location.pathname);
+    const fromHash = parseImportHash(location.hash);
+    if (fromHash) {
+      showImport = true;
+      setSection('showGemRecognitionPanel', true);
+      importFromText(fromHash.src, { region: fromHash.region, name: fromHash.name });
+      // Clear the hash so a refresh doesn't re-import.
+      history.replaceState(null, '', location.pathname + location.search);
     }
-    const id = window.setTimeout(warm, 1200);
-    return () => clearTimeout(id);
+
+    // Paste-to-recognize: only acts while the upload panel is open, so it never hijacks paste
+    // elsewhere. Reads the first image item off the clipboard and runs it through recognition.
+    const onPaste = (e: ClipboardEvent) => {
+      if (!showUpload) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void processImageFile(file);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+
+    // On desktop, warm the recognition worker (download + JIT-compile the OpenCV WASM) shortly
+    // after load so the first "Start Screen Sharing" doesn't pay the cold ~5s cost. Deferred to
+    // idle so it never competes with first paint; gated on captureSupported so mobile never
+    // fetches the 10.8MB CV chunk on load (upload lazy-loads it only when a file is chosen).
+    let cancelWarm: (() => void) | undefined;
+    if (captureSupported) {
+      const warm = () => void getCaptureController().then((c) => c.warmup());
+      if (typeof requestIdleCallback === 'function') {
+        const id = requestIdleCallback(warm, { timeout: 3000 });
+        cancelWarm = () => cancelIdleCallback(id);
+      } else {
+        const id = window.setTimeout(warm, 1200);
+        cancelWarm = () => clearTimeout(id);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      cancelWarm?.();
+    };
   });
 
   onDestroy(async () => {
@@ -330,8 +545,110 @@
           </button>
         {/if}
       </div>
-      <div class="right"></div>
+      <div class="right">
+        <!-- Available to everyone (not gated on captureSupported): static-image recognition is the
+             path mobile / Safari / Firefox users have, and a convenience for desktop too. -->
+        <button class:active={showUpload} onclick={() => (showUpload = !showUpload)}>
+          📷 {LUpload[locale]}
+        </button>
+        <button class:active={showImport} onclick={() => (showImport = !showImport)}>
+          📥 {LImport[locale]}
+        </button>
+      </div>
     </div>
+    {#if showUpload}
+      <div
+        class="upload-zone"
+        class:dragging={isDragging}
+        class:busy={isProcessingUpload}
+        role="button"
+        tabindex="0"
+        aria-label={LUpload[locale]}
+        aria-busy={isProcessingUpload}
+        onclick={() => fileInput?.click()}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput?.click();
+          }
+        }}
+        ondragover={(e) => {
+          e.preventDefault();
+          isDragging = true;
+        }}
+        ondragleave={() => (isDragging = false)}
+        ondrop={(e) => {
+          e.preventDefault();
+          isDragging = false;
+          void processImageFiles(e.dataTransfer?.files);
+        }}
+      >
+        <span class="upload-zone-text">{isProcessingUpload ? LUploadProcessing : LUploadHint}</span>
+        <input
+          bind:this={fileInput}
+          class="upload-file-input"
+          type="file"
+          accept="image/*"
+          multiple
+          onchange={(e) => {
+            const input = e.currentTarget;
+            void processImageFiles(input.files);
+            input.value = '';
+          }}
+        />
+      </div>
+      {#if detectedOwned && !orderAssembly && !chaosAssembly && (detectedOwned.order !== null || detectedOwned.chaos !== null)}
+        <p class="owned-note">
+          📋 Screenshot inventory: Order {detectedOwned.order ?? '?'}, Chaos
+          {detectedOwned.chaos ?? '?'} owned
+        </p>
+      {/if}
+    {/if}
+    {#if showImport}
+      <div class="import-panel">
+        <p class="import-intro">{LImportHint}</p>
+        <ol class="import-steps">
+          <li>
+            Drag this to your bookmarks bar, then click it while viewing your character on
+            <strong>lostark.bible</strong> — it reads that exact character fresh (no refresh needed):
+            <a class="bookmarklet" href={bookmarklet} onclick={(e) => e.preventDefault()}
+              >📥 Import Astrogems</a
+            >
+          </li>
+          <li>
+            …or drop a saved <strong>.html</strong> of the character page below, or paste its source
+            (also works for <strong>lopec.kr</strong> / KR).
+          </li>
+        </ol>
+        <div
+          class="upload-zone import-drop"
+          class:dragging={isImportDragging}
+          role="button"
+          tabindex="0"
+          aria-label="Drop a saved character page (.html)"
+          ondragover={(e) => {
+            e.preventDefault();
+            isImportDragging = true;
+          }}
+          ondragleave={() => (isImportDragging = false)}
+          ondrop={onImportDrop}
+        >
+          <span class="upload-zone-text">Drop a saved .html of the character page here</span>
+        </div>
+        <textarea
+          class="import-textarea"
+          bind:value={importText}
+          placeholder="…or paste the page source here (Ctrl/⌘+U → select all → copy)"
+          rows="3"
+        ></textarea>
+        <button class="import-go" disabled={!importText.trim()} onclick={() => importFromText(importText)}>
+          Import from pasted source
+        </button>
+        {#if importMsg}
+          <p class="owned-note">✅ {importMsg}</p>
+        {/if}
+      </div>
+    {/if}
     <div hidden={!isDebugging}>
       <div class="debug-screen">
         <div class="threshold-controller">
@@ -362,6 +679,8 @@
           orderGems: totalOrderGems,
           chaosGems: totalChaosGems,
         }}
+        assembly={{ order: orderAssembly, chaos: chaosAssembly }}
+        onReset={resetUploads}
         bind:this={gemListElem}
       />
     </div>
@@ -436,6 +755,103 @@
     opacity: 0.85;
     max-width: 36rem;
     line-height: 1.4;
+  }
+
+  .upload-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border: 2px dashed var(--text);
+    border-radius: 8px;
+    padding: 1.5rem 1rem;
+    cursor: pointer;
+    opacity: 0.85;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      opacity 0.15s ease;
+  }
+  .upload-zone:hover,
+  .upload-zone:focus-visible {
+    opacity: 1;
+    outline: none;
+  }
+  .upload-zone.dragging {
+    border-color: #22c55e;
+    background-color: rgba(34, 197, 94, 0.08);
+    opacity: 1;
+  }
+  .upload-zone.busy {
+    cursor: progress;
+  }
+  .upload-zone-text {
+    pointer-events: none;
+  }
+  .upload-file-input {
+    display: none;
+  }
+  .owned-note {
+    margin: 0.4rem 0 0;
+    color: var(--text);
+    opacity: 0.9;
+    font-size: 0.9rem;
+  }
+
+  .import-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .import-intro {
+    margin: 0;
+    opacity: 0.9;
+  }
+  .import-steps {
+    margin: 0;
+    padding-left: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+  .bookmarklet {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 0.4rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: grab;
+    color: #fff;
+    background: #2e7d32;
+    border: 1px solid #2e7d32;
+  }
+  .bookmarklet:active {
+    cursor: grabbing;
+  }
+  .import-drop {
+    padding: 1rem;
+  }
+  .import-textarea {
+    width: 100%;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--text);
+    background: var(--card, transparent);
+    color: var(--text);
+  }
+  .import-go {
+    align-self: flex-start;
+    width: auto;
+  }
+  .import-go:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .panel > .content {

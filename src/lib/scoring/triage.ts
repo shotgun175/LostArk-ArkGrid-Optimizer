@@ -9,20 +9,20 @@ export interface TriageResult {
   rationale: string;
 }
 
-// The baseline slider range. Baseline = score of the weakest equipped gem; real
-// weakest-equipped values sit comfortably inside this band.
+// The baseline slider range, in % damage. Baseline = score of the weakest equipped gem;
+// a perfect gem is ≈ 1.4 % damage, so real weakest-equipped values sit inside this band.
 const BASELINE_MIN = 0;
-const BASELINE_MAX = 20;
+const BASELINE_MAX = 2;
 
 /**
- * Auto baseline = the score of the weakest *equipped* gem (rounded, clamped to 0–20) —
- * the threshold a gem must beat to be a slot-able upgrade. Returns null when there is no
- * equipped loadout to derive it from (e.g. before the optimizer has been run).
+ * Auto baseline = the score (% damage) of the weakest *equipped* gem (rounded to 2 dp,
+ * clamped to 0–2) — the threshold a gem must beat to be a slot-able upgrade. Returns null
+ * when there is no equipped loadout to derive it from (e.g. before the optimizer has run).
  */
 export function autoBaselineFromLoadout(equipped: ArkGridGem[], role: GemRole): number | null {
   if (equipped.length === 0) return null;
   const weakest = Math.min(...equipped.map((gem) => computeGemScore(gem, role).score));
-  return Math.max(BASELINE_MIN, Math.min(BASELINE_MAX, Math.round(weakest)));
+  return Math.max(BASELINE_MIN, Math.min(BASELINE_MAX, round2(weakest)));
 }
 
 /** Effective baseline: a manual override wins; otherwise the auto value; otherwise 0. */
@@ -30,8 +30,8 @@ export function effectiveBaseline(auto: number | null, override: number | undefi
   return override ?? auto ?? 0;
 }
 
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 /**
@@ -102,18 +102,18 @@ export function triageGem({
   if (score >= baseline) {
     return {
       action: 'upgrade',
-      rationale: `Beats your weakest equipped gem (${round1(score)} >= ${baseline}) — a slot-able upgrade.`,
+      rationale: `Beats your weakest equipped gem (${round2(score)} >= ${baseline}) — a slot-able upgrade.`,
     };
   }
   if (hasHeadroom) {
     return {
       action: 'keep',
-      rationale: `Below your weakest equipped (${round1(score)} < ${baseline}), but a core upgrade could still slot it — hold for now.`,
+      rationale: `Below your weakest equipped (${round2(score)} < ${baseline}), but a core upgrade could still slot it — hold for now.`,
     };
   }
   return {
     action: 'remove',
-    rationale: `Below your weakest equipped (${round1(score)} < ${baseline}) and your cores are maxed — it will never be slotted.`,
+    rationale: `Below your weakest equipped (${round2(score)} < ${baseline}) and your cores are maxed — it will never be slotted.`,
   };
 }
 

@@ -1,10 +1,12 @@
 /**
  * Single source of truth for the project's deprecation state.
  *
- * Lost Ark is adding Ark Grid optimization as a built-in game feature, which
- * supersedes this fan tool. This module drives the in-app deprecation banner and
- * lets the entire shutdown be flipped from one place once the official retirement
- * date is announced.
+ * Lost Ark's July 2026 update adds a built-in "Ark Grid Astrogem Auto Equip" feature
+ * (officially announced) that supersedes this tool's manual optimizer (the Profile,
+ * Recognition, Cores & Gems, and Optimization sections). The Gem Triage and Cutting
+ * Plan tools stay useful, since players still cut gems and choose what to keep. This
+ * module drives the in-app heads-up banner; the retirement trigger below stays
+ * available if the whole tool is ever fully retired.
  *
  * To pull the trigger: set STATUS to 'retired' and fill in RETIREMENT_DATE below.
  * Everything else (banner copy, dismissibility) follows automatically. The full
@@ -23,8 +25,9 @@ const STATUS: DeprecationStatus = 'pending';
 const RETIREMENT_DATE: string | null = null; // e.g. 'July 30, 2026'
 
 const PENDING_MESSAGE =
-  'Heads-up: Lost Ark is adding Ark Grid optimization as a built-in feature. ' +
-  'Once it ships, this fan tool will be retired. Thanks for using it!';
+  "Heads-up: Lost Ark's July update adds a built-in Ark Grid Astrogem Auto Equip feature, " +
+  'so the manual optimizer here is becoming redundant. The Gem Triage and Cutting Plan ' +
+  'tools below still help you decide which gems to cut and keep.';
 
 const retiredMessage = (date: string | null): string =>
   `This tool has been retired${date ? ` as of ${date}` : ''}. ` +

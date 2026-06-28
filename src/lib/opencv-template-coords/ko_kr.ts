@@ -27,10 +27,20 @@ export const koKrCoords = {
   'lv4.png': { x: 121, y: 56, w: 11, h: 13 },
   'lv5.png': { x: 166, y: 91, w: 10, h: 13 },
   'order.png': { x: 44, y: 92, w: 32, h: 18 },
+  'owned-0.png': { x: 134, y: 56, w: 7, h: 11 },
+  'owned-1.png': { x: 145, y: 74, w: 3, h: 11 },
+  'owned-2.png': { x: 143, y: 56, w: 5, h: 11 },
+  'owned-3.png': { x: 35, y: 112, w: 6, h: 11 },
+  'owned-4.png': { x: 105, y: 92, w: 6, h: 10 },
+  'owned-5.png': { x: 43, y: 112, w: 6, h: 11 },
+  'owned-6.png': { x: 136, y: 74, w: 7, h: 11 },
+  'owned-7.png': { x: 78, y: 92, w: 7, h: 11 },
+  'owned-8.png': { x: 87, y: 92, w: 7, h: 11 },
+  'owned-9.png': { x: 96, y: 92, w: 7, h: 10 },
   'solidity.png': { x: 150, y: 0, w: 14, h: 25 },
   'stability.png': { x: 150, y: 27, w: 12, h: 26 },
 } as const;
 
 export type KoKrTemplateName = keyof typeof koKrCoords;
 
-export const koKrFileName = 'opencv_template_ko_kr_1780596317334.png';
+export const koKrFileName = 'opencv_template_ko_kr_1782589774171.png';
