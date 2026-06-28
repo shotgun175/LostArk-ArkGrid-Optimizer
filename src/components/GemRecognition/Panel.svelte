@@ -536,7 +536,7 @@
           {:else}
             <button onclick={stopGemCapture}>🖥️ {LStopCapture[locale]}</button>
           {/if}
-          <button class:active={isDebugging} onclick={toggleDrawDebug}>
+          <button class:active={isDebugging} aria-pressed={isDebugging} onclick={toggleDrawDebug}>
             🔨 {isDebugging ? LHideScreen[locale] : LShowScreen[locale]}
           </button>
           <button onclick={toggleDeferredScreenSharingInit}>
@@ -554,6 +554,7 @@
              path mobile / Safari / Firefox users have, and a convenience for desktop too. -->
         <button
           class:active={showUpload}
+          aria-pressed={showUpload}
           disabled={isRecording}
           onclick={() => (mode = mode === 'upload' ? 'capture' : 'upload')}
         >
@@ -561,6 +562,7 @@
         </button>
         <button
           class:active={showImport}
+          aria-pressed={showImport}
           disabled={isRecording}
           onclick={() => (mode = mode === 'import' ? 'capture' : 'import')}
         >
@@ -889,6 +891,20 @@
   }
   .buttons > div > button {
     flex-basis: auto;
+  }
+  /* Toggle buttons (Upload / Import / debug screen): a filled accent makes the "on" state
+     unmistakable, which matters once the Start Screen Sharing button hides on mode switch. */
+  .buttons button.active {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .buttons button.active:hover {
+      background-color: var(--primary);
+      filter: brightness(1.08);
+    }
   }
   .debug-screen {
     display: flex;
