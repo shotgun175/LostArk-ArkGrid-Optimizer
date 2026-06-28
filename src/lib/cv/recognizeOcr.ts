@@ -53,6 +53,41 @@ const UP_EFFECT = 3;
 const UP_DIGIT = 6;
 
 /**
+ * Digit self-similarity repair parameters. tesseract's single-char OCR (PSM 10) intermittently
+ * ABSTAINS (returns "") on perfectly-clean digit glyphs — most often "4" — which would otherwise drop
+ * an entire row even though the global-Otsu binarization is flawless. But within one screenshot every
+ * instance of a digit is the SAME rendered glyph, so an abstained glyph is pixel-near-identical to
+ * another instance that DID read. We normalize each glyph to a fixed grid and, for any abstention,
+ * adopt the digit of its nearest confident neighbour. Separation is wide and consistent across clients/
+ * scales (measured: same-digit glyphs sit <0.09 apart, different digits >0.23), so the threshold below
+ * never crosses digit classes — a genuinely unique abstained glyph stays null and the row drops, as
+ * before. This is what actually fixes willpower drops on scene-bleed backgrounds (the binarize was never
+ * the problem; the OCR engine was). */
+const GLYPH_NORM_W = 20;
+const GLYPH_NORM_H = 30;
+const GLYPH_SAME_MAX_DIST = 0.15;
+
+/** Normalized binary-glyph signature (1 = foreground) of a component, for self-similarity matching. */
+function glyphSignature(cv: CV, binCol: CvMat, x: number, y: number, w: number, h: number): Uint8Array {
+  const roi = binCol.roi(new cv.Rect(x, y, w, h));
+  const small = new cv.Mat();
+  cv.resize(roi, small, new cv.Size(GLYPH_NORM_W, GLYPH_NORM_H), 0, 0, cv.INTER_AREA);
+  roi.delete();
+  const px = small as unknown as { ucharAt(r: number, c: number): number };
+  const sig = new Uint8Array(GLYPH_NORM_W * GLYPH_NORM_H);
+  for (let yy = 0; yy < GLYPH_NORM_H; yy++)
+    for (let xx = 0; xx < GLYPH_NORM_W; xx++) sig[yy * GLYPH_NORM_W + xx] = px.ucharAt(yy, xx) > 127 ? 1 : 0;
+  small.delete();
+  return sig;
+}
+/** Fraction of differing cells between two glyph signatures (normalized Hamming distance). */
+function glyphDistance(a: Uint8Array, b: Uint8Array): number {
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff++;
+  return diff / a.length;
+}
+
+/**
  * Find every gem-icon row by anchoring on a reliable seed icon and walking the row grid (pitch 63 in
  * FHD units, scaled by the detected UI scale). At each expected row centre, match all gem templates in
  * a small window at the icon column; keep the best above threshold. Returns rows top->bottom with the
@@ -183,7 +218,7 @@ async function readDigits(
     const minH = 10 * scale * UP_DIGIT;
     const maxH = 30 * scale * UP_DIGIT;
     const minA = 12 * scale * scale * UP_DIGIT * UP_DIGIT;
-    const comps: { cy: number; digit: number | null }[] = [];
+    const comps: { cy: number; digit: number | null; sig: Uint8Array }[] = [];
     for (let i = 1; i < n; i++) {
       const x = stats.intAt(i, 0);
       const y = stats.intAt(i, 1);
@@ -191,6 +226,7 @@ async function readDigits(
       const h = stats.intAt(i, 3);
       const a = stats.intAt(i, 4);
       if (h < minH || h > maxH || a < minA || w > 24 * scale * UP_DIGIT) continue;
+      const sig = glyphSignature(cv, col, x, y, w, h);
       const pad = 12;
       const cx0 = Math.max(0, x - pad);
       const cy0 = Math.max(0, y - pad);
@@ -202,11 +238,28 @@ async function readDigits(
       sub.delete();
       const res = await ocr.recognizeMat(inv, { psm: PSM_SINGLE_CHAR, whitelist: '0123456789' });
       inv.delete();
-      comps.push({ cy: y + h / 2, digit: parseBoundedDigit(res.text, 0, 99) });
+      comps.push({ cy: y + h / 2, digit: parseBoundedDigit(res.text, 0, 99), sig });
     }
     labels.delete();
     stats.delete();
     cents.delete();
+    // Repair tesseract's single-char abstentions: any glyph it failed to read adopts the digit of its
+    // nearest confident, visually-identical neighbour (see GLYPH_SAME_MAX_DIST). No-op when every glyph
+    // already read (e.g. the clean client-1 fixtures), so this only recovers otherwise-dropped rows.
+    const confident = comps.filter((c) => c.digit != null);
+    for (const c of comps) {
+      if (c.digit != null) continue;
+      let bestDigit: number | null = null;
+      let bestDist = GLYPH_SAME_MAX_DIST;
+      for (const ref of confident) {
+        const d = glyphDistance(c.sig, ref.sig);
+        if (d < bestDist) {
+          bestDist = d;
+          bestDigit = ref.digit;
+        }
+      }
+      c.digit = bestDigit;
+    }
     const nearest = (targetScreenY: number): number | null => {
       const tImg = (targetScreenY - colY0) * UP_DIGIT;
       let best: { cy: number; digit: number | null } | null = null;
