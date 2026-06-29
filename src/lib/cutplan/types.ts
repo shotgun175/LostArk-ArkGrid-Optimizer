@@ -117,12 +117,6 @@ export const GOLD_PER_DAMAGE: Record<GoldBracket, number> = {
 
 export const RARITIES: Rarity[] = ['uncommon', 'rare', 'epic'];
 export const COSTS = [8, 9, 10] as const;
-export const BUCKET_KEYS: BucketKey[] = [
-  '2_damage',
-  'optimal_damage',
-  'suboptimal_damage',
-  'no_damage',
-];
 export const RARITY_LABEL: Record<Rarity, string> = {
   uncommon: 'Uncommon',
   rare: 'Rare',

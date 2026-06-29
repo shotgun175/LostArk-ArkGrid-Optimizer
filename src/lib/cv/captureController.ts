@@ -444,9 +444,6 @@ export class CaptureController {
       this.state = 'closing'; // expect to reach idle later, after the loop exits
     }
   }
-  isIdle() {
-    return this.state === 'idle';
-  }
   isRecording() {
     return this.state == 'recording';
   }

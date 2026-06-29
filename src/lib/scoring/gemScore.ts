@@ -69,16 +69,6 @@ export const SUPPORT_EFFECT_D: Record<ArkGridGemOptionName, number> = {
   BossDamage: 0,
 };
 
-/** Per-core order/chaos point value for the SUPPORT grid total (keyed by core base id). */
-export const SUPPORT_ORDER_PER_CORE: Record<number, number> = {
-  10001: 0.0694 / 3, // Order Sun (Ally Attack)
-  10002: 0.064 / 3, // Order Moon (Ally Damage)
-  10003: 0.0486 / 3, // Order Star (serenade)
-  10004: 0.0753 / 3, // Chaos Sun (Ally Damage)
-  10005: 0.1044 / 3, // Chaos Moon (Brand — strongest)
-  10006: 0.0869 / 3, // Chaos Star (Weapon Power)
-};
-
 // Side-effect pools per base cost (8/9/10), derived from the canonical gem specs.
 const EFFECT_POOLS: Record<number, ArkGridGemOptionName[]> = (() => {
   const pools: Record<number, ArkGridGemOptionName[]> = {};
