@@ -3,7 +3,7 @@
 
   import BuildViewSwitch from './BuildViewSwitch.svelte';
 
-  // Section anchors are rendered in App.svelte / CharacterProfileEditor.svelte with these ids.
+  // Section anchors are rendered in App.svelte / BuildSection.svelte with these ids.
   const sections = [
     { id: 'sec-profile', label: 'Profile' },
     { id: 'sec-recognition', label: 'Recognition' },

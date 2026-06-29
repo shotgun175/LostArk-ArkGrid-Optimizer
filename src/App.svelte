@@ -3,14 +3,14 @@
   import { onMount } from 'svelte';
 
   import BackToTop from './components/BackToTop.svelte';
-  import CharacterProfileEditor from './components/CharacterProfileEditor.svelte';
+  import BuildSection from './components/BuildSection.svelte';
   import CuttingPlanPanel from './components/CuttingPlanPanel.svelte';
   import Assumptions from './components/Footer/Assumptions.svelte';
   import Footer from './components/Footer/Footer.svelte';
   import GemRecognitionPanel from './components/GemRecognition/Panel.svelte';
   import GemTriagePanel from './components/GemTriagePanel.svelte';
   import AppConfiguration from './components/Header/AppConfiguration.svelte';
-  import ProfileEdit from './components/Header/ProfileEditor.svelte';
+  import ProfileEditor from './components/Header/ProfileEditor.svelte';
   import SectionNav from './components/SectionNav.svelte';
   import DeprecationBanner from './lib/DeprecationBanner.svelte';
   import { type LocalizationName } from './lib/constants/enums';
@@ -70,10 +70,10 @@
     <div class="layout">
       <SectionNav />
       <AppConfiguration></AppConfiguration>
-      <div class="profile-row" id="sec-profile"><ProfileEdit></ProfileEdit></div>
+      <div class="profile-row" id="sec-profile"><ProfileEditor></ProfileEditor></div>
       <div class="sections">
         <div id="sec-recognition"><GemRecognitionPanel></GemRecognitionPanel></div>
-        <CharacterProfileEditor bind:profile={currentProfile}></CharacterProfileEditor>
+        <BuildSection bind:profile={currentProfile}></BuildSection>
         <div id="sec-triage"><GemTriagePanel profile={currentProfile} /></div>
         <div id="sec-cutplan"><CuttingPlanPanel profile={currentProfile} /></div>
       </div>
