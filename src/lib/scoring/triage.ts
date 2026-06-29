@@ -1,6 +1,14 @@
+import type { ArkGridAttr } from '../constants/enums';
 import type { ArkGridCore, ArkGridCoreType } from '../models/arkGridCores';
 import { type ArkGridGem, gemFingerprint } from '../models/arkGridGems';
-import { type GemRole, computeGemScore } from './gemScore';
+import {
+  BASELINE_MAX_GRADE,
+  BASELINE_MIN_GRADE,
+  type GemRole,
+  bumpedBaselineGrade,
+  computeGemScore,
+  rankFromGrade,
+} from './gemScore';
 
 export type TriageAction = 'equipped' | 'upgrade' | 'keep' | 'remove';
 
@@ -9,29 +17,44 @@ export interface TriageResult {
   rationale: string;
 }
 
-// The baseline slider range, in % damage. Baseline = score of the weakest equipped gem;
-// a perfect gem is ≈ 1.4 % damage, so real weakest-equipped values sit inside this band.
-const BASELINE_MIN = 0;
-const BASELINE_MAX = 2;
+// The baseline is a 0-100 GRADE on shizukaziye's rank ladder (GRADE_ROWS, ranks C- … S+), shown as a
+// letter tier. It is the ONE value both the Gem Triage upgrade/keep/remove split and the Cutting Plan
+// target read, so the two panels stay tied together as the user moves the shared control.
+
+/** One attribute's source grade for the baseline: its 3rd-lowest equipped grade (or lowest if <3). */
+function attrSourceGrade(equipped: ArkGridGem[], attr: ArkGridAttr, role: GemRole): number | null {
+  const grades = equipped
+    .filter((gem) => gem.gemAttr === attr)
+    .map((gem) => computeGemScore(gem, role).grade)
+    .sort((a, b) => a - b);
+  if (grades.length === 0) return null;
+  return grades.length >= 3 ? grades[2] : grades[0];
+}
 
 /**
- * Auto baseline = the score (% damage) of the weakest *equipped* gem (rounded to 2 dp,
- * clamped to 0–2) — the threshold a gem must beat to be a slot-able upgrade. Returns null
- * when there is no equipped loadout to derive it from (e.g. before the optimizer has run).
+ * Auto baseline = a GRADE on the rank ladder, one rank ABOVE the stronger of the two attributes'
+ * 3rd-lowest equipped gems (shizukaziye's blanketBaseline) — the tier a gem must reach to be a slot-able
+ * upgrade, biased to "improve upwards". Returns null when there is no equipped loadout to derive it from.
  */
 export function autoBaselineFromLoadout(equipped: ArkGridGem[], role: GemRole): number | null {
   if (equipped.length === 0) return null;
-  const weakest = Math.min(...equipped.map((gem) => computeGemScore(gem, role).score));
-  return Math.max(BASELINE_MIN, Math.min(BASELINE_MAX, round2(weakest)));
+  const order = attrSourceGrade(equipped, 'Order', role);
+  const chaos = attrSourceGrade(equipped, 'Chaos', role);
+  if (order === null && chaos === null) return null;
+  const strongerSource = Math.max(order ?? -Infinity, chaos ?? -Infinity);
+  return bumpedBaselineGrade(strongerSource);
 }
 
-/** Effective baseline: a manual override wins; otherwise the auto value; otherwise 0. */
+/**
+ * Effective baseline GRADE: a manual override (a ladder grade) wins; otherwise the auto value; otherwise
+ * the floor. An out-of-range override (e.g. a pre-grade-migration % value ≤ 2) is ignored so a stale
+ * setting can't drag the baseline down to F.
+ */
 export function effectiveBaseline(auto: number | null, override: number | undefined): number {
-  return override ?? auto ?? 0;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+  if (override !== undefined && override >= BASELINE_MIN_GRADE && override <= BASELINE_MAX_GRADE) {
+    return override;
+  }
+  return auto ?? BASELINE_MIN_GRADE;
 }
 
 /**
@@ -75,20 +98,20 @@ export function attrHasUpgradeHeadroom(
 }
 
 /**
- * Triage a gem:
+ * Triage a gem by comparing its GRADE (letter tier) against the baseline tier:
  *  - equipped → 'equipped' (currently slotted; not an upgrade or removal target)
- *  - spare, at/above baseline → 'upgrade' (beats your weakest equipped gem; slot-able)
+ *  - spare, at/above the baseline tier → 'upgrade' (reaches your target tier; slot-able)
  *  - spare, below baseline, attribute still has core headroom → 'keep' (a core upgrade could
  *    still slot it — hold for now)
  *  - spare, below baseline, cores maxed (no headroom) → 'remove' (it will never be slotted)
  */
 export function triageGem({
-  score,
+  grade,
   baseline,
   isEquipped,
   hasHeadroom,
 }: {
-  score: number;
+  grade: number;
   baseline: number;
   isEquipped: boolean;
   hasHeadroom: boolean;
@@ -99,21 +122,23 @@ export function triageGem({
       rationale: 'Currently equipped, part of your solved loadout.',
     };
   }
-  if (score >= baseline) {
+  const gemTier = rankFromGrade(grade);
+  const baseTier = rankFromGrade(baseline);
+  if (grade >= baseline) {
     return {
       action: 'upgrade',
-      rationale: `Beats your weakest equipped gem (${round2(score)} >= ${baseline}), a slot-able upgrade.`,
+      rationale: `Tier ${gemTier} reaches your baseline ${baseTier} — a slot-able upgrade.`,
     };
   }
   if (hasHeadroom) {
     return {
       action: 'keep',
-      rationale: `Below your weakest equipped (${round2(score)} < ${baseline}), but a core upgrade could still slot it, so hold for now.`,
+      rationale: `Tier ${gemTier} is below your baseline ${baseTier}, but a core upgrade could still slot it, so hold for now.`,
     };
   }
   return {
     action: 'remove',
-    rationale: `Below your weakest equipped (${round2(score)} < ${baseline}) and your cores are maxed, so it will never be slotted.`,
+    rationale: `Tier ${gemTier} is below your baseline ${baseTier} and your cores are maxed, so it will never be slotted.`,
   };
 }
 

@@ -235,6 +235,42 @@ export function rankFromGrade(g: number): GemRank {
   return 'F-';
 }
 
+// Shizukaziye's baseline rank ladder: the 12 grade anchors his exact-DP cut pipeline bakes ONE solve
+// per (each maps 1:1 to a distinct rank, C- … S+, under the RANK_CUTS above). pipeline.json's
+// meta.baselines[i] is the % damage this grade anchor was baked at (his gradeToScore(GRADE_ROWS[i])),
+// so the Cutting Plan reads cell i by exact key lookup. KEEP ALIGNED with meta.baselines (same length,
+// same order). Used as the shared triage/cut-plan baseline ladder.
+export const GRADE_ROWS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95] as const;
+export const BASELINE_MIN_GRADE = GRADE_ROWS[0];
+export const BASELINE_MAX_GRADE = GRADE_ROWS[GRADE_ROWS.length - 1];
+
+/** Nearest GRADE_ROWS index to a grade (exact when on an anchor, else closest by value). */
+export function gradeRowIndex(grade: number): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < GRADE_ROWS.length; i++) {
+    const d = Math.abs(GRADE_ROWS[i] - grade);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * A grade bumped ONE rank up on the GRADE_ROWS ladder (shizukaziye's bumpedBaselineGrade): the baseline
+ * a gem must beat to be a real upgrade is one rank above the gem itself. Finds the anchor whose rank
+ * matches the gem's rank (each anchor is a distinct rank), steps +1, clamped at the top (S+). An
+ * off-ladder grade (rank below C-) snaps to the nearest anchor first. Returns a GRADE_ROWS value.
+ */
+export function bumpedBaselineGrade(grade: number): number {
+  const rank = rankFromGrade(grade);
+  let idx = GRADE_ROWS.findIndex((g) => rankFromGrade(g) === rank);
+  if (idx < 0) idx = gradeRowIndex(grade);
+  return GRADE_ROWS[Math.min(idx + 1, GRADE_ROWS.length - 1)];
+}
+
 /** The %-damage zero-point: a willpower-4.25 / order-4.25 gem with dead side effects. */
 export function cpBaseline(role: GemRole): number {
   return willpowerScore(4.25, role) + 4.25 * orderPerPoint(role);

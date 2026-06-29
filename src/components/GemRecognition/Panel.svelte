@@ -438,6 +438,19 @@
     const controller = await getCaptureController();
     isDebugging = controller.toggleDrawDebug();
   }
+  // Switch recognition mode. Activating Upload Screenshot / Import Loadout means the user is NOT
+  // screen-sharing, so turn the two capture-only toggles OFF: "Display Sharing Screen" (whose leftover
+  // debug canvas sits outside the capture block and would otherwise linger over the upload/import view)
+  // and "Prevent Screen Sharing Crash". Clicking the active mode again returns to capture.
+  async function selectMode(target: 'upload' | 'import') {
+    mode = mode === target ? 'capture' : target;
+    if (mode !== 'capture') {
+      // Guard on isDebugging so we don't lazily construct the capture controller just to turn debug off
+      // (isDebugging is only ever true once a controller already exists).
+      if (isDebugging) await toggleDrawDebug();
+      appConfig.current.uiConfig.deferredScreenSharingInit = false;
+    }
+  }
   async function updateControllerDetectionMargin(detectionMargin: number) {
     const controller = await getCaptureController();
     controller.detectionMargin = detectionMargin;
@@ -567,7 +580,7 @@
           class:active={showUpload}
           aria-pressed={showUpload}
           disabled={isRecording}
-          onclick={() => (mode = mode === 'upload' ? 'capture' : 'upload')}
+          onclick={() => selectMode('upload')}
         >
           📷 {LUpload[locale]}
         </button>
@@ -575,7 +588,7 @@
           class:active={showImport}
           aria-pressed={showImport}
           disabled={isRecording}
-          onclick={() => (mode = mode === 'import' ? 'capture' : 'import')}
+          onclick={() => selectMode('import')}
         >
           📥 {LImport[locale]}
         </button>

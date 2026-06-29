@@ -85,9 +85,10 @@
       <ol>
         <li>Make sure the game screen is updating properly.</li>
         <li>
-          If the area used to extract astrogem options does not match the actual screen, switch the
-          game to "windowed mode". This tool auto-detects common 16:9 resolutions (1920×1080,
-          2560×1440, 3840×2160) and most in-between window sizes.
+          Recognition adapts to your resolution and aspect ratio automatically — standard 16:9,
+          ultrawide / forced 21:9, and windowed all work, so you no longer need to switch the game to
+          windowed mode. If a region still looks misaligned, use [📷 Upload Screenshot], which reads
+          gems from a screenshot on any client.
         </li>
         <li>
           If parts of the extraction area are highlighted in red, try increasing the “Recognition

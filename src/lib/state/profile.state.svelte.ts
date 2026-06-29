@@ -8,6 +8,7 @@ import {
   createCore,
 } from '../models/arkGridCores';
 import { type ArkGridGem, determineGemGrade } from '../models/arkGridGems';
+import { BASELINE_MAX_GRADE, BASELINE_MIN_GRADE } from '../scoring/gemScore';
 import type { GemSetPackTuple } from '../solver/models';
 import { addNewProfile, appConfig, getProfile } from './appConfig.state.svelte';
 import {
@@ -171,6 +172,19 @@ export function migrateProfile(profile: Partial<CharacterProfile>) {
           core.goalPoint = 0;
         }
       }
+    }
+  }
+
+  // The triage/cut-plan baseline override moved from a % damage value (≤ 2) to a 0-100 grade tier.
+  // Drop any pre-migration override (out of the grade range) so the baseline re-derives from the
+  // loadout instead of being read as grade ≈ F.
+  for (const role of ['dps', 'support'] as BuildRole[]) {
+    const build = profile.builds?.[role];
+    if (
+      build?.baselineOverride !== undefined &&
+      (build.baselineOverride < BASELINE_MIN_GRADE || build.baselineOverride > BASELINE_MAX_GRADE)
+    ) {
+      build.baselineOverride = undefined;
     }
   }
 }
