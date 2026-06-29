@@ -15,9 +15,6 @@ const START_CAPTURE_ERROR_TYPES = [
 type StartCaptureErrorType = (typeof START_CAPTURE_ERROR_TYPES)[number];
 
 export class CaptureController {
-  // localStorage key for the per-resolution UI-scale cache (see scale:measured / scale:drop).
-  private static readonly SCALE_CACHE_KEY = 'arkgrid:cv-scale-cache';
-
   private state: 'idle' | 'loading' | 'recording' | 'closing' = 'idle';
 
   // Screen recording state
@@ -129,16 +126,6 @@ export class CaptureController {
         }
         break;
 
-      case 'scale:measured':
-        // Worker measured a UI scale for a resolution; persist it so future sessions skip the sweep.
-        this.writeScaleCache(data.key, data.scale);
-        break;
-
-      case 'scale:drop':
-        // Worker found a persisted scale no longer locates the anchor; forget it.
-        this.dropScaleCache(data.key);
-        break;
-
       case 'debug':
         try {
           if (data.message) console.log(data.message);
@@ -198,48 +185,6 @@ export class CaptureController {
   }
 
   /**
-   * Per-resolution UI-scale cache, persisted in localStorage. The worker measures the scale once
-   * (the expensive multi-scale sweep) and reports it via `scale:measured`; we store it keyed by
-   * "WxH" and feed it back on the next `init` so the first frame can skip the sweep. Best-effort:
-   * a storage failure just means we re-measure, never a broken capture.
-   */
-  private readScaleCache(): Record<string, number> {
-    try {
-      if (typeof localStorage === 'undefined') return {};
-      const raw = localStorage.getItem(CaptureController.SCALE_CACHE_KEY);
-      if (!raw) return {};
-      const parsed: unknown = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  private writeScaleCache(key: string, scale: number) {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      const cache = this.readScaleCache();
-      cache[key] = scale;
-      localStorage.setItem(CaptureController.SCALE_CACHE_KEY, JSON.stringify(cache));
-    } catch {
-      // best-effort; persistence is an optimization, never block capture on it.
-    }
-  }
-
-  private dropScaleCache(key: string) {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      const cache = this.readScaleCache();
-      if (key in cache) {
-        delete cache[key];
-        localStorage.setItem(CaptureController.SCALE_CACHE_KEY, JSON.stringify(cache));
-      }
-    } catch {
-      // best-effort.
-    }
-  }
-
-  /**
    * Pre-create the worker and kick off the OpenCV WASM download + compile ahead of time, so the
    * first {@link startCapture} doesn't pay the cold ~5s cost on the user's first "Start" click.
    * Desktop-only caller — the 10.8MB CV chunk must never load on mobile. Fire-and-forget and
@@ -254,7 +199,7 @@ export class CaptureController {
         type: 'module',
       });
       this.worker.onmessage = this.handleWorkerMessage.bind(this);
-      this.postMessage({ type: 'init', scaleHints: this.readScaleCache() });
+      this.postMessage({ type: 'init' });
     } catch {
       // Best-effort; if worker creation fails here, startCapture() will try again normally.
       this.worker = null;
@@ -281,7 +226,7 @@ export class CaptureController {
         const waitForInit = new Promise<void>((resolve, reject) => {
           this.awaitWorkerInitialization = { resolve, reject };
         });
-        this.postMessage({ type: 'init', scaleHints: this.readScaleCache() });
+        this.postMessage({ type: 'init' });
         await waitForInit;
       }
       return await new Promise<ImageRecognition | null>((resolve) => {
@@ -334,7 +279,7 @@ export class CaptureController {
       const waitForInit = new Promise<void>((resolve, reject) => {
         this.awaitWorkerInitialization = { resolve, reject };
       });
-      this.postMessage({ type: 'init', scaleHints: this.readScaleCache() });
+      this.postMessage({ type: 'init' });
 
       if (deferDisplayRequest) {
         await waitForInit;
