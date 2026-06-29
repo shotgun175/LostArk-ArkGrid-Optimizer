@@ -18,9 +18,31 @@ import type {
   ThruRow,
   Verdict,
 } from './types';
+import { GRADE_ROWS } from '../scoring/gemScore';
 import { GOLD_PER_DAMAGE } from './types';
 
 export { GOLD_PER_DAMAGE };
+
+/**
+ * Map a baseline GRADE to the exact baked % key the DP cells were solved at. Shizukaziye bakes one
+ * solve per GRADE_ROWS anchor at baseline = gradeToScore(anchor), stored (same order) in
+ * `meta.baselines`, and reads cells by exact key — so a baseline grade maps to meta.baselines at the
+ * grade's anchor index. Any non-anchor grade snaps to its nearest anchor. (GRADE_ROWS and
+ * meta.baselines are kept parallel; the length guard tolerates a future re-bake with fewer anchors.)
+ */
+export function pipelineBaselineForGrade(grade: number, baselines: number[]): number {
+  const n = Math.min(GRADE_ROWS.length, baselines.length);
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < n; i++) {
+    const d = Math.abs(GRADE_ROWS[i] - grade);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return baselines[best];
+}
 
 // Linear interpolation of a numeric field across baseline anchors (sorted ascending).
 // Baseline is clamped to the baked range (his anchors span ≈ 0.83–1.47 % damage).

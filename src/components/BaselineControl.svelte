@@ -1,6 +1,12 @@
 <script lang="ts">
   import type { ArkGridGem } from '../lib/models/arkGridGems';
-  import { type GemRole, maxScoreForRole } from '../lib/scoring/gemScore';
+  import {
+    BASELINE_MAX_GRADE,
+    BASELINE_MIN_GRADE,
+    GRADE_ROWS,
+    type GemRole,
+    rankFromGrade,
+  } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
   import {
     type CharacterProfile,
@@ -18,19 +24,25 @@
   let equipped: ArkGridGem[] = $derived(
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
-  // Slider ceiling = the highest score any real gem of this role can reach, rounded up (DPS ≈ 1.5,
-  // support ≈ 0.3 — support is per-DPS, a much smaller scale), so the baseline can't run off into a
-  // range no gem could occupy.
-  let blMax = $derived(Math.ceil(maxScoreForRole(role) * 10) / 10);
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
+  // Baseline is a 0-100 GRADE on shizukaziye's rank ladder (GRADE_ROWS, C- … S+), shown as a letter
+  // tier. Both the Gem Triage split and the Cutting Plan target read this same value.
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
-  let usingOverride = $derived(build.baselineOverride !== undefined);
+  let baselineTier = $derived(rankFromGrade(baseline));
+  let usingOverride = $derived(
+    build.baselineOverride !== undefined &&
+      build.baselineOverride >= BASELINE_MIN_GRADE &&
+      build.baselineOverride <= BASELINE_MAX_GRADE
+  );
 
-  // Auto-correct a stale manual override above the role's ceiling (e.g. a high DPS baseline left
-  // over when switching to Support) so the slider can always represent the active value.
+  // Clear a stale out-of-range override (e.g. a pre-grade-migration % value ≤ 2) so the control and
+  // the baseline stay consistent. (effectiveBaseline already ignores it for the value itself.)
   $effect(() => {
-    if (build.baselineOverride !== undefined && build.baselineOverride > blMax) {
-      updateBaselineOverride(blMax);
+    if (
+      build.baselineOverride !== undefined &&
+      (build.baselineOverride < BASELINE_MIN_GRADE || build.baselineOverride > BASELINE_MAX_GRADE)
+    ) {
+      updateBaselineOverride(undefined);
     }
   });
 
@@ -40,27 +52,14 @@
   function reset() {
     updateBaselineOverride(undefined);
   }
-
-  // Baseline is in % damage. Ticks span 0..ceiling at a role-appropriate step. Support's ceiling
-  // is much smaller (per-DPS coefficients ≈0.3 vs DPS ≈1.5), so it needs a finer step or it shows
-  // only 0 / 0.25.
-  let ticks = $derived.by(() => {
-    const step = blMax > 1.2 ? 0.5 : blMax > 0.6 ? 0.25 : 0.1;
-    const out: number[] = [];
-    for (let v = 0; v <= blMax + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
-    return out;
-  });
-  const fmtTick = (t: number) => t.toFixed(2).replace(/\.?0+$/, '') || '0';
 </script>
 
 <div class="baseline-control">
   <div class="bl-label-row">
-    <span class="bl-label">Baseline Level</span>
+    <span class="bl-label">Baseline Tier</span>
     <div class="bl-status">
-      <span class="bl-badge" class:manual={usingOverride}>
-        <span class="bl-num">{baseline.toFixed(2)}%</span>
-        <span class="bl-mode">· {usingOverride ? 'manual mode' : 'auto mode'}</span>
-      </span>
+      <span class="bl-rank" data-rank={baselineTier}>{baselineTier}</span>
+      <span class="bl-mode">· {usingOverride ? 'manual mode' : 'auto mode'}</span>
       {#if usingOverride}
         <button class="reset-bl" onclick={reset} title="Reset to auto">↺ auto</button>
       {/if}
@@ -69,28 +68,28 @@
   <input
     class="bl-slider"
     type="range"
-    aria-label="Baseline (% damage)"
-    min="0"
-    max={blMax}
-    step="0.05"
+    aria-label="Baseline tier"
+    min={BASELINE_MIN_GRADE}
+    max={BASELINE_MAX_GRADE}
+    step="5"
     value={baseline}
     oninput={onSlider}
   />
   <div class="slider-ticks">
-    {#each ticks as t}
+    {#each GRADE_ROWS as g}
       <button
         type="button"
         class="slider-tick"
-        class:active={t === baseline}
-        onclick={() => updateBaselineOverride(t)}>{fmtTick(t)}</button
+        class:active={g === baseline}
+        onclick={() => updateBaselineOverride(g)}>{rankFromGrade(g)}</button
       >
     {/each}
   </div>
   <div class="bl-hint">
     {#if auto === null && !usingOverride}
-      Run the optimizer to auto-set this from your equipped loadout, or drag to set it manually.
+      Run the optimizer to auto-set this from your equipped loadout, or pick a tier to set it manually.
     {:else}
-      Gems scoring above {baseline.toFixed(2)}% are upgrades over your weakest equipped gem.
+      Gems at tier {baselineTier} or better are upgrades; the Cutting Plan targets this tier.
     {/if}
   </div>
 </div>
@@ -124,21 +123,35 @@
   :global(.dark-mode) .bl-label {
     color: #f0c040; /* brighter gold in dark mode */
   }
-  .bl-badge {
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    padding: 0.05rem 0.5rem;
-    border-radius: 0.4rem;
-    color: #b8860b;
-    background: rgba(184, 134, 11, 0.1);
-    border: 1px solid rgba(184, 134, 11, 0.55);
-  }
-  .bl-num {
+  /* The tier badge uses the same per-grade colors as the Gem Triage rank badges (C green, B blue,
+     A purple, S rose, D/F gray) so the baseline reads as a gem grade at a glance. */
+  .bl-rank {
+    padding: 0.1rem 0.55rem;
+    border-radius: 0.5rem;
     font-size: 1.05rem;
+    font-weight: 800;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    min-width: 2.5rem;
+    text-align: center;
+    background: #6f747a; /* default: F / D */
+  }
+  .bl-rank[data-rank^='C'] {
+    background: #4f9d5d;
+  }
+  .bl-rank[data-rank^='B'] {
+    background: #3b7fd0;
+  }
+  .bl-rank[data-rank^='A'] {
+    background: #7e5cc0;
+  }
+  .bl-rank[data-rank^='S'] {
+    background: #c95f85;
   }
   .bl-mode {
     font-size: 0.8rem;
-    font-weight: 500;
+    font-weight: 600;
+    opacity: 0.75;
   }
   .reset-bl {
     width: auto;
@@ -152,7 +165,6 @@
   .reset-bl:hover {
     background: rgba(184, 134, 11, 0.18);
   }
-  :global(.dark-mode) .bl-badge,
   :global(.dark-mode) .reset-bl {
     color: #f0c040;
     background: rgba(240, 192, 64, 0.12);
@@ -160,17 +172,6 @@
   }
   :global(.dark-mode) .reset-bl:hover {
     background: rgba(240, 192, 64, 0.2);
-  }
-  /* Manual override pops via a solid fill; the default auto state stays the subtle gold outline. */
-  .bl-badge.manual {
-    color: #fff;
-    background: #b8860b;
-    border-color: #b8860b;
-  }
-  :global(.dark-mode) .bl-badge.manual {
-    color: #1a1a1a;
-    background: #f0c040;
-    border-color: #f0c040;
   }
   .bl-slider {
     width: 100%;

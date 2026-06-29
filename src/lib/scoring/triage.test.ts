@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LostArkGrade } from '../constants/enums';
 import type { ArkGridCore, ArkGridCoreType } from '../models/arkGridCores';
 import type { ArkGridGem } from '../models/arkGridGems';
+import { GRADE_ROWS, bumpedBaselineGrade, computeGemScore } from './gemScore';
 import {
   type TriageAction,
   type TriageResult,
@@ -56,63 +57,83 @@ const support = gem(
 );
 
 describe('autoBaselineFromLoadout', () => {
+  const dpsGrade = (g: ArkGridGem) => computeGemScore(g, 'dps').grade;
+
   it('returns null for an empty loadout', () => {
     expect(autoBaselineFromLoadout([], 'dps')).toBeNull();
   });
-  it('returns the 2-dp score of the weakest equipped gem', () => {
-    // weakest of {1.06, 1.59} = gemA ≈ 1.06
-    expect(autoBaselineFromLoadout([gemA, gemC], 'dps')).toBeCloseTo(1.06, 2);
+  it('returns a grade on the rank ladder (GRADE_ROWS)', () => {
+    expect(GRADE_ROWS).toContain(autoBaselineFromLoadout([gemA, gemC], 'dps'));
   });
-  it('clamps negative scores up to 0', () => {
-    expect(autoBaselineFromLoadout([gemA, junk], 'dps')).toBe(0); // weakest is junk (negative) -> 0
+  it('is one rank above the lowest equipped grade when an attribute has < 3 gems', () => {
+    const equipped = [gemA, gemC]; // both Chaos, only 2 gems
+    const lowest = Math.min(...equipped.map(dpsGrade));
+    expect(autoBaselineFromLoadout(equipped, 'dps')).toBe(bumpedBaselineGrade(lowest));
   });
-  it('respects role (DPS damage options count 0 under support, but order still counts)', () => {
-    expect(autoBaselineFromLoadout([support], 'support')).toBeCloseTo(0.27, 2); // per-DPS (÷3)
-    expect(autoBaselineFromLoadout([support], 'dps')).toBeCloseTo(0.64, 2); // order 4 × 0.159872
+  it('uses the 3rd-lowest grade of an attribute when it has >= 3 gems', () => {
+    const chaos = [gemA, gemB, gemC]; // 3 Chaos gems
+    const thirdLowest = chaos.map(dpsGrade).sort((a, b) => a - b)[2];
+    expect(autoBaselineFromLoadout(chaos, 'dps')).toBe(bumpedBaselineGrade(thirdLowest));
+  });
+  it('drives the baseline off the stronger attribute’s source gem', () => {
+    const strongOrder = { ...gemC, gemAttr: 'Order' as const }; // high grade
+    const weakChaos = { ...junk, gemAttr: 'Chaos' as const }; // low grade
+    expect(dpsGrade(strongOrder)).toBeGreaterThan(dpsGrade(weakChaos));
+    expect(autoBaselineFromLoadout([strongOrder, weakChaos], 'dps')).toBe(
+      bumpedBaselineGrade(dpsGrade(strongOrder))
+    );
+  });
+  it('is role-aware (each role grades the same gem on its own axis)', () => {
+    expect(GRADE_ROWS).toContain(autoBaselineFromLoadout([support], 'dps'));
+    expect(GRADE_ROWS).toContain(autoBaselineFromLoadout([support], 'support'));
   });
 });
 
 describe('effectiveBaseline', () => {
-  it('prefers a manual override over the auto value', () => {
-    expect(effectiveBaseline(13, 9)).toBe(9);
-    expect(effectiveBaseline(13, 0)).toBe(0); // explicit 0 wins
+  it('prefers an in-range manual override (a ladder grade) over the auto value', () => {
+    expect(effectiveBaseline(70, 85)).toBe(85);
+    expect(effectiveBaseline(70, GRADE_ROWS[0])).toBe(GRADE_ROWS[0]); // floor grade is in range
   });
   it('uses the auto value when there is no override', () => {
-    expect(effectiveBaseline(13, undefined)).toBe(13);
+    expect(effectiveBaseline(70, undefined)).toBe(70);
   });
-  it('falls back to 0 when there is neither auto nor override', () => {
-    expect(effectiveBaseline(null, undefined)).toBe(0);
-    expect(effectiveBaseline(null, 5)).toBe(5);
+  it('ignores an out-of-range (pre-migration %) override and uses auto', () => {
+    expect(effectiveBaseline(70, 0.85)).toBe(70); // stale % value, below the grade range
+    expect(effectiveBaseline(70, 200)).toBe(70); // above the grade range
+  });
+  it('falls back to the floor grade when there is neither auto nor a valid override', () => {
+    expect(effectiveBaseline(null, undefined)).toBe(GRADE_ROWS[0]);
+    expect(effectiveBaseline(null, 0.5)).toBe(GRADE_ROWS[0]); // stale override ignored
+    expect(effectiveBaseline(null, 75)).toBe(75); // valid override used
   });
 });
 
 describe('triageGem', () => {
   const spare = { isEquipped: false, hasHeadroom: false };
-  it('marks an equipped gem as equipped regardless of score or headroom', () => {
-    expect(triageGem({ score: 2, baseline: 9, isEquipped: true, hasHeadroom: true }).action).toBe(
+  it('marks an equipped gem as equipped regardless of grade or headroom', () => {
+    expect(triageGem({ grade: 20, baseline: 70, isEquipped: true, hasHeadroom: true }).action).toBe(
       'equipped'
     );
-    // Manual baseline pushed above an equipped gem: still equipped, never remove.
-    expect(triageGem({ score: 2, baseline: 9, isEquipped: true, hasHeadroom: false }).action).toBe(
+    // Manual baseline pushed above an equipped gem's tier: still equipped, never remove.
+    expect(triageGem({ grade: 20, baseline: 70, isEquipped: true, hasHeadroom: false }).action).toBe(
       'equipped'
     );
   });
-  it('marks at-or-above-baseline spares as upgrades', () => {
-    const r = triageGem({ score: 13.14, baseline: 9, ...spare });
+  it('marks at-or-above-baseline-tier spares as upgrades', () => {
+    const r = triageGem({ grade: 88, baseline: 70, ...spare });
     expect(r.action).toBe('upgrade');
-    expect(triageGem({ score: 9, baseline: 9, ...spare }).action).toBe('upgrade'); // equal counts
+    expect(triageGem({ grade: 70, baseline: 70, ...spare }).action).toBe('upgrade'); // equal counts
     expect(r.rationale.toLowerCase()).toContain('upgrade');
   });
   it('keeps a below-baseline spare while its cores still have headroom', () => {
-    const r = triageGem({ score: 3, baseline: 9, isEquipped: false, hasHeadroom: true });
+    const r = triageGem({ grade: 50, baseline: 70, isEquipped: false, hasHeadroom: true });
     expect(r.action).toBe('keep');
     expect(r.rationale.toLowerCase()).toContain('core upgrade');
   });
   it('removes a below-baseline spare only when cores are maxed (no headroom)', () => {
-    const r = triageGem({ score: 7, baseline: 9, isEquipped: false, hasHeadroom: false });
+    const r = triageGem({ grade: 55, baseline: 70, isEquipped: false, hasHeadroom: false });
     expect(r.action).toBe('remove');
     expect(r.rationale.toLowerCase()).toContain('maxed');
-    expect(triageGem({ score: -5, baseline: 0, ...spare }).action).toBe('remove');
   });
 });
 

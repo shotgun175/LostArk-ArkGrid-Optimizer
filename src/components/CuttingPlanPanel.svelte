@@ -6,6 +6,7 @@
     getCutCell,
     getThru,
     headerCut,
+    pipelineBaselineForGrade,
     weeksBand,
   } from '../lib/cutplan/cutPlan';
   import {
@@ -63,8 +64,10 @@
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
   let auto = $derived(autoBaselineFromLoadout(equipped, role));
-  // Baseline is % damage (the same scoring the Gem Triage uses); the data interpolates on it.
+  // Baseline is a GRADE tier (the same value the Gem Triage uses). The DP data is keyed by the % damage
+  // each grade anchor was baked at, so convert grade -> baked % (exact key lookup) before reading cells.
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
+  let baselinePct = $derived(data ? pipelineBaselineForGrade(baseline, data.meta.baselines) : 0);
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');
@@ -151,11 +154,11 @@
           <div class="ch-grid">
             <div class="ch-col">
               <section>
-                <h4>Baseline (% damage)</h4>
+                <h4>Baseline (tier)</h4>
                 <p>
-                  The % damage of your weakest equipped astrogem. A fresh cut must beat it to be an
-                  upgrade (the same real-%-damage scoring the Gem Triage uses). A perfect gem is ≈
-                  1.4%.
+                  The letter tier you're targeting — one rank above your stronger 3rd-lowest equipped
+                  astrogem (the same baseline the Gem Triage uses). A fresh cut must reach this tier to
+                  be an upgrade; step it with the slider to plan more or less aggressively.
                 </p>
               </section>
               <section>
@@ -212,7 +215,7 @@
                 <h4>How to use</h4>
                 <ol>
                   <li>Pick your <strong>Gold / 1% damage</strong> bracket and <strong>Gold Type</strong>.</li>
-                  <li>Set your <strong>baseline</strong> (auto = weakest equipped, or drag the slider).</li>
+                  <li>Set your <strong>baseline tier</strong> (auto = one rank above your 3rd-lowest equipped gem, or pick a tier).</li>
                   <li>Read each bucket and follow its action.</li>
                 </ol>
               </section>
@@ -253,8 +256,8 @@
 
       <div class="gems-grid">
         {#each ARCHES as arch}
-          {@const best = headerCut(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baseline)}
-          {@const thru = binding === 'nrb' ? getThru(data, axis, arch.rarity, arch.cost, goldPerDamage, baseline) : null}
+          {@const best = headerCut(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
+          {@const thru = binding === 'nrb' ? getThru(data, axis, arch.rarity, arch.cost, goldPerDamage, baselinePct) : null}
           <div class="gem-card" data-rarity={arch.rarity}>
             <div class="gem-header">
               <span class="gem-title">{arch.label}</span>
@@ -262,7 +265,7 @@
             </div>
             <div class="gem-buckets">
               {#each data.meta.buckets as bkt}
-                {@const cell = getCutCell(data, axis, arch.rarity, arch.cost, bkt, binding, goldPerDamage, baseline)}
+                {@const cell = getCutCell(data, axis, arch.rarity, arch.cost, bkt, binding, goldPerDamage, baselinePct)}
                 {#if cell}
                   <div class="bucket-row" data-action={cell.action} title={cellTitle(arch.cost, bkt, cell)}>
                     <span class="bucket-label">{bucketLabelOf(bkt)}</span>

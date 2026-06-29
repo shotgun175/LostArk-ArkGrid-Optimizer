@@ -83,11 +83,11 @@
     const scored = owned.map((gem, i) => {
       const { score, grade, rank } = computeGemScore(gem, role);
       const hasHeadroom = gem.gemAttr === 'Order' ? orderHeadroom : chaosHeadroom;
-      let result = triageGem({ score, baseline, isEquipped: flags[i], hasHeadroom });
+      let result = triageGem({ grade, baseline, isEquipped: flags[i], hasHeadroom });
       if (dual) {
         const oHeadroom = gem.gemAttr === 'Order' ? oOrderHeadroom : oChaosHeadroom;
         const oResult = triageGem({
-          score: computeGemScore(gem, oRole).score,
+          grade: computeGemScore(gem, oRole).grade,
           baseline: oBaseline,
           isEquipped: oFlags[i],
           hasHeadroom: oHeadroom,
@@ -192,7 +192,7 @@
         <ul class="sh-list">
           <li>
             Each gem also gets a <strong>0-100 grade</strong> (0 = worst possible, 100 = a perfect gem)
-            and a letter <strong>rank</strong>. Cutoffs: S ≥ 85, A ≥ 75, B ≥ 65, C ≥ 50, D ≥ 25, F ≥ 0 -
+            and a letter <strong>rank</strong>. Cutoffs: S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40, D ≥ 20, F ≥ 0 -
             each split into +/·/- thirds (S+, S, S-, A+ …).
           </li>
         </ul>
@@ -238,7 +238,7 @@
         </span>
         {#if keepCount > 0}
           <span class="note">
-            Gems below your weakest equipped are kept, not flagged for removal, while their cores
+            Gems below your baseline tier are kept, not flagged for removal, while their cores
             aren't maxed - a core upgrade could still slot them. Removal only appears once that
             attribute's cores are all Ancient.
           </span>
