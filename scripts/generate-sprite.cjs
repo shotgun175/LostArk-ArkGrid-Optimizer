@@ -9,7 +9,7 @@ const templateFolders = [
 ];
 
 const publicDir = './public';
-const tsOutputDir = './src/lib/opencv-template-coords';
+const tsOutputDir = './src/lib/cv/template-coords';
 const currentTimestamp = Date.now();
 
 // Create the TS output folder if it doesn't exist
