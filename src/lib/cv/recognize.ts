@@ -16,8 +16,8 @@ import type { CV } from '@techstark/opencv-js';
 
 import type { ArkGridAttr, GemRecognitionLocale } from '../constants/enums';
 import { type ArkGridGem } from '../models/arkGridGems';
-import { determineGemGradeByGem } from '../models/arkGridGemSpecs';
-import type { MatchingAtlas } from './atlas';
+import { ArkGridGemSpecs, determineGemGradeByGem } from '../models/arkGridGemSpecs';
+import type { AtlasEntry, MatchingAtlas } from './atlas';
 import { showMatch } from './debug';
 import type { KeyOptionLevel, KeyOptionString, loadGemAsset } from './matStore';
 import { type MatchingResult, getBestMatch, multiScaleAnchorMatch } from './matcher';
@@ -79,9 +79,105 @@ export function findBest<K extends string>(
 }
 
 /**
- * Read the 9 gem rows below a located anchor on an already-FHD-normalized frame. Shared by the
- * live `processFrame` path and the fresh-scale {@link recognizeGems}; pass `debugCtx` to draw the
- * per-match overlay (live only).
+ * Build a copy of `atlas` whose every template is resized by `s` (INTER_AREA shrinking, INTER_LINEAR
+ * enlarging). Entries keep their `x` but carry the scaled width/height. The caller MUST dispose it
+ * via {@link disposeScaledAtlas} — the resized templates are fresh WASM-heap Mats. Lets the gem-row
+ * loop match at the detected on-screen UI scale without resampling the (large) frame.
+ */
+function scaleAtlas<K extends string>(cv: CV, atlas: MatchingAtlas<K>, s: number): MatchingAtlas<K> {
+  const entries = {} as Record<K, AtlasEntry>;
+  for (const key of Object.keys(atlas.entries) as K[]) {
+    const e = atlas.entries[key];
+    const w = Math.max(1, Math.round(e.template.cols * s));
+    const h = Math.max(1, Math.round(e.template.rows * s));
+    const template = new cv.Mat();
+    cv.resize(e.template, template, new cv.Size(w, h), 0, 0, s < 1 ? cv.INTER_AREA : cv.INTER_LINEAR);
+    entries[key] = { x: e.x, width: Math.round(e.width * s), height: Math.round(e.height * s), template };
+  }
+  // `atlas.atlas` (the packed sprite Mat) is never used by getBestMatch — only `entries[].template`
+  // is — so we reference the original here and never delete it from a scaled copy.
+  return { atlas: atlas.atlas, entries };
+}
+
+/** Delete every (scaled) template Mat in an atlas built by {@link scaleAtlas}. */
+function disposeScaledAtlas<K extends string>(scaled: MatchingAtlas<K>): void {
+  for (const key of Object.keys(scaled.entries) as K[]) scaled.entries[key].template.delete();
+}
+
+/**
+ * The five per-locale field atlases the gem-row loop matches against, each pre-scaled to a session's
+ * measured on-screen UI scale ONCE (via {@link buildScaledFieldAtlases}). Passing this to
+ * {@link extractNineGems} (with the matching `geomScale`) lets the live fast path read non-standard
+ * resolutions without rescaling templates per frame — the per-frame cost that made the icon-seed
+ * approach slow.
+ */
+export interface ScaledFieldAtlases {
+  gemImage: LoadedGemAsset['atlasGemImage'][GemRecognitionLocale];
+  willPower: LoadedGemAsset['atlasWillPower'][GemRecognitionLocale];
+  corePoint: LoadedGemAsset['atlasCorePoint'][GemRecognitionLocale];
+  optionName: LoadedGemAsset['atlasOptionName'][GemRecognitionLocale];
+  optionLevel: LoadedGemAsset['atlasOptionLevel'][GemRecognitionLocale];
+}
+
+/**
+ * Pre-scale the five gem-row field atlases for `locale` by the on-screen UI scale `g`. Build once per
+ * screen-share session (the scale can't change mid-session); the caller MUST dispose the result via
+ * {@link disposeScaledFieldAtlases} when the session ends or the scale is re-measured.
+ */
+export function buildScaledFieldAtlases(
+  cv: CV,
+  asset: LoadedGemAsset,
+  locale: GemRecognitionLocale,
+  g: number
+): ScaledFieldAtlases {
+  return {
+    gemImage: scaleAtlas(cv, asset.atlasGemImage[locale], g),
+    willPower: scaleAtlas(cv, asset.atlasWillPower[locale], g),
+    corePoint: scaleAtlas(cv, asset.atlasCorePoint[locale], g),
+    optionName: scaleAtlas(cv, asset.atlasOptionName[locale], g),
+    optionLevel: scaleAtlas(cv, asset.atlasOptionLevel[locale], g),
+  };
+}
+
+/** Delete every scaled template Mat in a {@link ScaledFieldAtlases} bundle. */
+export function disposeScaledFieldAtlases(s: ScaledFieldAtlases): void {
+  disposeScaledAtlas(s.gemImage);
+  disposeScaledAtlas(s.willPower);
+  disposeScaledAtlas(s.corePoint);
+  disposeScaledAtlas(s.optionName);
+  disposeScaledAtlas(s.optionLevel);
+}
+
+/** Page attribute from the per-gem icons: Order when at least half the gems are Order, else Chaos. */
+export function deriveAttr(gems: ArkGridGem[]): ArkGridAttr {
+  const orderCount = gems.filter((g) => g.gemAttr === 'Order').length;
+  return orderCount * 2 >= gems.length ? 'Order' : 'Chaos';
+}
+
+// Canonical gem-row pitch in FHD pixels (icon top to icon top of the next row).
+const ROW_PITCH = 63;
+
+/**
+ * Precise on-screen UI scale from the icon-row pitch: (last row y − first row y) / (63 × gaps). The
+ * long baseline (~8 rows) makes this far more accurate than a single tiny-icon seed match, whose
+ * correlation peak wobbles a few percent. Falls back to `seedScale` when fewer than 2 rows are known.
+ */
+export function scaleFromPitch(rows: { y: number }[], seedScale: number): number {
+  if (rows.length < 2) return seedScale;
+  return (rows[rows.length - 1].y - rows[0].y) / (ROW_PITCH * (rows.length - 1));
+}
+
+/**
+ * Read the 9 gem rows below a located anchor. Shared by the live `processFrame` path and the
+ * fresh-scale {@link recognizeGems}; pass `debugCtx` to draw the per-match overlay (live only).
+ *
+ * `geomScale` (g) is the on-screen UI scale: 1 = templates match the frame at native FHD size (the
+ * header-anchored standard path, used by {@link recognizeGems} and the live 16:9 loop). When g ≠ 1
+ * the row geometry is scaled by g and every field is matched against templates scaled by g — either
+ * `scaledAtlases` when the caller pre-built them once (the live non-standard fast path) or copies
+ * built and disposed here — so recognition runs directly on the NATIVE frame with no resample. At
+ * g === 1 with no `scaledAtlases`, every `* g` collapses to the original integer literal and the
+ * asset's templates are used directly, i.e. behaviour is unchanged from the FHD-only path.
  */
 export function extractNineGems(
   cv: CV,
@@ -93,171 +189,198 @@ export function extractNineGems(
   anchorY: number,
   thresholds: RecognitionThresholds,
   detectionMargin: number,
-  debugCtx?: DebugCtx
+  debugCtx?: DebugCtx,
+  geomScale = 1,
+  scaledAtlases?: ScaledFieldAtlases
 ): ArkGridGem[] {
+  const g = geomScale;
+  const scaling = g !== 1;
+  // Match against caller-provided pre-scaled atlases (live fast path) when supplied; else build scaled
+  // copies here when g ≠ 1 (disposed in the finally below); else (g === 1) match the asset templates
+  // directly. `ownScaled` = "we built them", so only those get disposed — never the caller's bundle.
+  const ownScaled = scaling && !scaledAtlases;
+  const gemImageAtlas = scaledAtlases?.gemImage ?? (scaling ? scaleAtlas(cv, asset.atlasGemImage[locale], g) : asset.atlasGemImage[locale]);
+  const willPowerAtlas = scaledAtlases?.willPower ?? (scaling ? scaleAtlas(cv, asset.atlasWillPower[locale], g) : asset.atlasWillPower[locale]);
+  const corePointAtlas = scaledAtlases?.corePoint ?? (scaling ? scaleAtlas(cv, asset.atlasCorePoint[locale], g) : asset.atlasCorePoint[locale]);
+  const optionNameAtlas = scaledAtlases?.optionName ?? (scaling ? scaleAtlas(cv, asset.atlasOptionName[locale], g) : asset.atlasOptionName[locale]);
+  const optionLevelAtlas = scaledAtlases?.optionLevel ?? (scaling ? scaleAtlas(cv, asset.atlasOptionLevel[locale], g) : asset.atlasOptionLevel[locale]);
+
   const gems: ArkGridGem[] = [];
-  for (let i = 0; i < 9; i++) {
-    // Compute the gem row position (height 61px, gap 2px)
-    const rowX = anchorX - 287;
-    const rowY = anchorY + 213 + 63 * i;
+  try {
+    for (let i = 0; i < 9; i++) {
+      // Compute the gem row position (height 61px, gap 2px), scaled to the on-screen UI.
+      const rowX = anchorX - 287 * g;
+      const rowY = anchorY + (213 + 63 * i) * g;
 
-    // 1) Gem type (name)
-    const gemName = findBest(
-      cv,
-      {
-        roi: { x: rowX + 9, y: rowY + 14, width: 30, height: 30 },
-        atlas: asset.atlasGemImage[locale],
-        threshold: thresholds.gemImage - detectionMargin,
-      },
-      frame,
-      debugCtx
-    );
-
-    // 2) Willpower
-    const willPower = findBest(
-      cv,
-      {
-        roi: { x: rowX + 65, y: rowY, width: 18, height: 30 },
-        atlas: asset.atlasWillPower[locale],
-        threshold: thresholds.willPower - detectionMargin,
-      },
-      frame,
-      debugCtx
-    );
-
-    // 3) Order/Chaos point
-    const corePoint = findBest(
-      cv,
-      {
-        roi: { x: rowX + 65, y: rowY + 30, width: 18, height: 30 },
-        atlas: asset.atlasCorePoint[locale],
-        threshold: thresholds.corePoint - detectionMargin,
-      },
-      frame,
-      debugCtx
-    );
-
-    // 4) Extract gem options
-    type GemOptionResult = {
-      optionName: MatchingResult<KeyOptionString> | null;
-      optionLevel: MatchingResult<KeyOptionLevel> | null;
-      yOffset: number;
-    };
-    const optionTop: GemOptionResult = {
-      optionName: null,
-      optionLevel: null,
-      yOffset: 0,
-    };
-    const optionBottom: GemOptionResult = {
-      optionName: null,
-      optionLevel: null,
-      yOffset: 30, // the bottom option sits 30px below
-    };
-
-    for (const targetOption of [optionTop, optionBottom]) {
-      // Option name
-      const optionNameRoi = {
-        x: rowX + 125,
-        y: rowY + targetOption.yOffset,
-        width: 200,
-        height: 30,
-      };
-      let optionName = findBest(
+      // 1) Gem type (name)
+      const gemName = findBest(
         cv,
         {
-          roi: optionNameRoi,
-          atlas: asset.atlasOptionName[locale],
-          threshold: thresholds.optionName - detectionMargin,
-        },
-        frame,
-        locale === 'ru_ru' ? null : debugCtx
-      );
-
-      // For ru_ru, "AtkPower" gets captured from the "AllyAttackEnh" string
-      if (optionName !== null && locale === 'ru_ru' && optionName.key === 'AtkPower') {
-        // So check again against an atlas that excludes "AtkPower"
-        const tempOptionName = findBest(
-          cv,
-          {
-            roi: optionNameRoi,
-            atlas: asset.atlasOptionName[locale],
-            threshold: thresholds.optionName - detectionMargin,
-          },
-          frame,
-          null,
-          {
-            excludeKey: 'AtkPower',
-          }
-        );
-        if (tempOptionName) {
-          // If it's still found, this is actually "AllyAttackEnh"
-          optionName = tempOptionName;
-        } else {
-          // "AllyAttackEnh" wasn't found, so it's "AtkPower"
-        }
-      }
-
-      if (locale === 'ru_ru') {
-        // Draw the debug that findBest didn't draw
-        // XXX When not found we'd want to show that it wasn't found, but we can't here
-        if (debugCtx && optionName) {
-          showMatch(debugCtx, optionNameRoi, optionName, {
-            scoreThreshold: thresholds.optionName - detectionMargin,
-          });
-        }
-      }
-
-      // Option level
-      // The level sits 16px past the position found above
-      const optionLevelXOffset = optionName
-        ? optionName.loc.x - optionNameRoi.x + optionName.template.cols + 16
-        : 60;
-
-      const optionLevel = findBest(
-        cv,
-        {
-          roi: {
-            x: rowX + 125 + optionLevelXOffset,
-            y: rowY + targetOption.yOffset,
-            width: 48,
-            height: 30,
-          },
-          atlas: asset.atlasOptionLevel[locale],
-          threshold: thresholds.optionLevel - detectionMargin,
+          roi: { x: rowX + 9 * g, y: rowY + 14 * g, width: 30 * g, height: 30 * g },
+          atlas: gemImageAtlas,
+          threshold: thresholds.gemImage - detectionMargin,
         },
         frame,
         debugCtx
       );
 
-      targetOption.optionName = optionName;
-      targetOption.optionLevel = optionLevel;
-    }
+      // 2) Willpower
+      const willPower = findBest(
+        cv,
+        {
+          roi: { x: rowX + 65 * g, y: rowY, width: 18 * g, height: 30 * g },
+          atlas: willPowerAtlas,
+          threshold: thresholds.willPower - detectionMargin,
+        },
+        frame,
+        debugCtx
+      );
 
-    if (
-      gemName !== null &&
-      willPower !== null &&
-      corePoint !== null &&
-      optionTop.optionName !== null &&
-      optionTop.optionLevel !== null &&
-      optionBottom.optionName !== null &&
-      optionBottom.optionLevel !== null
-    ) {
-      const gem: ArkGridGem = {
-        gemAttr,
-        name: gemName.key,
-        req: Number(willPower.key),
-        point: Number(corePoint.key),
-        option1: {
-          optionType: optionTop.optionName.key,
-          value: Number(optionTop.optionLevel.key),
+      // 3) Order/Chaos point
+      const corePoint = findBest(
+        cv,
+        {
+          roi: { x: rowX + 65 * g, y: rowY + 30 * g, width: 18 * g, height: 30 * g },
+          atlas: corePointAtlas,
+          threshold: thresholds.corePoint - detectionMargin,
         },
-        option2: {
-          optionType: optionBottom.optionName.key,
-          value: Number(optionBottom.optionLevel.key),
-        },
+        frame,
+        debugCtx
+      );
+
+      // 4) Extract gem options
+      type GemOptionResult = {
+        optionName: MatchingResult<KeyOptionString> | null;
+        optionLevel: MatchingResult<KeyOptionLevel> | null;
+        yOffset: number;
       };
-      gem.grade = determineGemGradeByGem(gem);
-      gems.push(gem);
+      const optionTop: GemOptionResult = {
+        optionName: null,
+        optionLevel: null,
+        yOffset: 0,
+      };
+      const optionBottom: GemOptionResult = {
+        optionName: null,
+        optionLevel: null,
+        yOffset: 30 * g, // the bottom option sits 30px below
+      };
+
+      for (const targetOption of [optionTop, optionBottom]) {
+        // Option name
+        const optionNameRoi = {
+          x: rowX + 125 * g,
+          y: rowY + targetOption.yOffset,
+          width: 200 * g,
+          height: 30 * g,
+        };
+        let optionName = findBest(
+          cv,
+          {
+            roi: optionNameRoi,
+            atlas: optionNameAtlas,
+            threshold: thresholds.optionName - detectionMargin,
+          },
+          frame,
+          locale === 'ru_ru' ? null : debugCtx
+        );
+
+        // For ru_ru, "AtkPower" gets captured from the "AllyAttackEnh" string
+        if (optionName !== null && locale === 'ru_ru' && optionName.key === 'AtkPower') {
+          // So check again against an atlas that excludes "AtkPower"
+          const tempOptionName = findBest(
+            cv,
+            {
+              roi: optionNameRoi,
+              atlas: optionNameAtlas,
+              threshold: thresholds.optionName - detectionMargin,
+            },
+            frame,
+            null,
+            {
+              excludeKey: 'AtkPower',
+            }
+          );
+          if (tempOptionName) {
+            // If it's still found, this is actually "AllyAttackEnh"
+            optionName = tempOptionName;
+          } else {
+            // "AllyAttackEnh" wasn't found, so it's "AtkPower"
+          }
+        }
+
+        if (locale === 'ru_ru') {
+          // Draw the debug that findBest didn't draw
+          // XXX When not found we'd want to show that it wasn't found, but we can't here
+          if (debugCtx && optionName) {
+            showMatch(debugCtx, optionNameRoi, optionName, {
+              scoreThreshold: thresholds.optionName - detectionMargin,
+            });
+          }
+        }
+
+        // Option level
+        // The level sits 16px past the position found above (template.cols is already at scale g)
+        const optionLevelXOffset = optionName
+          ? optionName.loc.x - optionNameRoi.x + optionName.template.cols + 16 * g
+          : 60 * g;
+
+        const optionLevel = findBest(
+          cv,
+          {
+            roi: {
+              x: rowX + 125 * g + optionLevelXOffset,
+              y: rowY + targetOption.yOffset,
+              width: 48 * g,
+              height: 30 * g,
+            },
+            atlas: optionLevelAtlas,
+            threshold: thresholds.optionLevel - detectionMargin,
+          },
+          frame,
+          debugCtx
+        );
+
+        targetOption.optionName = optionName;
+        targetOption.optionLevel = optionLevel;
+      }
+
+      if (
+        gemName !== null &&
+        willPower !== null &&
+        corePoint !== null &&
+        optionTop.optionName !== null &&
+        optionTop.optionLevel !== null &&
+        optionBottom.optionName !== null &&
+        optionBottom.optionLevel !== null
+      ) {
+        const gem: ArkGridGem = {
+          // Each gem's attribute is intrinsic to its icon; the page `gemAttr` is only a fallback for
+          // the impossible case of a name absent from the specs. Grade is attr-independent, so this is
+          // result-identical to passing the page attr on a homogeneous page (the accuracy harness).
+          gemAttr: ArkGridGemSpecs[gemName.key]?.attr ?? gemAttr,
+          name: gemName.key,
+          req: Number(willPower.key),
+          point: Number(corePoint.key),
+          option1: {
+            optionType: optionTop.optionName.key,
+            value: Number(optionTop.optionLevel.key),
+          },
+          option2: {
+            optionType: optionBottom.optionName.key,
+            value: Number(optionBottom.optionLevel.key),
+          },
+        };
+        gem.grade = determineGemGradeByGem(gem);
+        gems.push(gem);
+      }
+    }
+  } finally {
+    if (ownScaled) {
+      disposeScaledAtlas(gemImageAtlas);
+      disposeScaledAtlas(willPowerAtlas);
+      disposeScaledAtlas(corePointAtlas);
+      disposeScaledAtlas(optionNameAtlas);
+      disposeScaledAtlas(optionLevelAtlas);
     }
   }
   return gems;

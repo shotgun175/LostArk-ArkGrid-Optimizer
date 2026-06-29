@@ -98,7 +98,7 @@ function glyphDistance(a: Uint8Array, b: Uint8Array): number {
  * a small window at the icon column; keep the best above threshold. Returns rows top->bottom with the
  * matched gem identity. Cheaper + far more robust than the fuzzy "Astrogem" text anchor for scale.
  */
-function findIconRows(
+export function findIconRows(
   cv: CV,
   frame: CvMat,
   atlas: LoadedGemAsset['atlasGemImage'][GemRecognitionLocale],
