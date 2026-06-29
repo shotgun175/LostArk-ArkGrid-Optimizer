@@ -268,7 +268,11 @@ class FrameProcessor {
         postToMain({ type: 'scale:measured', key: resKey, scale: resolutionScale });
       }
 
-      // Normalize the frame to FHD scale so the existing offsets/templates line up.
+      // Normalize the frame to FHD scale so the existing offsets/templates line up. INTER_AREA is
+      // ideal when SHRINKING (resolutionScale < 1: a UI larger than FHD, e.g. native QHD/4K), but on
+      // a sub-FHD UI (resolutionScale > 1 — a windowed or forced-21:9 client that measures < 1.0x)
+      // we ENLARGE, where INTER_AREA degrades to nearest-neighbour and blurs the small gem-row
+      // templates below threshold. Choose interpolation by direction so live capture holds at any UI scale.
       resizedFrame = new cv.Mat();
       cv.resize(
         rawGray,
@@ -279,7 +283,7 @@ class FrameProcessor {
         ),
         0,
         0,
-        cv.INTER_AREA
+        resolutionScale > 1 ? cv.INTER_CUBIC : cv.INTER_AREA
       );
       rawGray.delete();
       rawGray = null;

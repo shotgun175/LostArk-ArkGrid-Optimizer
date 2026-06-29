@@ -393,7 +393,11 @@ export function recognizeGems(
     // Snap to a canonical resolution tier when close (font rendering biases the peak ~1-2%).
     const resolutionScale = snapResolutionScale(rawScaleToResolutionScale(measured.scale));
 
-    // Normalize the frame to FHD scale so the existing offsets/templates line up.
+    // Normalize the frame to FHD scale so the existing offsets/templates line up. INTER_AREA is
+    // ideal when SHRINKING (resolutionScale < 1, i.e. a UI larger than FHD such as native QHD/4K),
+    // but on a sub-FHD UI (resolutionScale > 1 — e.g. a windowed or forced-21:9 client) we ENLARGE,
+    // and INTER_AREA degrades to nearest-neighbour there, blurring the tiny digit/level templates
+    // below threshold. Pick the interpolation by direction so recognition holds at ANY UI scale.
     resizedFrame = new cv.Mat();
     cv.resize(
       gray,
@@ -401,7 +405,7 @@ export function recognizeGems(
       new cv.Size(Math.round(gray.cols * resolutionScale), Math.round(gray.rows * resolutionScale)),
       0,
       0,
-      cv.INTER_AREA
+      resolutionScale > 1 ? cv.INTER_CUBIC : cv.INTER_AREA
     );
 
     if (resolutionScale !== 1) {
