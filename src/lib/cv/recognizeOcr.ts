@@ -213,50 +213,89 @@ async function readDigits(
   const colY0 = Math.max(0, Math.round(r0 - 28 * scale));
   // Column is wide enough not to clip a digit but stops before the atom/"P" icon (~colX+64); the CC
   // width filter below drops the round "P" blob if a sliver sneaks in.
-  const col = cropMat(cv, frame, colX + 42 * scale, colY0, 21 * scale, (r8 - r0) + 68 * scale, UP_DIGIT, true);
+  // Keep the up-scaled GRAYSCALE column too: a merged blob (below) is re-thresholded locally from it.
+  const colGray = cropMat(cv, frame, colX + 42 * scale, colY0, 21 * scale, (r8 - r0) + 68 * scale, UP_DIGIT, false);
   const willpower: (number | null)[] = rows.map(() => null);
   const points: (number | null)[] = rows.map(() => null);
-  if (!col) return { willpower, points };
+  if (!colGray) return { willpower, points };
+  const col = colGray.clone();
+  cv.threshold(col, col, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
   try {
     // Connected components = the actual digit positions (robust to small offset error). OCR each, then
-    // map to willpower (y ~ r.y-7) / points (y ~ r.y+14) slots by nearest centroid.
-    const labels = new cv.Mat();
-    const stats = new cv.Mat();
-    const cents = new cv.Mat();
-    const n = cv.connectedComponentsWithStats(col, labels, stats, cents, 8, cv.CV_32S);
+    // map to willpower (y ~ r.y-7) / points (y ~ r.y+28) slots by nearest centroid.
     const minH = 10 * scale * UP_DIGIT;
     const maxH = 30 * scale * UP_DIGIT;
     const minA = 12 * scale * scale * UP_DIGIT * UP_DIGIT;
+    const maxW = 24 * scale * UP_DIGIT;
+    // A single digit is ~8-9 wide and ~11 tall (FHD-px). A component bigger than this is a merge — on
+    // ancient-tier gems the bright wing ornament fuses to the points digit under one global Otsu.
+    const isMerged = (w: number, h: number) => w > 13 * scale * UP_DIGIT || h > 16 * scale * UP_DIGIT;
     const comps: { cy: number; digit: number | null; sig: Uint8Array }[] = [];
     // Each row contributes a willpower + a points digit, so ~rows*2 single-char OCR calls — the bulk of
     // the per-image time. Report progress against that estimate so the bar moves through this phase.
     const expectedDigits = Math.max(1, rows.length * 2);
     let ocrDone = 0;
-    for (let i = 1; i < n; i++) {
-      const x = stats.intAt(i, 0);
-      const y = stats.intAt(i, 1);
-      const w = stats.intAt(i, 2);
-      const h = stats.intAt(i, 3);
-      const a = stats.intAt(i, 4);
-      if (h < minH || h > maxH || a < minA || w > 24 * scale * UP_DIGIT) continue;
-      const sig = glyphSignature(cv, col, x, y, w, h);
+
+    // OCR one binary glyph at (x,y,w,h) of `bin`; record it at absolute column-y `yOff + y + h/2`.
+    const pushGlyph = async (bin: CvMat, x: number, y: number, w: number, h: number, yOff: number) => {
+      const sig = glyphSignature(cv, bin, x, y, w, h);
       const pad = 12;
       const cx0 = Math.max(0, x - pad);
       const cy0 = Math.max(0, y - pad);
-      const cw = Math.min(col.cols - cx0, w + 2 * pad);
-      const ch = Math.min(col.rows - cy0, h + 2 * pad);
-      const sub = col.roi(new cv.Rect(cx0, cy0, cw, ch));
+      const cw = Math.min(bin.cols - cx0, w + 2 * pad);
+      const ch = Math.min(bin.rows - cy0, h + 2 * pad);
+      const sub = bin.roi(new cv.Rect(cx0, cy0, cw, ch));
       const inv = new cv.Mat();
       cv.bitwise_not(sub, inv); // black digit on white for OCR
       sub.delete();
       const res = await ocr.recognizeMat(inv, { psm: PSM_SINGLE_CHAR, whitelist: '0123456789' });
       inv.delete();
-      comps.push({ cy: y + h / 2, digit: parseBoundedDigit(res.text, 0, 99), sig });
+      comps.push({ cy: yOff + y + h / 2, digit: parseBoundedDigit(res.text, 0, 99), sig });
       onStep?.(Math.min(1, ++ocrDone / expectedDigits));
-    }
-    labels.delete();
-    stats.delete();
-    cents.delete();
+    };
+
+    // Collect digit-sized components of `bin` (its top-left is at column-y `yOff`). On the global-Otsu
+    // pass (`splitMerged`), a merged blob is re-thresholded LOCALLY from the grayscale and re-collected
+    // once — a local threshold separates the equally-bright wing ornament from the digit that one
+    // global threshold lumps together. Recursion is one level deep (the re-pass passes splitMerged=false).
+    const collect = async (bin: CvMat, yOff: number, splitMerged: boolean) => {
+      const labels = new cv.Mat();
+      const stats = new cv.Mat();
+      const cents = new cv.Mat();
+      const n = cv.connectedComponentsWithStats(bin, labels, stats, cents, 8, cv.CV_32S);
+      for (let i = 1; i < n; i++) {
+        const x = stats.intAt(i, 0);
+        const y = stats.intAt(i, 1);
+        const w = stats.intAt(i, 2);
+        const h = stats.intAt(i, 3);
+        const a = stats.intAt(i, 4);
+        if (h < minH || h > maxH || a < minA) continue;
+        if (splitMerged && isMerged(w, h)) {
+          const pad = 4;
+          const rx = Math.max(0, x - pad);
+          const ry = Math.max(0, y - pad);
+          const rw = Math.min(colGray.cols - rx, w + 2 * pad);
+          const rh = Math.min(colGray.rows - ry, h + 2 * pad);
+          const region = colGray.roi(new cv.Rect(rx, ry, rw, rh));
+          const local = new cv.Mat();
+          let bs = 2 * Math.round(3 * scale * UP_DIGIT) + 1; // window ~ a digit's width
+          bs = Math.min(bs, (Math.min(region.cols, region.rows) - 1) | 1);
+          if (bs >= 3) {
+            cv.adaptiveThreshold(region, local, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, bs, -10);
+            await collect(local, yOff + ry, false);
+          }
+          local.delete();
+          region.delete();
+          continue;
+        }
+        if (w > maxW) continue; // too wide to be one digit and not re-segmentable here
+        await pushGlyph(bin, x, y, w, h, yOff);
+      }
+      labels.delete();
+      stats.delete();
+      cents.delete();
+    };
+    await collect(col, 0, true);
     // Repair tesseract's single-char abstentions: any glyph it failed to read adopts the digit of its
     // nearest confident, visually-identical neighbour (see GLYPH_SAME_MAX_DIST). No-op when every glyph
     // already read (e.g. the clean client-1 fixtures), so this only recovers otherwise-dropped rows.
@@ -274,25 +313,38 @@ async function readDigits(
       }
       c.digit = bestDigit;
     }
-    const nearest = (targetScreenY: number): number | null => {
+    // Index of the component nearest `targetScreenY` (within the accept radius), or -1. `excludeIdx`
+    // lets the points slot skip the component already taken by willpower, so a row can never read the
+    // same digit twice (the failure mode when a points glyph is missing/merged and the slot would
+    // otherwise snap back up onto the willpower digit).
+    const nearestIdx = (targetScreenY: number, excludeIdx: number): number => {
       const tImg = (targetScreenY - colY0) * UP_DIGIT;
-      let best: { cy: number; digit: number | null } | null = null;
-      let bd = Infinity;
-      for (const c of comps) {
-        const d = Math.abs(c.cy - tImg);
+      let bestIdx = -1;
+      let bd = 18 * scale * UP_DIGIT;
+      for (let k = 0; k < comps.length; k++) {
+        if (k === excludeIdx) continue;
+        const d = Math.abs(comps[k].cy - tImg);
         if (d < bd) {
           bd = d;
-          best = c;
+          bestIdx = k;
         }
       }
-      return best && bd < 18 * scale * UP_DIGIT ? best.digit : null;
+      return bestIdx;
     };
     rows.forEach((r, i) => {
-      willpower[i] = nearest((r as { y: number }).y - 7 * scale);
-      points[i] = nearest((r as { y: number }).y + 14 * scale);
+      const y = (r as { y: number }).y;
+      // willpower sits on the icon row (~y); points on the second option line ~29 FHD-px below it.
+      // Aim each slot AT its digit — an earlier +14 points offset landed at the willpower/points
+      // midpoint, so nearest() coin-flipped onto willpower whenever the points glyph drifted a pixel
+      // (mis-read points as the willpower value); +28 sits on the points digit at every UI scale.
+      const wIdx = nearestIdx(y - 7 * scale, -1);
+      const pIdx = nearestIdx(y + 28 * scale, wIdx);
+      willpower[i] = wIdx >= 0 ? comps[wIdx].digit : null;
+      points[i] = pIdx >= 0 ? comps[pIdx].digit : null;
     });
   } finally {
     col.delete();
+    colGray.delete();
   }
   return { willpower, points };
 }
