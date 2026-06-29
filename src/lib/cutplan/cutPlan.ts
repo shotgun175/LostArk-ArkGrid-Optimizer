@@ -22,10 +22,6 @@ import { GOLD_PER_DAMAGE } from './types';
 
 export { GOLD_PER_DAMAGE };
 
-export function gpdForBracket(bracket: GoldBracket): number {
-  return GOLD_PER_DAMAGE[bracket];
-}
-
 // Linear interpolation of a numeric field across baseline anchors (sorted ascending).
 // Baseline is clamped to the baked range (his anchors span ≈ 0.83–1.47 % damage).
 function lerp<T>(entries: T[], baseline: number, getB: (e: T) => number, getV: (e: T) => number): number {

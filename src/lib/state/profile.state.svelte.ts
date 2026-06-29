@@ -274,25 +274,6 @@ export function addCore(attr: ArkGridAttr, ctype: ArkGridCoreType) {
 export function resetCore(attr: ArkGridAttr, ctype: ArkGridCoreType) {
   activeBuildState().cores[attr][ctype] = null;
 }
-export function clearCores() {
-  const cores = activeBuildState().cores;
-  for (const attr of Object.values(ArkGridAttrs)) {
-    for (const ctype of Object.values(ArkGridCoreTypes)) {
-      cores[attr][ctype] = null;
-    }
-  }
-}
-export function updateCore(attr: ArkGridAttr, ctype: ArkGridCoreType, core: ArkGridCore) {
-  activeBuildState().cores[attr][ctype] = JSON.parse(JSON.stringify(core));
-}
-
-export function updateWeapon(fixed: number, percent: number) {
-  const profile = getCurrentProfile();
-  profile.weapon = {
-    fixed,
-    percent,
-  };
-}
 
 export function updateBaselineOverride(baseline: number | undefined) {
   activeBuildState().baselineOverride = Number.isFinite(baseline) ? baseline : undefined;

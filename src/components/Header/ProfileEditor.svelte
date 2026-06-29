@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { DEFAULT_PROFILE_NAME, L_DEFAULT_PROFILE_NAME } from '../../lib/constants/enums';
+  import { DEFAULT_PROFILE_NAME } from '../../lib/constants/enums';
+  import { L_DEFAULT_PROFILE_NAME } from '../../lib/constants/localization';
   import {
     addNewProfile,
     appConfig,

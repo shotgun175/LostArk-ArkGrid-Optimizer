@@ -1,5 +1,5 @@
 <script lang="ts">
-  import HubBadge from '../../lib/HubBadge.svelte';
+  import HubBadge from '../shared/HubBadge.svelte';
   import Credit from './Credit.svelte';
   import Policy from './Policy.svelte';
   import Terms from './Terms.svelte';

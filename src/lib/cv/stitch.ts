@@ -9,10 +9,9 @@
  * are preserved. The in-game owned-count footer (per attribute) is the eventual CHECKSUM:
  * `assessCount` compares the assembled length to the target and flags under/over-count.
  *
- * First cut: an in-order fold with the same conservative ≥4-overlap rule as the live path (an
- * unplaceable screenshot is left out, surfaced via the step `mode` / the count checksum rather than
- * blindly concatenated). Order-tolerant jigsaw assembly + count-driven overlap relaxation are the
- * documented next steps.
+ * Assembly (`assembleScreenshots` -> `greedyAssemble`) is order-tolerant: screenshots merge by their
+ * largest contiguous overlap regardless of upload order, and the footer count drives relaxing the
+ * overlap floor plus a cross-fragment de-dupe, so uploads neither under- nor over-count.
  */
 import { isSameArkGridGem } from '../models/arkGridGemSpecs';
 import type { ArkGridGem } from '../models/arkGridGems';
@@ -62,57 +61,6 @@ export function suffixPrefixOverlap(a: ArkGridGem[], b: ArkGridGem[]): number {
     if (ok) return k;
   }
   return 0;
-}
-
-export type StitchMode = 'seed' | 'append' | 'prepend' | 'contained' | 'nomatch';
-export interface StitchStep {
-  gems: ArkGridGem[];
-  mode: StitchMode;
-  /** The contiguous overlap that was used (or the best found, for `nomatch`). */
-  overlap: number;
-}
-
-/**
- * Merge one screenshot's gems into an accumulated sequence by maximal contiguous overlap:
- * - empty `acc` → seed with `incoming`.
- * - `acc` suffix == `incoming` prefix (scrolled DOWN) → append `incoming`'s remainder.
- * - `acc` prefix == `incoming` suffix (scrolled UP) → prepend `incoming`'s remainder.
- * - `incoming` fully overlaps `acc` (re-upload) → `contained`, no change.
- * - best overlap < `minOverlap` → `nomatch`, `acc` returned unchanged (the count checksum flags the gap).
- */
-export function stitchScreenshot(
-  acc: ArkGridGem[],
-  incoming: ArkGridGem[],
-  minOverlap: number = DEFAULT_MIN_OVERLAP
-): StitchStep {
-  if (incoming.length === 0) return { gems: acc, mode: 'nomatch', overlap: 0 };
-  if (acc.length === 0) return { gems: incoming.slice(), mode: 'seed', overlap: 0 };
-
-  const down = suffixPrefixOverlap(acc, incoming); // acc above, incoming below
-  const up = suffixPrefixOverlap(incoming, acc); // incoming above, acc below
-  const best = Math.max(down, up);
-  if (best < minOverlap) return { gems: acc, mode: 'nomatch', overlap: best };
-
-  if (down >= up) {
-    if (down === incoming.length) return { gems: acc, mode: 'contained', overlap: down };
-    return { gems: acc.concat(incoming.slice(down)), mode: 'append', overlap: down };
-  }
-  if (up === incoming.length) return { gems: acc, mode: 'contained', overlap: up };
-  return {
-    gems: incoming.slice(0, incoming.length - up).concat(acc),
-    mode: 'prepend',
-    overlap: up,
-  };
-}
-
-/** Fold screenshots left-to-right into one de-duplicated sequence (in-order, first cut). */
-export function stitchScreenshots(
-  screens: ArkGridGem[][],
-  minOverlap: number = DEFAULT_MIN_OVERLAP
-): ArkGridGem[] {
-  let acc: ArkGridGem[] = [];
-  for (const screen of screens) acc = stitchScreenshot(acc, screen, minOverlap).gems;
-  return acc;
 }
 
 export interface CountStatus {

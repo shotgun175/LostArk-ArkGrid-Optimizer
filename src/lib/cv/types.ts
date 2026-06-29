@@ -15,7 +15,7 @@ export interface OwnedCount {
 
 // main → worker
 export type CaptureWorkerRequest =
-  | { type: 'init'; scaleHints?: Record<string, number> } // init worker (optionally seeded with persisted per-resolution UI scales)
+  | { type: 'init' } // init worker
   | { type: 'frame'; frame: VideoFrame; drawDebug: boolean; detectionMargin: number } // send frame
   | { type: 'image'; bitmap: ImageBitmap; detectionMargin: number } // recognize a single uploaded/pasted screenshot
   | { type: 'reset' } // clear cached anchor location + scale (force fresh detection)
@@ -49,9 +49,7 @@ export type CaptureWorkerResponse =
         | undefined;
     }
   | { type: 'error'; error: WorkerError }
-  | { type: 'debug'; image?: ImageBitmap; message?: string }
-  | { type: 'scale:measured'; key: string; scale: number } // a freshly measured per-resolution UI scale to persist
-  | { type: 'scale:drop'; key: string }; // a persisted scale that no longer locates the anchor; forget it
+  | { type: 'debug'; image?: ImageBitmap; message?: string };
 
 export type WorkerError = {
   message: string;

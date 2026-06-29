@@ -1,6 +1,9 @@
 import { type ArkGridCoreType, ArkGridCoreTypeTypes } from '../models/arkGridCores';
 import { type AppLocale, type ArkGridAttr, ArkGridAttrTypes, type LocalizationName } from './enums';
 
+export const L_DEFAULT_PROFILE_NAME: LocalizationName = {
+  en_us: 'Default',
+};
 export const LConfirm: LocalizationName = {
   en_us: 'Confirm',
 };

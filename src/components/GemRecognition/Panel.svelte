@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
-  import Icon from '../../lib/Icon.svelte';
+  import Icon from '../shared/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
   import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';
@@ -21,8 +21,8 @@
     toggleSection,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
-  import GemRecognitionGemList from './GemList.svelte';
   import GemRecognitionGuide from './Guide.svelte';
+  import RecognizedGemList from './RecognizedGemList.svelte';
 
   let locale = $derived(appLocale.current);
   const LTitle: LocalizationName = {
@@ -130,7 +130,7 @@
   let isDebugging = $state<boolean>(false);
   let isLoading = $state<boolean>(false);
   let detectionMargin = $state<number>(0);
-  let gemListElem: GemRecognitionGemList | null = null;
+  let gemListElem: RecognizedGemList | null = null;
 
   let _captureController: CaptureController | null = null;
   let _prevGem: string | null = null;
@@ -713,7 +713,7 @@
       <div>
         <GemRecognitionGuide {mode}></GemRecognitionGuide>
       </div>
-      <GemRecognitionGemList
+      <RecognizedGemList
         gems={{
           orderGems: totalOrderGems,
           chaosGems: totalChaosGems,

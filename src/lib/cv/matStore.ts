@@ -7,9 +7,9 @@ import {
   supportedGemRecognitionLocales,
 } from '../constants/enums';
 import { type ArkGridGemName, type ArkGridGemOptionName } from '../models/arkGridGems';
-import { type EnUsTemplateName, enUsCoords, enUsFileName } from '../opencv-template-coords/en_us';
-import { type KoKrTemplateName, koKrCoords, koKrFileName } from '../opencv-template-coords/ko_kr';
-import { type RuRuTemplateName, ruRuCoords, ruRuFileName } from '../opencv-template-coords/ru_ru';
+import { type EnUsTemplateName, enUsCoords, enUsFileName } from './template-coords/en_us';
+import { type KoKrTemplateName, koKrCoords, koKrFileName } from './template-coords/ko_kr';
+import { type RuRuTemplateName, ruRuCoords, ruRuFileName } from './template-coords/ru_ru';
 import { type MatchingAtlas, generateMatchingAtlas } from './atlas';
 import { getCv } from './cvRuntime';
 import type { CvMat } from './types';
@@ -18,7 +18,6 @@ export type KeyWillPower = '3' | '4' | '5' | '6' | '7' | '8' | '9';
 export type KeyCorePoint = '1' | '2' | '3' | '4' | '5';
 export type KeyOptionString = ArkGridGemOptionName;
 export type KeyOptionLevel = '1' | '2' | '3' | '4' | '5';
-export type KeyGemAttr = ArkGridAttr;
 export type KeyGemName = ArkGridGemName;
 
 /**

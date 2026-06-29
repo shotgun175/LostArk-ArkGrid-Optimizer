@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from '../../lib/Icon.svelte';
+  import Icon from '../shared/Icon.svelte';
   import { type ArkGridAttr, ArkGridAttrs } from '../../lib/constants/enums';
   import { LChaos, LOrder } from '../../lib/constants/localization';
   import { gemSetPackKey } from '../../lib/solver/utils';

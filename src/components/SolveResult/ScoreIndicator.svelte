@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from '../../lib/Icon.svelte';
+  import Icon from '../shared/Icon.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
 
   type ScoreSet = {

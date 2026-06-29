@@ -3,10 +3,9 @@ import type { CV } from '@techstark/opencv-js';
 import type { GemRecognitionLocale } from '../constants/enums';
 import { getCv, initOpenCv } from './cvRuntime';
 import { loadGemAsset } from './matStore';
-import { multiScaleAnchorMatch } from './matcher';
 import { type RecognizeResult, extractNineGems, findBest } from './recognize';
 import { recognizeGemsOcr, type OcrResult, type OcrRunner } from './recognizeOcr';
-import { buildScaleLadder, rawScaleToResolutionScale, snapResolutionScale } from './scaleDetection';
+import { buildScaleLadder } from './scaleDetection';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types';
 
 /**
@@ -84,22 +83,7 @@ class FrameProcessor {
   private previousInfo: {
     locale: GemRecognitionLocale;
     anchorLoc: { x: number; y: number };
-    resolutionScale: number;
   } | null = null;
-  // The measured UI scale is fixed for a whole screen-share session (the captured surface can't
-  // change resolution mid-session). Cache it independently of previousInfo so that losing the
-  // anchor for a frame (Order<->Chaos switch, fast scroll) does NOT re-trigger the expensive
-  // multi-scale sweep — we just re-find the anchor LOCATION at the already-known scale.
-  private cachedResolutionScale: number | null = null;
-  // Per-resolution UI scales measured in earlier sessions (persisted on the main thread, seeded via
-  // `init`). A hit lets the first frame skip the expensive multi-scale sweep — the single biggest
-  // first-capture cost — and reuse the known scale instead.
-  private scaleHints = new Map<string, number>();
-  // Consecutive frames the persisted scale failed to find the anchor. A lone miss is usually a
-  // startup/black frame before the gem screen is up; only abandon the hint after a sustained streak
-  // (which also recovers from a genuinely stale scale after an in-game UI-scale change).
-  private hintMissStreak = 0;
-  private static readonly HINT_MISS_LIMIT = 20;
   private thresholdSet = {
     anchor: 0.95,
     gemAttr: 0.8,
@@ -145,23 +129,15 @@ class FrameProcessor {
 
   resetDetection() {
     // Clear the cached anchor LOCATION so the next frame re-finds it (e.g. after the on-screen
-    // view changes). The measured resolution scale is preserved (cachedResolutionScale) — it
-    // doesn't change mid-session, so we never re-pay the multi-scale sweep just to re-lock.
+    // view changes). The UI scale is derived from the frame height every frame, so there is
+    // nothing else to reset.
     this.previousInfo = null;
   }
 
   resetSession() {
-    // Full reset for a NEW screen-share session: also forget the measured scale, so a freshly
-    // shared window (possibly a different resolution) gets re-measured once.
+    // Full reset for a NEW screen-share session: forget the cached anchor location so a freshly
+    // shared window re-locks from scratch.
     this.previousInfo = null;
-    this.cachedResolutionScale = null;
-    this.hintMissStreak = 0;
-  }
-
-  setScaleHints(hints: Record<string, number>) {
-    // Seed/replace the per-resolution scale hints from the persisted cache (sent on every init).
-    // NOT cleared by resetSession — a measured UI scale stays valid across screen-share sessions.
-    this.scaleHints = new Map(Object.entries(hints));
   }
 
   // Run the hot OpenCV ops once on tiny dummy mats so their WASM code is JIT-compiled before the
@@ -202,11 +178,39 @@ class FrameProcessor {
     return gray;
   }
 
+  // Derive the frame resample factor from the captured HEIGHT, which maps to the game UI's
+  // discrete resolution tiers. Far cheaper than measuring the scale with a multi-scale anchor
+  // sweep, and valid because a screen-share surface can't change resolution mid-session.
+  adjustResolution(height: number): { resolutionScale: number; expectedResolution: string } {
+    let resolutionScale = 1;
+    let expectedResolution = 'FHD';
+    // The captured height includes the Windows title bar (~27px on Windows 10).
+    if (height < 1080) {
+      // Below FHD: upscale to FHD.
+      resolutionScale = 1080 / (height - 27);
+      expectedResolution = '(warning) below FHD';
+    } else if (height >= 1080 && height <= 1080 + 48) {
+      // FHD / UWFHD: use as-is.
+    } else if (height >= 1440 && height <= 1440 + 48) {
+      // QHD / UWQHD: downscale to 3/4.
+      resolutionScale = 3 / 4;
+      expectedResolution = 'QHD';
+    } else if (height >= 2160 && height <= 2160 + 48) {
+      // UHD: downscale to 1/2.
+      resolutionScale = 1 / 2;
+      expectedResolution = 'UHD';
+    } else {
+      // Unknown size: fall back to FHD as-is.
+      expectedResolution = '(warning) Unknown';
+    }
+    return { resolutionScale, expectedResolution };
+  }
+
   processFrame(frame: VideoFrame, drawDebug: boolean = false, detectionMargin: number = 0) {
     const start = performance.now();
     const canvas = this.canvas;
+    const ctx = this.ctx;
     let resizedFrame: CvMat | null = null;
-    let rawGray: CvMat | null = null;
     let debugCtx: OffscreenCanvasRenderingContext2D | null = null;
     const cv = this.cv;
     if (!cv) return;
@@ -214,86 +218,23 @@ class FrameProcessor {
     try {
       if (!this.loadedAsset) return;
 
-      // Decode the raw frame ONCE at native size into a grayscale Mat.
-      rawGray = this.decodeToGray(frame, frame.displayWidth, frame.displayHeight);
-
-      // Determine the UI scale: reuse the cached/persisted scale, else measure it once by
-      // multi-scale matching the anchor over the full raw frame.
-      const resKey = `${frame.displayWidth}x${frame.displayHeight}`;
-      let resolutionScale: number;
-      let usingHint = false;
-      if (this.previousInfo) {
-        resolutionScale = this.previousInfo.resolutionScale;
-      } else if (this.cachedResolutionScale !== null) {
-        // Re-lock path: the anchor was lost for a frame but the resolution is unchanged, so reuse
-        // the scale we already measured and skip the multi-scale sweep. The anchor LOCATION is
-        // re-found cheaply below (full-frame single-scale match at this scale).
-        resolutionScale = this.cachedResolutionScale;
-      } else if (this.scaleHints.has(resKey)) {
-        // Persisted fast path: a previous session already measured the UI scale for this exact
-        // resolution. Reuse it and skip the ~5s multi-scale sweep entirely. The anchor find below
-        // verifies it; if it fails (user changed UI scale / window mode) we drop it and re-measure.
-        resolutionScale = this.scaleHints.get(resKey)!;
-        usingHint = true;
-      } else {
-        const measured = multiScaleAnchorMatch(
-          cv,
-          rawGray,
-          this.loadedAsset.atlasAnchor,
-          this.anchorScaleLadder
-        );
-        if (!measured || measured.score < this.thresholdSet.anchor - detectionMargin) {
-          // No anchor found. When debugging, still show the shared frame so the user can
-          // see what was captured (and so the debug-image transfer has a drawn context).
-          if (drawDebug) {
-            this.debugCanvas.width = frame.displayWidth;
-            this.debugCanvas.height = frame.displayHeight;
-            this.debugCanvas
-              .getContext('2d')
-              ?.drawImage(frame, 0, 0, this.debugCanvas.width, this.debugCanvas.height);
-          }
-          rawGray.delete();
-          rawGray = null;
-          this.previousInfo = null;
-          return;
-        }
-        // Snap to a canonical resolution tier when close: the anchor's correlation peak is
-        // ~1-2% biased by font rendering, and that error compounds with anchor-relative
-        // distance and breaks the small gem-row templates (verified on real QHD frames).
-        resolutionScale = snapResolutionScale(rawScaleToResolutionScale(measured.scale));
-        // Measured once for this session; every later re-lock reuses it (branch above).
-        this.cachedResolutionScale = resolutionScale;
-        // Persist it (via the main thread) so future sessions at this resolution skip the sweep.
-        this.scaleHints.set(resKey, resolutionScale);
-        postToMain({ type: 'scale:measured', key: resKey, scale: resolutionScale });
-      }
-
-      // Normalize the frame to FHD scale so the existing offsets/templates line up.
-      resizedFrame = new cv.Mat();
-      cv.resize(
-        rawGray,
-        resizedFrame,
-        new cv.Size(
-          Math.round(rawGray.cols * resolutionScale),
-          Math.round(rawGray.rows * resolutionScale)
-        ),
-        0,
-        0,
-        cv.INTER_AREA
-      );
-      rawGray.delete();
-      rawGray = null;
-      canvas.width = resizedFrame.cols;
-      canvas.height = resizedFrame.rows;
-
+      // Derive the UI scale from the frame height and resample to FHD scale in a single drawImage,
+      // so the existing offsets/templates line up without an expensive multi-scale sweep.
+      const { resolutionScale, expectedResolution } = this.adjustResolution(frame.displayHeight);
+      canvas.width = frame.displayWidth * resolutionScale;
+      canvas.height = frame.displayHeight * resolutionScale;
+      ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      resizedFrame = cv.matFromImageData(imageData);
+      cv.cvtColor(resizedFrame, resizedFrame, cv.COLOR_RGBA2GRAY);
       if (resolutionScale !== 1) {
-        // Add extra margin when we resample on our own
+        // Add extra margin when we resample on our own.
         detectionMargin += 0.1;
       }
 
       if (drawDebug) {
-        this.debugCanvas.width = resizedFrame.cols;
-        this.debugCanvas.height = resizedFrame.rows;
+        this.debugCanvas.width = canvas.width;
+        this.debugCanvas.height = canvas.height;
 
         debugCtx = this.debugCanvas.getContext('2d');
         if (debugCtx) {
@@ -305,7 +246,7 @@ class FrameProcessor {
           const x = 25;
           let y = 100;
           // Draw the outline first, then fill in white text
-          let msg = `Measured scale: ${(1 / resolutionScale).toFixed(2)}x (${frame.displayWidth}x${frame.displayHeight})`;
+          let msg = `Resolution: ${expectedResolution} (${frame.displayWidth}x${frame.displayHeight})`;
           debugCtx.strokeText(msg, x, y);
           debugCtx.fillText(msg, x, y);
           y += 40;
@@ -329,8 +270,8 @@ class FrameProcessor {
         }
       }
 
-      // 1. Find the anchor in the normalized (FHD-scale) frame.
-      //    First detection: search the FULL frame (handles ultrawide / windowed offsets).
+      // 1. Find the anchor in the resampled frame.
+      //    First detection: search the TOP-RIGHT QUADRANT (where the gem panel sits).
       //    Cached: search only the small ROI around the last anchor position.
       const roiAnchor = this.previousInfo
         ? {
@@ -339,7 +280,7 @@ class FrameProcessor {
             width: this.loadedAsset.atlasAnchor.entries[this.previousInfo.locale].width,
             height: this.loadedAsset.atlasAnchor.entries[this.previousInfo.locale].height,
           }
-        : { x: 0, y: 0, width: canvas.width, height: canvas.height };
+        : { x: canvas.width / 2, y: 0, width: canvas.width / 2, height: canvas.height / 2 };
       const anchor = findBest(
         cv,
         {
@@ -351,35 +292,15 @@ class FrameProcessor {
         debugCtx
       );
       if (!anchor) {
-        // Not found: reset so the next frame searches again
+        // Not found: reset so the next frame searches the quadrant again.
         this.previousInfo = null;
-        if (usingHint && ++this.hintMissStreak >= FrameProcessor.HINT_MISS_LIMIT) {
-          // The persisted scale has failed to locate the anchor for too many frames — it's stale
-          // (UI scale / window mode changed), not just a startup/black frame. Forget it locally +
-          // on disk so the next frame falls back to a fresh multi-scale measurement.
-          this.scaleHints.delete(resKey);
-          this.cachedResolutionScale = null;
-          this.hintMissStreak = 0;
-          postToMain({ type: 'scale:drop', key: resKey });
-        }
         return;
-      } else {
-        // Found: record it (also caching the measured scale)
-        this.previousInfo = {
-          locale: anchor.key,
-          anchorLoc: {
-            x: anchor.loc.x,
-            y: anchor.loc.y,
-          },
-          resolutionScale,
-        };
-        if (usingHint) {
-          // Persisted scale confirmed — promote it to the session cache so mid-session re-locks
-          // (Order<->Chaos switch, fast scroll) reuse it without re-measuring; clear the streak.
-          this.cachedResolutionScale = resolutionScale;
-          this.hintMissStreak = 0;
-        }
       }
+      // Found: record the locale + location for the next frame's fast re-lock.
+      this.previousInfo = {
+        locale: anchor.key,
+        anchorLoc: { x: anchor.loc.x, y: anchor.loc.y },
+      };
 
       const currentLocale = this.previousInfo.locale;
       const anchorX = this.previousInfo.anchorLoc.x;
@@ -409,16 +330,14 @@ class FrameProcessor {
         anchorY,
         this.thresholdSet,
         detectionMargin,
-        debugCtx
+        debugCtx ?? undefined
       );
       // owned-count is read only on the static-image upload path (recognizeGems); the live frame
       // stream doesn't need the checksum, so leave it null here.
       return { locale: currentLocale, gemAttr: gemAttr.key, gems: currentGems, owned: null };
     } finally {
-      // OpenCV.js Mats are WASM-heap allocations that are never GC'd; an
-      // exception between creation and the happy-path deletes above would
-      // leak them without this (rawGray is null on every non-throw path).
-      if (rawGray) rawGray.delete();
+      // OpenCV.js Mats are WASM-heap allocations that are never GC'd; an exception between
+      // creation and the happy-path delete below would leak resizedFrame without this.
       if (resizedFrame) resizedFrame.delete();
       frame.close();
       this.frameTimes.push(performance.now() - start);
@@ -458,11 +377,9 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
   const data = e.data;
   switch (data.type) {
     case 'init':
-      // Init request. The worker is re-used across sessions, so forget the previously measured
-      // scale here — a new share may be a different-resolution window. Persisted per-resolution
-      // scales (sent from the main thread) are seeded so the first frame can skip the sweep.
+      // Init request. The worker is re-used across sessions, so forget the previously cached
+      // anchor location here — a new share may be a different-resolution window.
       processor.resetSession();
-      if (data.scaleHints) processor.setScaleHints(data.scaleHints);
       try {
         await processor.init();
         postToMain({ type: 'init:done' });
