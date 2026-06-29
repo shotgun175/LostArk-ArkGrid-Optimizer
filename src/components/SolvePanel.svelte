@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
 
-  import Icon from '../lib/Icon.svelte';
   import { type AppLocale, ArkGridAttrs } from '../lib/constants/enums';
+  import Icon from './shared/Icon.svelte';
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import { gemFingerprint } from '../lib/models/arkGridGems';

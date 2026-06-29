@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
-  import Icon from '../../lib/Icon.svelte';
+  import Icon from '../shared/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
   import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';

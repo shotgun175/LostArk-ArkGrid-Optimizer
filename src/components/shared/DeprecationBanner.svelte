@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DEPRECATION } from './deprecation';
+  import { DEPRECATION } from '../../lib/deprecation';
 
   // Session-scoped dismissal: hiding the banner lasts only for the current browsing
   // session — sessionStorage survives in-tab refreshes but clears when the tab/window

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Icon from '../../lib/Icon.svelte';
+  import Icon from '../shared/Icon.svelte';
   import { type LocalizationName } from '../../lib/constants/enums';
   import { appConfig, toggleDarkMode, toggleUI } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';

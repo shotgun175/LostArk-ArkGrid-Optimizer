@@ -12,7 +12,7 @@
   import AppConfiguration from './components/Header/AppConfiguration.svelte';
   import ProfileEditor from './components/Header/ProfileEditor.svelte';
   import SectionNav from './components/SectionNav.svelte';
-  import DeprecationBanner from './lib/DeprecationBanner.svelte';
+  import DeprecationBanner from './components/shared/DeprecationBanner.svelte';
   import { type LocalizationName } from './lib/constants/enums';
   import { appConfig, applyOsThemePreference, toggleUI } from './lib/state/appConfig.state.svelte';
   import { appLocale, setLocale } from './lib/state/locale.state.svelte';

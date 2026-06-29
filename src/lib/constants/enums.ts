@@ -38,9 +38,6 @@ export const LostArkGradeTypes = {
 export type LostArkGrade = keyof typeof LostArkGradeTypes;
 export const LostArkGrades = Object.keys(LostArkGradeTypes) as LostArkGrade[];
 
-export const L_DEFAULT_PROFILE_NAME: LocalizationName = {
-  en_us: 'Default',
-};
 export const DEFAULT_PROFILE_NAME = 'Default';
 
 export type ScrollCommand = 'top' | 'bottom' | null;
