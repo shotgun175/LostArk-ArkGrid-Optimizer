@@ -2,7 +2,6 @@
   import { onDestroy } from 'svelte';
 
   import { type AppLocale, ArkGridAttrs } from '../lib/constants/enums';
-  import Icon from './shared/Icon.svelte';
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import { gemFingerprint } from '../lib/models/arkGridGems';
@@ -16,11 +15,13 @@
     type CharacterProfile,
     activeBuildState,
     buildState,
+    setBuildEndgame,
     setBuildSolveAfter,
   } from '../lib/state/profile.state.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
   import SolveCoreEdit from './SolveCoreEdit.svelte';
   import SolveResult from './SolveResult/SolveResult.svelte';
+  import Icon from './shared/Icon.svelte';
 
   type Props = {
     profile: CharacterProfile;
@@ -275,6 +276,17 @@
     });
   }
 
+  async function solveEndgame(role: BuildRole) {
+    const result = await solverController.runSolve(profile, role, { endgame: true });
+    // No previous assignment to diff against — buildAssignedGems(_, undefined) just resolves the
+    // indexes to clean gem copies (no isNew/replaces markers, which the triage does not read).
+    const assignedGems = buildAssignedGems(result.assignedGemIndexes, undefined);
+    setBuildEndgame(role, {
+      assignedGems,
+      inputSig: solveInputSignature(buildState(role, profile).cores, profile.gems),
+    });
+  }
+
   function resetMinPoints() {
     // Set every core's minimum back to 0 for the active build (a quick undo for over-set minimums).
     const cores = profile.builds[profile.activeBuild].cores;
@@ -312,6 +324,11 @@
       for (const role of roles) {
         solvingRole = role;
         await solveOne(role);
+      }
+      // Endgame (all-Ancient) pass for the same roles — feeds the triage removal decision.
+      for (const role of roles) {
+        solvingRole = role;
+        await solveEndgame(role);
       }
     } catch (error) {
       console.error(error);
