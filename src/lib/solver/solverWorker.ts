@@ -478,7 +478,7 @@ function createProgressReporter(postProgress: ProgressReporter): ProgressReporte
   };
 }
 
-function runSolve(payload: SolverRunPayload, report: ProgressReporter): SolverRunResult {
+export function runSolve(payload: SolverRunPayload, report: ProgressReporter): SolverRunResult {
   const {
     orderCores,
     chaosCores,
@@ -487,16 +487,8 @@ function runSolve(payload: SolverRunPayload, report: ProgressReporter): SolverRu
     isSupporter,
     orderCurrentBitmasks,
     chaosCurrentBitmasks,
+    assignmentOnly,
   } = payload;
-  const perfectOrderGems: ArkGridGem[] = [];
-  const perfectChaosGems: ArkGridGem[] = [];
-
-  for (const gem of isSupporter ? perfectGemsSupporter : perfectGems) {
-    for (let i = 0; i < 4; i++) {
-      perfectOrderGems.push({ gemAttr: 'Order', ...gem });
-      perfectChaosGems.push({ gemAttr: 'Chaos', ...gem });
-    }
-  }
 
   let precalculatedGspListOrder: PrecalculatedGspList | undefined;
   let precalculatedGspListChaos: PrecalculatedGspList | undefined;
@@ -519,6 +511,31 @@ function runSolve(payload: SolverRunPayload, report: ProgressReporter): SolverRu
   );
 
   const answer = solved.answer;
+
+  // Endgame pass: downstream consumes only the assignment, so skip the perfect-gems best-score solve
+  // and the launcher-gem simulation below. Neither influences `assignedGemIndexes` (the assignment is
+  // fully decided by the main solve above), so this returns the same assignment a full run would —
+  // proven in solverWorker.assignmentOnly.test.ts. The discarded fields are returned zeroed.
+  if (assignmentOnly) {
+    emitProgress(report, 'finalizing', 100);
+    return {
+      assignedGemIndexes: solved.assignedGemIndexes,
+      gemSetPackTuple: answer,
+      scoreSet: { score: 0, bestScore: 0, perfectScore: 0 },
+      additionalGemResult: { Order: {}, Chaos: {} },
+      needLauncherGem: solved.needLauncherGem,
+    };
+  }
+
+  const perfectOrderGems: ArkGridGem[] = [];
+  const perfectChaosGems: ArkGridGem[] = [];
+  for (const gem of isSupporter ? perfectGemsSupporter : perfectGems) {
+    for (let i = 0; i < 4; i++) {
+      perfectOrderGems.push({ gemAttr: 'Order', ...gem });
+      perfectChaosGems.push({ gemAttr: 'Chaos', ...gem });
+    }
+  }
+
   const score = (answer.score - 1) * 100;
   const bestScore =
     (solve(orderCores, chaosCores, perfectOrderGems, perfectChaosGems, {
@@ -620,29 +637,33 @@ function runSolve(payload: SolverRunPayload, report: ProgressReporter): SolverRu
   };
 }
 
-self.onmessage = (e: MessageEvent<SolverWorkerRequest>) => {
-  const data = e.data;
+// Guarded so the module can be imported in a non-worker context (e.g. Node unit tests, which import
+// `runSolve` directly) without referencing the worker-only `self` global at load time.
+if (typeof self !== 'undefined') {
+  self.onmessage = (e: MessageEvent<SolverWorkerRequest>) => {
+    const data = e.data;
 
-  switch (data.type) {
-    case 'runSolve':
-      try {
-        const report = createProgressReporter((progress) => {
+    switch (data.type) {
+      case 'runSolve':
+        try {
+          const report = createProgressReporter((progress) => {
+            self.postMessage({
+              type: 'runSolve:progress',
+              progress,
+            } satisfies SolverWorkerResponse);
+          });
+
           self.postMessage({
-            type: 'runSolve:progress',
-            progress,
+            type: 'runSolve:done',
+            result: runSolve(data.payload, report),
           } satisfies SolverWorkerResponse);
-        });
-
-        self.postMessage({
-          type: 'runSolve:done',
-          result: runSolve(data.payload, report),
-        } satisfies SolverWorkerResponse);
-      } catch (error) {
-        self.postMessage({
-          type: 'runSolve:error',
-          message: error instanceof Error ? error.message : String(error),
-        } satisfies SolverWorkerResponse);
-      }
-      break;
-  }
-};
+        } catch (error) {
+          self.postMessage({
+            type: 'runSolve:error',
+            message: error instanceof Error ? error.message : String(error),
+          } satisfies SolverWorkerResponse);
+        }
+        break;
+    }
+  };
+}

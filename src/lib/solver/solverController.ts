@@ -229,6 +229,8 @@ export class SolverController {
       isSupporter: role === 'support',
       orderCurrentBitmasks,
       chaosCurrentBitmasks,
+      // The endgame pass stores only the gem assignment, so skip the discarded score/launcher work.
+      assignmentOnly: opts.endgame,
     };
 
     this.state = 'running';

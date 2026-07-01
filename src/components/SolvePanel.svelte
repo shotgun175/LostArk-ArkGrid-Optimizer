@@ -127,6 +127,14 @@
     }
     return false;
   });
+
+  // Keep the progress log scrolled to its newest row so the user can follow along without manually
+  // scrolling. Reading progressLog.length makes this re-run as rows are appended/updated.
+  let progressLogEl = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    void solveState.progressLog.length;
+    if (progressLogEl) progressLogEl.scrollTop = progressLogEl.scrollHeight;
+  });
 </script>
 
 <div class="panel" class:collapsed={!sectionUI.showOptimization}>
@@ -200,7 +208,11 @@
           <div class="title">{LProgressTitle}</div>
           {#if solveState.progress}
             <div class="progress-label">
-              <span>{getProgressLabel(solveState.progress)}</span>
+              <span>
+                {#if solveState.phaseLabel}<span class="progress-phase"
+                    >{solveState.phaseLabel}</span
+                  > · {/if}{getProgressLabel(solveState.progress)}
+              </span>
               <span>{solveState.progress.stagePercent}%</span>
             </div>
             <div
@@ -213,8 +225,11 @@
               <div class="fill" style={`width: ${solveState.progress.totalPercent}%`}></div>
             </div>
           {/if}
-          <div class="progress-log">
-            {#each solveState.progressLog as entry}
+          <div class="progress-log" bind:this={progressLogEl}>
+            {#each solveState.progressLog as entry, i}
+              {#if entry.phase && entry.phase !== solveState.progressLog[i - 1]?.phase}
+                <div class="progress-log-phase">{entry.phase}</div>
+              {/if}
               <div class="progress-log-entry">{entry.text}</div>
             {/each}
           </div>
@@ -311,6 +326,19 @@
     font-size: 0.9rem;
     color: var(--text-muted, inherit);
     line-height: 1.3;
+  }
+  .progress-phase {
+    font-weight: 600;
+  }
+  .progress-log-phase {
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.3;
+    padding-top: 0.25rem;
+  }
+  .progress-log-phase:not(:first-child) {
+    margin-top: 0.35rem;
+    border-top: 1px dashed var(--border);
   }
 
   .panel > .container {

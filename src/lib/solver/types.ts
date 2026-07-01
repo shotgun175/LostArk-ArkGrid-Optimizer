@@ -53,6 +53,12 @@ export type SolverRunPayload = {
   // independent arrays, so a single shared bitmask would be meaningless for both sides.
   orderCurrentBitmasks?: bigint[];
   chaosCurrentBitmasks?: bigint[];
+  // Compute only the gem assignment: skip the perfect-gems "best score" solve and the launcher-gem
+  // simulation. The endgame pass sets this because it consumes only `assignedGemIndexes` — the score
+  // set, additional-gem result, and launcher flags it would otherwise produce are discarded. The
+  // skipped work never feeds the assignment, so the result is identical to a full run (see
+  // solverWorker.assignmentOnly.test.ts).
+  assignmentOnly?: boolean;
 };
 
 export type SolverRunResult = {
