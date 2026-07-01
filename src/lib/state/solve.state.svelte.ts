@@ -1,5 +1,6 @@
 import type { AppLocale } from '../constants/enums';
 import { type ArkGridGem, gemFingerprint } from '../models/arkGridGems';
+import { overallPercent } from '../solver/progress';
 import { solveInputSignature } from '../solver/solveSignature';
 import { SolverController } from '../solver/solverController';
 import type { SolverProgress, SolverProgressStage } from '../solver/types';
@@ -19,21 +20,50 @@ const controller = new SolverController();
 export const solveState = $state<{
   isSolving: boolean;
   progress: SolverProgress | null;
-  progressLog: { header: string; text: string }[];
+  phaseLabel: string | null;
+  progressLog: { header: string; text: string; phase: string }[];
 }>({
   isSolving: false,
   progress: null,
+  phaseLabel: null,
   progressLog: [],
 });
 
+type SolvePassKind = 'live' | 'perfect';
+type SolvePass = { kind: SolvePassKind; role: BuildRole };
+
+// A full optimization runs a sequence of worker solves (live per role, then the perfect-grid pass
+// per role); each emits its own 0→100% sweep. `activePass` tells the progress handler which pass in
+// that sequence is currently reporting, so it can remap the per-pass percentage onto one monotonic
+// overall bar and label the phase. It's safe as a module singleton because passes run strictly
+// sequentially (each is awaited) and the worker rejects a second concurrent solve.
+let activePass: { index: number; total: number; pass: SolvePass; dual: boolean } | null = null;
+
+function phaseLabelFor(pass: SolvePass, dual: boolean): string {
+  const roleSuffix = dual ? (pass.role === 'support' ? ' — Support' : ' — DPS') : '';
+  return pass.kind === 'live'
+    ? `Optimizing your grid${roleSuffix}`
+    : `Analyzing perfect grid (for gem triage)${roleSuffix}`;
+}
+
 controller.onProgress = (progress: SolverProgress) => {
-  solveState.progress = progress;
-  const header = getProgressLogKey(progress);
+  const ctx = activePass;
+  const totalPercent = ctx
+    ? overallPercent(ctx.index, ctx.total, progress.totalPercent)
+    : progress.totalPercent;
+  solveState.progress = { ...progress, totalPercent };
+
+  const phase = ctx ? phaseLabelFor(ctx.pass, ctx.dual) : '';
+  solveState.phaseLabel = phase || null;
+
+  // Namespace each log row by pass index so a later pass emitting the same stage appends a fresh row
+  // instead of resetting an earlier pass's row back to 0% in place.
+  const header = `${ctx?.index ?? 0}:${getProgressLogKey(progress)}`;
   const text = `${progress.stagePercent}% ${getProgressLabel(progress)}`;
   const index = solveState.progressLog.findIndex((entry) => entry.header === header);
 
   if (index === -1) {
-    solveState.progressLog = [...solveState.progressLog, { header, text }];
+    solveState.progressLog = [...solveState.progressLog, { header, text, phase }];
     return;
   }
 
@@ -189,30 +219,41 @@ export async function runSolve(profile: CharacterProfile) {
 
   solveState.isSolving = true;
   solveState.progressLog = [];
+  solveState.phaseLabel = null;
   solveState.progress = { stage: 'preparing', totalPercent: 0, stagePercent: 0 };
 
+  // Dual-role characters solve both builds (they share one gem pool, so triage/cutplan can see what
+  // each build leverages); single-role solves the active build only. The live passes run first (they
+  // produce the displayed result), then the perfect-grid (all-Ancient) passes that feed triage. All
+  // passes are treated as slices of one progress bar so it climbs 0→100% once instead of per pass.
+  const roles: BuildRole[] = profile.dualRole ? ['dps', 'support'] : [profile.activeBuild];
+  const passes: SolvePass[] = [
+    ...roles.map((role): SolvePass => ({ kind: 'live', role })),
+    ...roles.map((role): SolvePass => ({ kind: 'perfect', role })),
+  ];
+
   try {
-    // Dual-role characters solve both builds (they share one gem pool, so triage/cutplan can see
-    // what each build leverages); single-role solves the active build only.
-    const roles: BuildRole[] = profile.dualRole ? ['dps', 'support'] : [profile.activeBuild];
-    for (const role of roles) {
-      await solveOne(profile, role);
-    }
-    // Endgame (all-Ancient) pass for the same roles — feeds the triage removal decision.
-    for (const role of roles) {
-      await solveEndgame(profile, role);
+    for (let i = 0; i < passes.length; i++) {
+      const pass = passes[i];
+      activePass = { index: i, total: passes.length, pass, dual: profile.dualRole };
+      if (pass.kind === 'live') {
+        await solveOne(profile, pass.role);
+      } else {
+        await solveEndgame(profile, pass.role);
+      }
     }
   } catch (error) {
     console.error(error);
   } finally {
+    activePass = null;
     solveState.isSolving = false;
     if (solveState.progress) {
-      controller.onProgress?.({
+      solveState.progress = {
         ...solveState.progress,
         stage: 'finalizing',
         totalPercent: 100,
         stagePercent: 100,
-      });
+      };
     }
   }
 }
