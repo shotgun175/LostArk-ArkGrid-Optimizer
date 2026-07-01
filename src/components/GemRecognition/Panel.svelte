@@ -78,12 +78,6 @@
   const LImport: LocalizationName = {
     en_us: 'Import Loadout',
   };
-  const LImportHint = $derived(
-    {
-      en_us:
-        'Bring your equipped Ark Grid over from lostark.bible or lopec.kr. No screen sharing, no server.',
-    }[locale]
-  );
   // Screen capture needs getDisplayMedia (absent on iOS Safari / mobile browsers) and
   // MediaStreamTrackProcessor (Chromium-only). Detect once; gate the UI when missing so
   // mobile/Safari/Firefox users get a clear message instead of a button that throws.
@@ -99,9 +93,10 @@
   let debugCanvas: HTMLCanvasElement | null;
   let fileInput = $state<HTMLInputElement | null>(null);
   // Active recognition mode. The three inputs (live screen sharing, screenshot upload, loadout
-  // import) are mutually exclusive; screen sharing is the default. The section flags derive from it
-  // so only one is ever open at a time.
-  let mode = $state<'capture' | 'upload' | 'import'>('capture');
+  // import) are mutually exclusive; the section flags derive from it so only one is ever open at a
+  // time. Screen sharing is the default where supported; where it isn't (mobile / Safari / Firefox)
+  // we default to loadout import so the guide and open panel match a path the user can actually use.
+  let mode = $state<'capture' | 'upload' | 'import'>(captureSupported ? 'capture' : 'import');
   let showUpload = $derived(mode === 'upload');
   let isDragging = $state<boolean>(false);
   let isProcessingUpload = $state<boolean>(false);
@@ -658,7 +653,6 @@
     {/if}
     {#if showImport}
       <div class="import-panel">
-        <p class="import-intro">{LImportHint}</p>
         <ol class="import-steps">
           <li>
             Drag this to your bookmarks bar, then click it while viewing your character on
@@ -876,10 +870,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-  }
-  .import-intro {
-    margin: 0;
-    opacity: 0.9;
   }
   .import-steps {
     margin: 0;
