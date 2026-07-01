@@ -127,6 +127,14 @@
     }
     return false;
   });
+
+  // Keep the progress log scrolled to its newest row so the user can follow along without manually
+  // scrolling. Reading progressLog.length makes this re-run as rows are appended/updated.
+  let progressLogEl = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    void solveState.progressLog.length;
+    if (progressLogEl) progressLogEl.scrollTop = progressLogEl.scrollHeight;
+  });
 </script>
 
 <div class="panel" class:collapsed={!sectionUI.showOptimization}>
@@ -217,7 +225,7 @@
               <div class="fill" style={`width: ${solveState.progress.totalPercent}%`}></div>
             </div>
           {/if}
-          <div class="progress-log">
+          <div class="progress-log" bind:this={progressLogEl}>
             {#each solveState.progressLog as entry, i}
               {#if entry.phase && entry.phase !== solveState.progressLog[i - 1]?.phase}
                 <div class="progress-log-phase">{entry.phase}</div>
