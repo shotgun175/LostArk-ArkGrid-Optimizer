@@ -96,13 +96,13 @@
     };
   });
 
-  // While solving a dual-role character, name which build is currently being optimized.
+  // The profile's selected player type — DPS, Support, or Both (dual-role) — matching the role selector.
+  let playerType = $derived(
+    profile.dualRole ? 'Both' : profile.activeBuild === 'support' ? 'Support' : 'DPS'
+  );
+  // While solving, name the player type being optimized for.
   let solveLabel = $derived(
-    !solveState.isSolving
-      ? LRunSolve
-      : profile.dualRole && solveState.solvingRole
-        ? `${LRunning.replace(/\.\.\.$/, '')} ${solveState.solvingRole === 'support' ? 'Support' : 'DPS'}...`
-        : LRunning
+    !solveState.isSolving ? LRunSolve : `${LRunning.replace(/\.\.\.$/, '')} for ${playerType}...`
   );
 
   function resetMinPoints() {

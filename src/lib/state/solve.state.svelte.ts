@@ -18,12 +18,10 @@ const controller = new SolverController();
 
 export const solveState = $state<{
   isSolving: boolean;
-  solvingRole: BuildRole | null;
   progress: SolverProgress | null;
   progressLog: { header: string; text: string }[];
 }>({
   isSolving: false,
-  solvingRole: null,
   progress: null,
   progressLog: [],
 });
@@ -198,19 +196,16 @@ export async function runSolve(profile: CharacterProfile) {
     // what each build leverages); single-role solves the active build only.
     const roles: BuildRole[] = profile.dualRole ? ['dps', 'support'] : [profile.activeBuild];
     for (const role of roles) {
-      solveState.solvingRole = role;
       await solveOne(profile, role);
     }
     // Endgame (all-Ancient) pass for the same roles — feeds the triage removal decision.
     for (const role of roles) {
-      solveState.solvingRole = role;
       await solveEndgame(profile, role);
     }
   } catch (error) {
     console.error(error);
   } finally {
     solveState.isSolving = false;
-    solveState.solvingRole = null;
     if (solveState.progress) {
       controller.onProgress?.({
         ...solveState.progress,
