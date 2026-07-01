@@ -166,6 +166,18 @@ describe('triageOwnedGems', () => {
     expect(res[0].action).toBe('remove');
   });
 
+  it('marks a retained, non-equipped, at/above-baseline spare as an upgrade', () => {
+    // gemC is a strong Chaos gem (high grade). It isn't in the current solve, but the endgame solve
+    // slots it, and its grade is above the low baseline -> upgrade (a maxed grid gem to grow into).
+    const res = triageOwnedGems(owned([gemC]), {
+      activeCurrent: [[], [], [], [], [], []],
+      retainAssignments: [[[gemC], [], [], [], [], []]],
+      baseline: 20,
+      hasEndgameEvidence: true,
+    });
+    expect(res[0].action).toBe('upgrade');
+  });
+
   it('never removes when endgame evidence is missing (safe fallback = keep)', () => {
     const res = triageOwnedGems(owned([gemB]), {
       activeCurrent: [[], [], [], [], [], []],
