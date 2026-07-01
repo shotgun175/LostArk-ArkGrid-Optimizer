@@ -218,37 +218,35 @@
       <div class="baseline-slot">
         <BaselineControl {profile} />
       </div>
-      <div class="refresh-slot">
-        <button
-          class="refresh-button"
-          onclick={() => runSolve(profile)}
-          disabled={solveState.isSolving}
-        >
-          Refresh removal candidates
-        </button>
-        <span class="refresh-hint">
-          Re-runs the optimizer (current + maxed-grid) to refresh which gems are keep vs remove.
-        </span>
-        {#if solveState.isSolving}
-          <div class="compact-progress">
-            <div class="compact-progress-label">
-              {solveState.progress?.totalPercent ?? 0}% · {getProgressLabel(solveState.progress)}
-            </div>
-            <div
-              class="compact-progress-bar"
-              role="progressbar"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              aria-valuenow={solveState.progress?.totalPercent ?? 0}
-            >
-              <div
-                class="compact-fill"
-                style={`width: ${solveState.progress?.totalPercent ?? 0}%`}
-              ></div>
-            </div>
+    </div>
+
+    <div class="refresh-slot">
+      <button
+        class="refresh-button"
+        onclick={() => runSolve(profile)}
+        disabled={solveState.isSolving}
+      >
+        Refresh removal candidates
+      </button>
+      {#if solveState.isSolving}
+        <div class="compact-progress">
+          <div class="compact-progress-label">
+            {solveState.progress?.totalPercent ?? 0}% · {getProgressLabel(solveState.progress)}
           </div>
-        {/if}
-      </div>
+          <div
+            class="compact-progress-bar"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={solveState.progress?.totalPercent ?? 0}
+          >
+            <div
+              class="compact-fill"
+              style={`width: ${solveState.progress?.totalPercent ?? 0}%`}
+            ></div>
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div class="summary-row">
@@ -495,8 +493,8 @@
   .refresh-slot {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 0.3rem;
-    flex: 0 0 auto;
   }
   .refresh-button {
     width: auto;
@@ -522,17 +520,12 @@
   :global(.dark-mode) .refresh-button:hover:not(:disabled) {
     background: rgba(240, 192, 64, 0.2);
   }
-  .refresh-hint {
-    font-size: 0.8rem;
-    opacity: 0.75;
-    font-style: italic;
-    max-width: 20rem;
-  }
   .compact-progress {
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
     margin-top: 0.15rem;
+    width: min(24rem, 100%);
   }
   .compact-progress-label {
     font-size: 0.8rem;
