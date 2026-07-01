@@ -30,6 +30,7 @@
     buildState,
     otherRole,
   } from '../lib/state/profile.state.svelte';
+  import { getProgressLabel, runSolve, solveState } from '../lib/state/solve.state.svelte';
   import ArkGridGemDetail from './ArkGridGemDetail.svelte';
   import BaselineControl from './BaselineControl.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
@@ -216,6 +217,37 @@
     <div class="controls">
       <div class="baseline-slot">
         <BaselineControl {profile} />
+      </div>
+      <div class="refresh-slot">
+        <button
+          class="refresh-button"
+          onclick={() => runSolve(profile)}
+          disabled={solveState.isSolving}
+        >
+          Refresh removal candidates
+        </button>
+        <span class="refresh-hint">
+          Re-runs the optimizer (current + maxed-grid) to refresh which gems are keep vs remove.
+        </span>
+        {#if solveState.isSolving}
+          <div class="compact-progress">
+            <div class="compact-progress-label">
+              {solveState.progress?.totalPercent ?? 0}% · {getProgressLabel(solveState.progress)}
+            </div>
+            <div
+              class="compact-progress-bar"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow={solveState.progress?.totalPercent ?? 0}
+            >
+              <div
+                class="compact-fill"
+                style={`width: ${solveState.progress?.totalPercent ?? 0}%`}
+              ></div>
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -459,6 +491,65 @@
   .baseline-slot {
     flex: 1 1 22rem;
     min-width: 18rem;
+  }
+  .refresh-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 0 0 auto;
+  }
+  .refresh-button {
+    width: auto;
+    min-width: 0;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
+  }
+  .refresh-button:hover:not(:disabled) {
+    background: rgba(184, 134, 11, 0.18);
+  }
+  .refresh-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  :global(.dark-mode) .refresh-button {
+    color: #f0c040;
+    border-color: rgba(240, 192, 64, 0.55);
+    background: rgba(240, 192, 64, 0.12);
+  }
+  :global(.dark-mode) .refresh-button:hover:not(:disabled) {
+    background: rgba(240, 192, 64, 0.2);
+  }
+  .refresh-hint {
+    font-size: 0.8rem;
+    opacity: 0.75;
+    font-style: italic;
+    max-width: 20rem;
+  }
+  .compact-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-top: 0.15rem;
+  }
+  .compact-progress-label {
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.9;
+  }
+  .compact-progress-bar {
+    width: 100%;
+    height: 0.25rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border) 70%, white);
+    overflow: hidden;
+  }
+  .compact-progress-bar > .compact-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #b8860b 0%, #f0c040 100%);
+    transition: width 160ms ease-out;
   }
   .sort-toggle {
     width: auto;
