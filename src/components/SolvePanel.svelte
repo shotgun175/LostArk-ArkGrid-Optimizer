@@ -345,6 +345,27 @@
       }
     }
   }
+
+  // Fallback to piggyback: recompute ONLY the endgame solve(s) without a full re-optimization —
+  // useful after importing gems when you just want fresh removal candidates in Gem Triage.
+  async function refreshEndgame() {
+    if (isSolving) return;
+    isSolving = true;
+    progressLog = [];
+    solveProgress = { stage: 'preparing', totalPercent: 0, stagePercent: 0 };
+    try {
+      const roles: BuildRole[] = profile.dualRole ? ['dps', 'support'] : [profile.activeBuild];
+      for (const role of roles) {
+        solvingRole = role;
+        await solveEndgame(role);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      isSolving = false;
+      solvingRole = null;
+    }
+  }
 </script>
 
 <div class="panel" class:collapsed={!sectionUI.showOptimization}>
@@ -400,6 +421,12 @@
           ⟳ Inputs changed since the last optimization. Re-run to refresh the results.
         </div>
       {/if}
+      <button class="refresh-endgame" onclick={refreshEndgame} disabled={isSolving}>
+        Refresh removal candidates
+      </button>
+      <div class="optimize-hint">
+        Recomputes only the maxed-grid (Ancient) solve that Gem Triage uses to flag surplus gems.
+      </div>
       <div class="optimize-hint">
         {LOptimizeHint}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -454,6 +481,24 @@
     width: 15rem;
     height: 4rem;
     align-self: center;
+  }
+  .refresh-endgame {
+    width: auto;
+    min-width: 12rem;
+    align-self: center;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
+  }
+  .refresh-endgame:hover:not(:disabled) {
+    background: rgba(184, 134, 11, 0.18);
+  }
+  :global(.dark-mode) .refresh-endgame {
+    color: #f0c040;
+    border-color: rgba(240, 192, 64, 0.55);
+    background: rgba(240, 192, 64, 0.12);
   }
   .stale-badge {
     align-self: center;
