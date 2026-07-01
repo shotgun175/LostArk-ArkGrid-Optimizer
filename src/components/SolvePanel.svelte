@@ -345,27 +345,6 @@
       }
     }
   }
-
-  // Fallback to piggyback: recompute ONLY the endgame solve(s) without a full re-optimization —
-  // useful after importing gems when you just want fresh removal candidates in Gem Triage.
-  async function refreshEndgame() {
-    if (isSolving) return;
-    isSolving = true;
-    progressLog = [];
-    solveProgress = { stage: 'preparing', totalPercent: 0, stagePercent: 0 };
-    try {
-      const roles: BuildRole[] = profile.dualRole ? ['dps', 'support'] : [profile.activeBuild];
-      for (const role of roles) {
-        solvingRole = role;
-        await solveEndgame(role);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      isSolving = false;
-      solvingRole = null;
-    }
-  }
 </script>
 
 <div class="panel" class:collapsed={!sectionUI.showOptimization}>
@@ -421,11 +400,15 @@
           ⟳ Inputs changed since the last optimization. Re-run to refresh the results.
         </div>
       {/if}
-      <button class="refresh-endgame" onclick={refreshEndgame} disabled={isSolving}>
+      <!-- Full re-solve (current + maxed-grid) so Gem Triage keep/remove verdicts use fresh data.
+           An endgame-only refresh would leave the current solve stale and could wrongly flag a
+           still-useful gem as Remove. -->
+      <button class="refresh-endgame" onclick={runSolve} disabled={isSolving}>
         Refresh removal candidates
       </button>
       <div class="optimize-hint">
-        Recomputes only the maxed-grid (Ancient) solve that Gem Triage uses to flag surplus gems.
+        Runs a full optimization (current + maxed-grid solve) so Gem Triage's keep/remove list is
+        based on fresh data.
       </div>
       <div class="optimize-hint">
         {LOptimizeHint}
