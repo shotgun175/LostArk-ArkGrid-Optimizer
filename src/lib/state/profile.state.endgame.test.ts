@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { ArkGridGem } from '../models/arkGridGems';
 import { addNewProfile } from './appConfig.state.svelte';
-import { initNewProfile, type EndgameSolve, setBuildEndgame } from './profile.state.svelte';
+import {
+  type EndgameSolve,
+  getCurrentProfile,
+  initNewProfile,
+  setBuildEndgame,
+  setCurrentProfileName,
+} from './profile.state.svelte';
 
 const gem: ArkGridGem = {
   gemAttr: 'Order',
@@ -14,14 +20,13 @@ const gem: ArkGridGem = {
 
 describe('setBuildEndgame', () => {
   it('writes an endgame solve onto the named build without touching the current solve', () => {
-    // initNewProfile mutates the global store's current profile; grab it back to assert on it.
-    const profile = initNewProfile('endgame-test');
+    addNewProfile(initNewProfile('endgame-test'));
+    setCurrentProfileName('endgame-test');
+
     const data: EndgameSolve = { assignedGems: [[gem], [], [], [], [], []], inputSig: 'sig-1' };
+    setBuildEndgame('dps', data);
 
-    // setBuildEndgame targets the *current* profile; point the store at ours first is out of scope,
-    // so assert via the returned build object directly.
-    profile.builds.dps.solveInfo.endgame = data;
-
+    const profile = getCurrentProfile();
     expect(profile.builds.dps.solveInfo.endgame).toEqual(data);
     expect(profile.builds.dps.solveInfo.after).toBeUndefined();
     expect(profile.builds.support.solveInfo.endgame).toBeUndefined();
