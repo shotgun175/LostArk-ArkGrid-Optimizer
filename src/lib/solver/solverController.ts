@@ -79,7 +79,14 @@ export function buildEndgameSolverCores(
   for (const attr of Object.values(ArkGridAttrs)) {
     for (const ctype of Object.values(ArkGridCoreTypes)) {
       const existing = build.cores[attr][ctype];
-      const ancient = createCore(attr, ctype, 'Ancient', isSupporter, profile.weapon, existing?.tier ?? 0);
+      const ancient = createCore(
+        attr,
+        ctype,
+        'Ancient',
+        isSupporter,
+        profile.weapon,
+        existing?.tier ?? 0
+      );
       const targetCores = attr === 'Order' ? orderCores : chaosCores;
       targetCores.push({
         energy: getDefaultCoreEnergy(ancient),
