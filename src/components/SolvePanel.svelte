@@ -1,33 +1,18 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-
-  import { type AppLocale, ArkGridAttrs } from '../lib/constants/enums';
-  import Icon from './shared/Icon.svelte';
+  import { ArkGridAttrs } from '../lib/constants/enums';
   import { ArkGridCoreTypes } from '../lib/models/arkGridCores';
-  import type { ArkGridGem } from '../lib/models/arkGridGems';
-  import { gemFingerprint } from '../lib/models/arkGridGems';
   import { solveInputSignature } from '../lib/solver/solveSignature';
-  import { SolverController } from '../lib/solver/solverController';
-  import type { SolverProgress, SolverProgressStage } from '../lib/solver/types';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import { appLocale } from '../lib/state/locale.state.svelte';
-  import {
-    type BuildRole,
-    type CharacterProfile,
-    activeBuildState,
-    buildState,
-    setBuildSolveAfter,
-  } from '../lib/state/profile.state.svelte';
+  import { type CharacterProfile, activeBuildState } from '../lib/state/profile.state.svelte';
+  import { getProgressLabel, runSolve, solveState } from '../lib/state/solve.state.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
   import SolveCoreEdit from './SolveCoreEdit.svelte';
   import SolveResult from './SolveResult/SolveResult.svelte';
+  import Icon from './shared/Icon.svelte';
 
   type Props = {
     profile: CharacterProfile;
-  };
-  type ProgressLogEntry = {
-    header: string;
-    text: string;
   };
   let { profile = $bindable() }: Props = $props();
 
@@ -111,169 +96,14 @@
     };
   });
 
-  const solverController = new SolverController();
-  let isSolving = $state(false);
-  let solvingRole = $state<BuildRole | null>(null);
-  let solveProgress = $state<SolverProgress | null>(null);
-  let progressLog = $state<ProgressLogEntry[]>([]);
-
-  // While solving a dual-role character, name which build is currently being optimized.
-  let solveLabel = $derived(
-    !isSolving
-      ? LRunSolve
-      : profile.dualRole && solvingRole
-        ? `${LRunning.replace(/\.\.\.$/, '')} ${solvingRole === 'support' ? 'Support' : 'DPS'}...`
-        : LRunning
+  // The profile's selected player type — DPS, Support, or Both (dual-role) — matching the role selector.
+  let playerType = $derived(
+    profile.dualRole ? 'Both' : profile.activeBuild === 'support' ? 'Support' : 'DPS'
   );
-
-  solverController.onProgress = (progress: SolverProgress) => {
-    solveProgress = progress;
-    const header = getProgressLogKey(progress);
-    const text = `${progress.stagePercent}% ${getProgressLabel(progress)}`;
-    const index = progressLog.findIndex((entry) => entry.header === header);
-
-    if (index === -1) {
-      progressLog = [...progressLog, { header, text }];
-      return;
-    }
-
-    if (progressLog[index].text === text) {
-      return;
-    }
-
-    progressLog = progressLog.map((entry, entryIndex) =>
-      entryIndex === index ? { ...entry, text } : entry
-    );
-  };
-
-  onDestroy(() => {
-    solverController.destroy();
-  });
-
-  function buildAssignedGems(
-    assignedGemIndexes: number[][],
-    previousPerSlot: ArkGridGem[][] | undefined
-  ): ArkGridGem[][] {
-    const orderGems = profile.gems.orderGems;
-    const chaosGems = profile.gems.chaosGems;
-    const gemPools = [orderGems, orderGems, orderGems, chaosGems, chaosGems, chaosGems];
-
-    return assignedGemIndexes.map((indexes, coreIndex) => {
-      const newGems = indexes.map((gemIndex) => gemPools[coreIndex][gemIndex]);
-      const oldGems: ArkGridGem[] = previousPerSlot?.[coreIndex] ?? [];
-
-      if (!previousPerSlot) {
-        // First solve — no previous assignment to compare against.
-        return newGems.map(
-          (gem) => JSON.parse(JSON.stringify({ ...gem, isNew: false })) as ArkGridGem
-        );
-      }
-
-      // Build a consumable multiset of old fingerprints.
-      const oldCounts = new Map<string, number>();
-      for (const gem of oldGems) {
-        const fp = gemFingerprint(gem);
-        oldCounts.set(fp, (oldCounts.get(fp) ?? 0) + 1);
-      }
-
-      // Collect dropped gems (in old slot but not in new slot).
-      const newCounts = new Map<string, number>();
-      for (const gem of newGems) {
-        const fp = gemFingerprint(gem);
-        newCounts.set(fp, (newCounts.get(fp) ?? 0) + 1);
-      }
-      const remaining = new Map(oldCounts);
-      for (const [fp, cnt] of newCounts) {
-        const old = remaining.get(fp) ?? 0;
-        if (old <= cnt) remaining.delete(fp);
-        else remaining.set(fp, old - cnt);
-      }
-      const droppedGems: ArkGridGem[] = [];
-      for (const gem of oldGems) {
-        const fp = gemFingerprint(gem);
-        const c = remaining.get(fp) ?? 0;
-        if (c > 0) {
-          droppedGems.push(gem);
-          remaining.set(fp, c - 1);
-        }
-      }
-
-      // Mark new gems and pair each with a dropped gem it replaced.
-      let droppedIdx = 0;
-      const oldCountsForNew = new Map(oldCounts);
-      return newGems.map((gem) => {
-        const fp = gemFingerprint(gem);
-        const c = oldCountsForNew.get(fp) ?? 0;
-        if (c > 0) {
-          oldCountsForNew.set(fp, c - 1);
-          return JSON.parse(JSON.stringify({ ...gem, isNew: false })) as ArkGridGem;
-        }
-        const replaces: ArkGridGem | undefined = droppedGems[droppedIdx++];
-        return JSON.parse(JSON.stringify({ ...gem, isNew: true, replaces })) as ArkGridGem;
-      });
-    });
-  }
-
-  function getProgressLabel(progress: SolverProgress | null) {
-    if (!progress) {
-      return '';
-    }
-
-    const LProgressStage: Record<AppLocale, Record<SolverProgressStage, string>> = {
-      en_us: {
-        preparing: 'Preparing inputs',
-        searching_order_packs: 'Searching for Order combinations',
-        searching_chaos_packs: 'Searching for Chaos combinations',
-        combining_results: 'Merging both combinations',
-        simulating_launcher_gems: 'Simulating Next Astrogem Preview',
-        finalizing: 'Finalizing result',
-      },
-    };
-    const baseLabel = LProgressStage[locale][progress.stage];
-
-    if (progress.stage !== 'simulating_launcher_gems' || !progress.total || !progress.current) {
-      return baseLabel;
-    }
-
-    const attrLabel = {
-      en_us: { Order: 'Order', Chaos: 'Chaos' },
-    }[locale][progress.attr ?? 'Order'];
-
-    return `${baseLabel} (${attrLabel} ${progress.current}/${progress.total})`;
-  }
-
-  function getProgressLogKey(progress: SolverProgress | null) {
-    if (!progress) return '';
-    if (progress.stage !== 'simulating_launcher_gems') return progress.stage;
-    return `${progress.stage}:${progress.attr ?? ''}`;
-  }
-
-  async function solveOne(role: BuildRole) {
-    // Per-slot previous assignment for isNew + replaces detection (this build's prior result).
-    const previousAssigned = buildState(role, profile).solveInfo.after?.solveAnswer?.assignedGems;
-
-    const result = await solverController.runSolve(profile, role);
-
-    const assignedGems = buildAssignedGems(result.assignedGemIndexes, previousAssigned);
-    let swapIdx = 1;
-    for (const slotGems of assignedGems) {
-      for (const gem of slotGems) {
-        if (gem.isNew && gem.replaces) gem.swapIndex = swapIdx++;
-      }
-    }
-
-    setBuildSolveAfter(role, {
-      solveAnswer: {
-        assignedGems,
-        gemSetPackTuple: result.gemSetPackTuple,
-      },
-      scoreSet: result.scoreSet,
-      answerCores: JSON.parse(JSON.stringify(buildState(role, profile).cores)),
-      additionalGemResult: result.additionalGemResult,
-      needLauncherGem: result.needLauncherGem,
-      inputSig: solveInputSignature(buildState(role, profile).cores, profile.gems),
-    });
-  }
+  // While solving, name the player type being optimized for.
+  let solveLabel = $derived(
+    !solveState.isSolving ? LRunSolve : `${LRunning.replace(/\.\.\.$/, '')} for ${playerType}...`
+  );
 
   function resetMinPoints() {
     // Set every core's minimum back to 0 for the active build (a quick undo for over-set minimums).
@@ -297,37 +127,6 @@
     }
     return false;
   });
-
-  async function runSolve() {
-    if (isSolving) return;
-
-    isSolving = true;
-    progressLog = [];
-    solveProgress = { stage: 'preparing', totalPercent: 0, stagePercent: 0 };
-
-    try {
-      // Dual-role characters solve both builds (they share one gem pool, so triage/cutplan can see
-      // what each build leverages); single-role solves the active build only.
-      const roles: BuildRole[] = profile.dualRole ? ['dps', 'support'] : [profile.activeBuild];
-      for (const role of roles) {
-        solvingRole = role;
-        await solveOne(role);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      isSolving = false;
-      solvingRole = null;
-      if (solveProgress) {
-        solverController.onProgress?.({
-          ...solveProgress,
-          stage: 'finalizing',
-          totalPercent: 100,
-          stagePercent: 100,
-        });
-      }
-    }
-  }
 </script>
 
 <div class="panel" class:collapsed={!sectionUI.showOptimization}>
@@ -375,10 +174,14 @@
           <div class="small">{LFailed}</div>
         </div>
       {/if}
-      <button class="solve-button" onclick={runSolve} disabled={isSolving}>
+      <button
+        class="solve-button"
+        onclick={() => runSolve(profile)}
+        disabled={solveState.isSolving}
+      >
         {solveLabel}
       </button>
-      {#if solveStale && !isSolving}
+      {#if solveStale && !solveState.isSolving}
         <div class="stale-badge">
           ⟳ Inputs changed since the last optimization. Re-run to refresh the results.
         </div>
@@ -392,26 +195,26 @@
         </span>
       </div>
 
-      {#if solveProgress || progressLog.length > 0}
+      {#if solveState.progress || solveState.progressLog.length > 0}
         <div class="solve-progress">
           <div class="title">{LProgressTitle}</div>
-          {#if solveProgress}
+          {#if solveState.progress}
             <div class="progress-label">
-              <span>{getProgressLabel(solveProgress)}</span>
-              <span>{solveProgress.stagePercent}%</span>
+              <span>{getProgressLabel(solveState.progress)}</span>
+              <span>{solveState.progress.stagePercent}%</span>
             </div>
             <div
               class="progress-bar"
               role="progressbar"
               aria-valuemin="0"
               aria-valuemax="100"
-              aria-valuenow={solveProgress.totalPercent}
+              aria-valuenow={solveState.progress.totalPercent}
             >
-              <div class="fill" style={`width: ${solveProgress.totalPercent}%`}></div>
+              <div class="fill" style={`width: ${solveState.progress.totalPercent}%`}></div>
             </div>
           {/if}
           <div class="progress-log">
-            {#each progressLog as entry}
+            {#each solveState.progressLog as entry}
               <div class="progress-log-entry">{entry.text}</div>
             {/each}
           </div>

@@ -1,18 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import type { LostArkGrade } from '../constants/enums';
-import type { ArkGridCore, ArkGridCoreType } from '../models/arkGridCores';
 import type { ArkGridGem } from '../models/arkGridGems';
 import { GRADE_ROWS, bumpedBaselineGrade, computeGemScore } from './gemScore';
 import {
-  type TriageAction,
-  type TriageResult,
-  attrHasUpgradeHeadroom,
+  type OwnedTriageInput,
   autoBaselineFromLoadout,
   effectiveBaseline,
-  equippedFlags,
-  reconcileDualBuild,
-  triageGem,
+  retainedCounts,
+  solveKeyCounts,
+  triageOwnedGems,
 } from './triage';
 
 // Minimal gem builder — only the fields the scorer reads (gemAttr is not used by scoring).
@@ -108,94 +104,98 @@ describe('effectiveBaseline', () => {
   });
 });
 
-describe('triageGem', () => {
-  const spare = { isEquipped: false, hasHeadroom: false };
-  it('marks an equipped gem as equipped regardless of grade or headroom', () => {
-    expect(triageGem({ grade: 20, baseline: 70, isEquipped: true, hasHeadroom: true }).action).toBe(
-      'equipped'
-    );
-    // Manual baseline pushed above an equipped gem's tier: still equipped, never remove.
-    expect(triageGem({ grade: 20, baseline: 70, isEquipped: true, hasHeadroom: false }).action).toBe(
-      'equipped'
-    );
+describe('solveKeyCounts', () => {
+  it('counts gem copies per attribute+fingerprint across all cores', () => {
+    const assignment = [[gemA], [gemA, gemC], [], [], [], []]; // gemA twice, gemC once (all Chaos)
+    const counts = solveKeyCounts(assignment);
+    expect(counts.size).toBe(2); // two distinct gems: gemA and gemC
+    expect([...counts.values()].sort((a, b) => a - b)).toEqual([1, 2]); // gemC once, gemA twice
   });
-  it('marks at-or-above-baseline-tier spares as upgrades', () => {
-    const r = triageGem({ grade: 88, baseline: 70, ...spare });
-    expect(r.action).toBe('upgrade');
-    expect(triageGem({ grade: 70, baseline: 70, ...spare }).action).toBe('upgrade'); // equal counts
-    expect(r.rationale.toLowerCase()).toContain('upgrade');
-  });
-  it('keeps a below-baseline spare while its cores still have headroom', () => {
-    const r = triageGem({ grade: 50, baseline: 70, isEquipped: false, hasHeadroom: true });
-    expect(r.action).toBe('keep');
-    expect(r.rationale.toLowerCase()).toContain('core upgrade');
-  });
-  it('removes a below-baseline spare only when cores are maxed (no headroom)', () => {
-    const r = triageGem({ grade: 55, baseline: 70, isEquipped: false, hasHeadroom: false });
-    expect(r.action).toBe('remove');
-    expect(r.rationale.toLowerCase()).toContain('maxed');
+  it('returns an empty map for an undefined assignment', () => {
+    expect(solveKeyCounts(undefined).size).toBe(0);
   });
 });
 
-describe('equippedFlags', () => {
-  it('flags owned gems present in the loadout, matched by value', () => {
-    const owned = [gemA, gemB, gemC];
-    const equipped = [{ ...gemA }, { ...gemC }]; // value-equal copies, as the solver stores them
-    expect(equippedFlags(owned, equipped)).toEqual([true, false, true]);
+describe('retainedCounts', () => {
+  it('takes the MAX count per key across solves, not the sum', () => {
+    const current = [[gemA], [], [], [], [], []]; // 1 copy of gemA
+    const endgame = [[gemA], [gemA], [], [], [], []]; // 2 copies of gemA
+    const counts = retainedCounts([current, endgame]);
+    expect([...counts.values()]).toEqual([2]); // max(1, 2) = 2, not 3
   });
-  it('consumes duplicates by count — only as many flagged as are equipped', () => {
-    const owned = [gemA, gemA, gemA];
-    const equipped = [{ ...gemA }, { ...gemA }]; // 2 of the 3 identical gems are slotted
-    expect(equippedFlags(owned, equipped)).toEqual([true, true, false]);
-  });
-  it('distinguishes by attribute even with identical stats', () => {
-    const orderTwin = { ...gemA, gemAttr: 'Order' as const };
-    const chaosTwin = { ...gemA, gemAttr: 'Chaos' as const };
-    expect(equippedFlags([orderTwin, chaosTwin], [{ ...chaosTwin }])).toEqual([false, true]);
+  it('ignores undefined solves', () => {
+    const current = [[gemC], [], [], [], [], []];
+    expect([...retainedCounts([current, undefined]).values()]).toEqual([1]);
   });
 });
 
-describe('attrHasUpgradeHeadroom', () => {
-  const mk = (
-    ...grades: Array<LostArkGrade | null>
-  ): Record<ArkGridCoreType, ArkGridCore | null> => {
-    const [sun, moon, star] = grades;
-    const core = (g: LostArkGrade | null) => (g ? ({ grade: g } as unknown as ArkGridCore) : null);
-    return { Sun: core(sun), Moon: core(moon), Star: core(star) };
-  };
-  it('has headroom when any core is below Ancient', () => {
-    expect(attrHasUpgradeHeadroom(mk('Ancient', 'Ancient', 'Relic'))).toBe(true);
-  });
-  it('has headroom when a core is missing', () => {
-    expect(attrHasUpgradeHeadroom(mk('Ancient', 'Ancient', null))).toBe(true);
-  });
-  it('has no headroom only when every core is Ancient', () => {
-    expect(attrHasUpgradeHeadroom(mk('Ancient', 'Ancient', 'Ancient'))).toBe(false);
-  });
-});
+describe('triageOwnedGems', () => {
+  const dpsGrade = (g: ArkGridGem) => computeGemScore(g, 'dps').grade;
+  const owned = (gems: ArkGridGem[]): OwnedTriageInput[] =>
+    gems.map((gem) => ({ gem, grade: dpsGrade(gem) }));
 
-describe('reconcileDualBuild', () => {
-  const r = (action: TriageAction): TriageResult => ({ action, rationale: 'x' });
-
-  it('leaves a non-remove active verdict untouched (the active build drives display)', () => {
-    expect(reconcileDualBuild(r('upgrade'), r('remove'), 'support').action).toBe('upgrade');
-    expect(reconcileDualBuild(r('keep'), r('remove'), 'support').action).toBe('keep');
-    expect(reconcileDualBuild(r('equipped'), r('remove'), 'support').action).toBe('equipped');
+  it('marks a gem in the current solve as equipped', () => {
+    const res = triageOwnedGems(owned([gemA]), {
+      activeCurrent: [[gemA], [], [], [], [], []],
+      retainAssignments: [],
+      baseline: 70,
+      hasEndgameEvidence: true,
+    });
+    expect(res[0].action).toBe('equipped');
   });
 
-  it('keeps remove only when the other build also removes', () => {
-    expect(reconcileDualBuild(r('remove'), r('remove'), 'support').action).toBe('remove');
+  it('keeps a below-baseline spare that the endgame solve slots', () => {
+    // gemB is a weak (below-baseline) Chaos gem; endgame uses it, current does not.
+    const res = triageOwnedGems(owned([gemB]), {
+      activeCurrent: [[], [], [], [], [], []],
+      retainAssignments: [[[gemB], [], [], [], [], []]],
+      baseline: 90,
+      hasEndgameEvidence: true,
+    });
+    expect(res[0].action).toBe('keep');
   });
 
-  it('downgrades remove to keep when the other build still uses the gem', () => {
-    for (const otherAction of ['equipped', 'upgrade', 'keep'] as TriageAction[]) {
-      const out = reconcileDualBuild(r('remove'), r(otherAction), 'support');
-      expect(out.action).toBe('keep');
-      expect(out.rationale).toContain('Support');
-    }
+  it('removes a spare used by no solve, regardless of tier (pure union)', () => {
+    // gemA is high-tier but appears in no solve -> Remove, because a maxed grid still would not slot it.
+    const res = triageOwnedGems(owned([gemA]), {
+      activeCurrent: [[], [], [], [], [], []],
+      retainAssignments: [[[], [], [], [], [], []]],
+      baseline: 20,
+      hasEndgameEvidence: true,
+    });
+    expect(res[0].action).toBe('remove');
   });
 
-  it('leaves the active remove verdict for single-role (other is null)', () => {
-    expect(reconcileDualBuild(r('remove'), null, 'dps').action).toBe('remove');
+  it('marks a retained, non-equipped, at/above-baseline spare as an upgrade', () => {
+    // gemC is a strong Chaos gem (high grade). It isn't in the current solve, but the endgame solve
+    // slots it, and its grade is above the low baseline -> upgrade (a maxed grid gem to grow into).
+    const res = triageOwnedGems(owned([gemC]), {
+      activeCurrent: [[], [], [], [], [], []],
+      retainAssignments: [[[gemC], [], [], [], [], []]],
+      baseline: 20,
+      hasEndgameEvidence: true,
+    });
+    expect(res[0].action).toBe('upgrade');
+  });
+
+  it('never removes when endgame evidence is missing (safe fallback = keep)', () => {
+    const res = triageOwnedGems(owned([gemB]), {
+      activeCurrent: [[], [], [], [], [], []],
+      retainAssignments: [],
+      baseline: 90,
+      hasEndgameEvidence: false,
+    });
+    expect(res[0].action).toBe('keep');
+  });
+
+  it('retains only as many duplicates as the busiest solve uses', () => {
+    const three = owned([gemB, gemB, gemB]);
+    const res = triageOwnedGems(three, {
+      activeCurrent: [[], [], [], [], [], []],
+      retainAssignments: [[[gemB], [gemB], [], [], [], []]], // endgame uses 2 copies
+      baseline: 90,
+      hasEndgameEvidence: true,
+    });
+    expect(res.map((r) => r.action)).toEqual(['keep', 'keep', 'remove']);
   });
 });

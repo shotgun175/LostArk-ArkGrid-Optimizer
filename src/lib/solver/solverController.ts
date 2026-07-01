@@ -2,6 +2,7 @@ import { ArkGridAttrs } from '../constants/enums';
 import {
   type ArkGridCoreCoeffs,
   ArkGridCoreTypes,
+  createCore,
   getDefaultCoreEnergy,
 } from '../models/arkGridCores';
 import { type ArkGridGem, gemFingerprint } from '../models/arkGridGems';
@@ -52,6 +53,45 @@ function buildSolverCores(
         energy: getDefaultCoreEnergy(core),
         point: core.goalPoint,
         coeff: buildCoreArray(core.coeffs),
+      });
+    }
+  }
+
+  return { orderCores, chaosCores };
+}
+
+/**
+ * Cores for the "endgame" solve: the build's current layout with every core forced to Ancient
+ * (energy 17, real Ancient coefficients) and a permissive `point = 0` so the solver maximizes
+ * combat power without a forced point threshold. Empty slots are filled with an Ancient core
+ * (tier 0) so a not-yet-built slot still contributes capacity — otherwise gems that a future
+ * Ancient core would slot get wrongly flagged for deletion.
+ */
+export function buildEndgameSolverCores(
+  profile: CharacterProfile,
+  role: BuildRole
+): Pick<SolverRunPayload, 'orderCores' | 'chaosCores'> {
+  const orderCores: WorkerCore[] = [];
+  const chaosCores: WorkerCore[] = [];
+  const build = buildState(role, profile);
+  const isSupporter = role === 'support';
+
+  for (const attr of Object.values(ArkGridAttrs)) {
+    for (const ctype of Object.values(ArkGridCoreTypes)) {
+      const existing = build.cores[attr][ctype];
+      const ancient = createCore(
+        attr,
+        ctype,
+        'Ancient',
+        isSupporter,
+        profile.weapon,
+        existing?.tier ?? 0
+      );
+      const targetCores = attr === 'Order' ? orderCores : chaosCores;
+      targetCores.push({
+        energy: getDefaultCoreEnergy(ancient),
+        point: 0,
+        coeff: buildCoreArray(ancient.coeffs),
       });
     }
   }
@@ -154,18 +194,26 @@ export class SolverController {
     });
   }
 
-  runSolve(profile: CharacterProfile, role: BuildRole = profile.activeBuild) {
+  runSolve(
+    profile: CharacterProfile,
+    role: BuildRole = profile.activeBuild,
+    opts: { endgame?: boolean } = {}
+  ) {
     if (this.state === 'running') {
       throw new Error('busy');
     }
 
-    const { orderCores, chaosCores } = buildSolverCores(profile, role);
+    const { orderCores, chaosCores } = opts.endgame
+      ? buildEndgameSolverCores(profile, role)
+      : buildSolverCores(profile, role);
     const orderGems = toPlain(profile.gems.orderGems);
     const chaosGems = toPlain(profile.gems.chaosGems);
 
-    // Derive stability tiebreaker bitmasks from this build's previous combined result.
-    // Order cores are at offset 0, chaos cores at offset 3 in assignedGems.
-    const prevAssigned = buildState(role, profile).solveInfo.after?.solveAnswer?.assignedGems;
+    // Stability tiebreak only for the live (current) solve; the endgame solve has no persisted
+    // prior assignment to bias toward, so leave its bitmasks undefined.
+    const prevAssigned = opts.endgame
+      ? undefined
+      : buildState(role, profile).solveInfo.after?.solveAnswer?.assignedGems;
     const orderCurrentBitmasks = prevAssigned
       ? buildCurrentBitmasks(prevAssigned, orderGems, 0)
       : undefined;

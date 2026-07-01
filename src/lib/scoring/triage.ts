@@ -1,5 +1,4 @@
 import type { ArkGridAttr } from '../constants/enums';
-import type { ArkGridCore, ArkGridCoreType } from '../models/arkGridCores';
 import { type ArkGridGem, gemFingerprint } from '../models/arkGridGems';
 import {
   BASELINE_MAX_GRADE,
@@ -57,110 +56,108 @@ export function effectiveBaseline(auto: number | null, override: number | undefi
   return auto ?? BASELINE_MIN_GRADE;
 }
 
-/**
- * Per-owned-gem "is this gem currently slotted?" flags, matched against the solved loadout
- * by value (attribute + stat fingerprint) with a consumable count — so if you own duplicates
- * and only some are equipped, exactly that many are flagged. Mirrors the dup-handling in
- * SolvePanel's buildAssignedGems. The flag order matches `owned`.
- */
-export function equippedFlags(owned: ArkGridGem[], equipped: ArkGridGem[]): boolean[] {
-  const counts = new Map<string, number>();
-  for (const gem of equipped) {
-    const key = equippedKey(gem);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return owned.map((gem) => {
-    const key = equippedKey(gem);
-    const remaining = counts.get(key) ?? 0;
-    if (remaining > 0) {
-      counts.set(key, remaining - 1);
-      return true;
-    }
-    return false;
-  });
-}
-
-// Attribute matters: an Order and a Chaos gem can share stats but are not interchangeable.
-function equippedKey(gem: ArkGridGem): string {
+/** A key that distinguishes gems by attribute AND stats (Order vs Chaos are not interchangeable). */
+function gemKey(gem: ArkGridGem): string {
   return `${gem.gemAttr}|${gemFingerprint(gem)}`;
 }
 
-/**
- * Does this attribute's grid still have capacity headroom? True when any of its cores is
- * below Ancient (or missing) — a core grade upgrade adds energy that can slot an otherwise
- * unused gem, so a below-baseline spare is not safe to remove yet. Only when every core is
- * maxed (Ancient) is there no future arrangement that could rescue it.
- */
-export function attrHasUpgradeHeadroom(
-  coresForAttr: Record<ArkGridCoreType, ArkGridCore | null>
-): boolean {
-  return Object.values(coresForAttr).some((core) => !core || core.grade !== 'Ancient');
+/** Count gem copies per key across all six cores of one solve assignment. */
+export function solveKeyCounts(assignment: ArkGridGem[][] | undefined): Map<string, number> {
+  const counts = new Map<string, number>();
+  if (!assignment) return counts;
+  for (const slot of assignment) {
+    for (const gem of slot) {
+      const key = gemKey(gem);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return counts;
 }
 
 /**
- * Triage a gem by comparing its GRADE (letter tier) against the baseline tier:
- *  - equipped → 'equipped' (currently slotted; not an upgrade or removal target)
- *  - spare, at/above the baseline tier → 'upgrade' (reaches your target tier; slot-able)
- *  - spare, below baseline, attribute still has core headroom → 'keep' (a core upgrade could
- *    still slot it — hold for now)
- *  - spare, below baseline, cores maxed (no headroom) → 'remove' (it will never be slotted)
+ * Per-key retained count = the MAX copies used in any single solve (see the plan's "retained count"
+ * rule). Max, not sum: a build reuses the same physical gems from current→endgame, and a hybrid keeps
+ * enough for whichever single loadout (DPS or Support) demands the most of that fingerprint.
  */
-export function triageGem({
-  grade,
-  baseline,
-  isEquipped,
-  hasHeadroom,
-}: {
+export function retainedCounts(assignments: (ArkGridGem[][] | undefined)[]): Map<string, number> {
+  const max = new Map<string, number>();
+  for (const assignment of assignments) {
+    for (const [key, n] of solveKeyCounts(assignment)) {
+      if ((max.get(key) ?? 0) < n) max.set(key, n);
+    }
+  }
+  return max;
+}
+
+export interface OwnedTriageInput {
+  gem: ArkGridGem;
+  /** The gem's 0-100 grade under the active role (from computeGemScore). */
   grade: number;
-  baseline: number;
-  isEquipped: boolean;
-  hasHeadroom: boolean;
-}): TriageResult {
-  if (isEquipped) {
-    return {
-      action: 'equipped',
-      rationale: 'Currently equipped, part of your solved loadout.',
-    };
-  }
-  const gemTier = rankFromGrade(grade);
-  const baseTier = rankFromGrade(baseline);
-  if (grade >= baseline) {
-    return {
-      action: 'upgrade',
-      rationale: `Tier ${gemTier} reaches your baseline ${baseTier} — a slot-able upgrade.`,
-    };
-  }
-  if (hasHeadroom) {
-    return {
-      action: 'keep',
-      rationale: `Tier ${gemTier} is below your baseline ${baseTier}, but a core upgrade could still slot it, so hold for now.`,
-    };
-  }
-  return {
-    action: 'remove',
-    rationale: `Tier ${gemTier} is below your baseline ${baseTier} and your cores are maxed, so it will never be slotted.`,
-  };
 }
 
-const ROLE_LABEL: Record<GemRole, string> = { dps: 'DPS', support: 'Support' };
-
 /**
- * Reconcile a gem's active-build verdict against its other build (dual-role characters only).
- * A gem is only ever 'remove' if BOTH builds would remove it: when the active build says remove
- * but the other build still uses it (equipped/upgrade/keep), downgrade to 'keep'. `other` is null
- * for single-role characters, leaving the active verdict untouched. Only the action is reconciled —
- * the displayed score/tier stay the active build's.
+ * Triage every owned gem against the current and endgame solves.
+ *  - used by the active current solve      -> 'equipped'
+ *  - retained by some solve, at/above base -> 'upgrade' (a maxed grid slots it; you'll grow into it)
+ *  - retained by some solve, below base    -> 'keep'    (a maxed grid still uses it as filler)
+ *  - used by no solve                      -> 'remove'  (surplus; pure union, tier-independent)
+ * When `hasEndgameEvidence` is false we lack the perfect-state data, so nothing is removed — an
+ * un-retained spare falls back to 'keep' until the user runs the optimizer.
+ *
+ * `retainAssignments` is every solve whose usage should KEEP a gem: the active endgame solve, plus
+ * (for hybrids) the other build's current and endgame solves. `activeCurrent` is passed separately
+ * because it also drives the 'equipped' label; it is folded into the retained set internally.
  */
-export function reconcileDualBuild(
-  active: TriageResult,
-  other: TriageResult | null,
-  otherRoleName: GemRole
-): TriageResult {
-  if (active.action !== 'remove' || !other || other.action === 'remove') {
-    return active;
+export function triageOwnedGems(
+  owned: OwnedTriageInput[],
+  opts: {
+    activeCurrent: ArkGridGem[][] | undefined;
+    retainAssignments: (ArkGridGem[][] | undefined)[];
+    baseline: number;
+    hasEndgameEvidence: boolean;
   }
-  return {
-    action: 'keep',
-    rationale: `Below baseline for your active build, but your ${ROLE_LABEL[otherRoleName]} build still uses it, so keep.`,
-  };
+): TriageResult[] {
+  const equippedRemaining = solveKeyCounts(opts.activeCurrent);
+  const retainedRemaining = retainedCounts([opts.activeCurrent, ...opts.retainAssignments]);
+  const baseTier = rankFromGrade(opts.baseline);
+
+  return owned.map(({ gem, grade }) => {
+    const key = gemKey(gem);
+    const gemTier = rankFromGrade(grade);
+    const retained = retainedRemaining.get(key) ?? 0;
+
+    if (retained > 0) {
+      retainedRemaining.set(key, retained - 1);
+      const eq = equippedRemaining.get(key) ?? 0;
+      if (eq > 0) {
+        equippedRemaining.set(key, eq - 1);
+        return {
+          action: 'equipped',
+          rationale: 'Currently equipped, part of your solved loadout.',
+        };
+      }
+      if (grade >= opts.baseline) {
+        return {
+          action: 'upgrade',
+          rationale: `Tier ${gemTier} reaches your baseline ${baseTier} and a maxed grid slots it — a slot-able upgrade.`,
+        };
+      }
+      return {
+        action: 'keep',
+        rationale: `Tier ${gemTier} is below your baseline ${baseTier}, but a fully-maxed (Ancient) grid still uses it, so keep.`,
+      };
+    }
+
+    if (!opts.hasEndgameEvidence) {
+      return {
+        action: 'keep',
+        rationale:
+          'Run the optimizer to check whether a maxed grid would use this gem before removing it.',
+      };
+    }
+    return {
+      action: 'remove',
+      rationale: `Tier ${gemTier} isn't used by your current grid or a fully-maxed (Ancient) grid — surplus, safe to drop.`,
+    };
+  });
 }

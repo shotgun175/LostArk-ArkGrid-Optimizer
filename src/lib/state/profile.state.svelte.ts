@@ -91,8 +91,17 @@ export type SolveAfter = {
   /** Signature of the solve inputs (this build's cores + shared gems); see solveInputSignature. */
   inputSig?: string;
 };
+/** The endgame ("all-Ancient cores") solve of the user's real gems: which gems a fully-maxed grid slots. */
+export type EndgameSolve = {
+  /** Per-core gem assignment (6 slots: Order Sun/Moon/Star, Chaos Sun/Moon/Star), gem copies. */
+  assignedGems: ArkGridGem[][];
+  /** Signature of the inputs this endgame solve was computed from (this build's cores + shared gems). */
+  inputSig: string;
+};
 export type SolveInfo = {
   after?: SolveAfter;
+  /** Endgame (all-Ancient) solve, computed alongside `after` or via the standalone refresh button. */
+  endgame?: EndgameSolve;
 };
 
 // --- Active-build accessors --------------------------------------------------
@@ -123,6 +132,11 @@ export function setDualRole(v: boolean) {
 /** Write a solve result into a specific build (used by solve-both for dual-role characters). */
 export function setBuildSolveAfter(role: BuildRole, data: SolveAfter) {
   buildState(role).solveInfo.after = data;
+}
+
+/** Write the endgame (all-Ancient) solve result into a specific build. */
+export function setBuildEndgame(role: BuildRole, data: EndgameSolve) {
+  buildState(role).solveInfo.endgame = data;
 }
 
 export function initNewProfile(name: string): CharacterProfile {

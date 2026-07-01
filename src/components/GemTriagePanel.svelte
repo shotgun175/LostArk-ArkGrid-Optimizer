@@ -5,9 +5,9 @@
     ArkGridGemOptionTypes,
   } from '../lib/models/arkGridGems';
   import {
+    DPS_EFFECT_D,
     D_ORDER,
     D_WILLPOWER,
-    DPS_EFFECT_D,
     type GemRank,
     type GemRole,
     SUPPORT_EFFECT_D,
@@ -16,14 +16,13 @@
     explainGemScore,
   } from '../lib/scoring/gemScore';
   import {
+    type OwnedTriageInput,
     type TriageAction,
-    attrHasUpgradeHeadroom,
     autoBaselineFromLoadout,
     effectiveBaseline,
-    equippedFlags,
-    reconcileDualBuild,
-    triageGem,
+    triageOwnedGems,
   } from '../lib/scoring/triage';
+  import { solveInputSignature } from '../lib/solver/solveSignature';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
     type CharacterProfile,
@@ -31,6 +30,7 @@
     buildState,
     otherRole,
   } from '../lib/state/profile.state.svelte';
+  import { getProgressLabel, runSolve, solveState } from '../lib/state/solve.state.svelte';
   import ArkGridGemDetail from './ArkGridGemDetail.svelte';
   import BaselineControl from './BaselineControl.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
@@ -63,38 +63,42 @@
 
   let rows: Row[] = $derived.by(() => {
     const owned = [...profile.gems.orderGems, ...profile.gems.chaosGems];
-    const flags = equippedFlags(owned, equipped);
-    const orderHeadroom = attrHasUpgradeHeadroom(build.cores.Order);
-    const chaosHeadroom = attrHasUpgradeHeadroom(build.cores.Chaos);
 
-    // Cross-build context (dual-role only): the OTHER build's role, baseline, headroom, and
-    // equipped flags. A 'remove' in the active build is downgraded to 'keep' if that build uses it.
+    const activeBuild = buildState(profile.activeBuild, profile);
+    const activeCurrent = activeBuild.solveInfo.after?.solveAnswer?.assignedGems;
+    const activeEndgame = activeBuild.solveInfo.endgame;
+
     const dual = profile.dualRole;
     const oRole = otherRole(profile.activeBuild);
     const oBuild = buildState(oRole, profile);
-    const oEquipped = dual ? (oBuild.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat() : [];
-    const oFlags = dual ? equippedFlags(owned, oEquipped) : [];
-    const oBaseline = dual
-      ? effectiveBaseline(autoBaselineFromLoadout(oEquipped, oRole), oBuild.baselineOverride)
-      : 0;
-    const oOrderHeadroom = dual ? attrHasUpgradeHeadroom(oBuild.cores.Order) : false;
-    const oChaosHeadroom = dual ? attrHasUpgradeHeadroom(oBuild.cores.Chaos) : false;
+    const oCurrent = dual ? oBuild.solveInfo.after?.solveAnswer?.assignedGems : undefined;
+    const oEndgame = dual ? oBuild.solveInfo.endgame : undefined;
+
+    // Endgame evidence is trustworthy only when its signature still matches the live cores + gems.
+    // For hybrids we need BOTH builds fresh before we allow any removals.
+    const sig = solveInputSignature(activeBuild.cores, profile.gems);
+    const oSig = dual ? solveInputSignature(oBuild.cores, profile.gems) : '';
+    const activeFresh = !!activeEndgame && activeEndgame.inputSig === sig;
+    const otherFresh = !dual || (!!oEndgame && oEndgame.inputSig === oSig);
+    const hasEndgameEvidence = activeFresh && otherFresh;
+
+    // Solves whose usage should KEEP a gem: active endgame + (hybrid) the other build's current & endgame.
+    const retainAssignments = [activeEndgame?.assignedGems, oCurrent, oEndgame?.assignedGems];
+
+    const inputs: OwnedTriageInput[] = owned.map((gem) => ({
+      gem,
+      grade: computeGemScore(gem, role).grade,
+    }));
+    const results = triageOwnedGems(inputs, {
+      activeCurrent,
+      retainAssignments,
+      baseline,
+      hasEndgameEvidence,
+    });
 
     const scored = owned.map((gem, i) => {
       const { score, grade, rank } = computeGemScore(gem, role);
-      const hasHeadroom = gem.gemAttr === 'Order' ? orderHeadroom : chaosHeadroom;
-      let result = triageGem({ grade, baseline, isEquipped: flags[i], hasHeadroom });
-      if (dual) {
-        const oHeadroom = gem.gemAttr === 'Order' ? oOrderHeadroom : oChaosHeadroom;
-        const oResult = triageGem({
-          grade: computeGemScore(gem, oRole).grade,
-          baseline: oBaseline,
-          isEquipped: oFlags[i],
-          hasHeadroom: oHeadroom,
-        });
-        result = reconcileDualBuild(result, oResult, oRole);
-      }
-      return { gem, score, grade, rank, action: result.action };
+      return { gem, score, grade, rank, action: results[i].action };
     });
     scored.sort((a, b) => (worstFirst ? a.score - b.score : b.score - a.score));
     return scored;
@@ -148,7 +152,9 @@
     {#if showHelp}
       <div class="score-help">
         <div class="sh-title">How the score is calculated</div>
-        <p class="sh-eq">Score (% damage) = Willpower + Order&nbsp;Points + Option&nbsp;1 + Option&nbsp;2</p>
+        <p class="sh-eq">
+          Score (% damage) = Willpower + Order&nbsp;Points + Option&nbsp;1 + Option&nbsp;2
+        </p>
         <ul class="sh-list">
           <li>
             Each line is real <strong>% damage</strong> (D = 100·ln of its multiplier), so they add up
@@ -162,7 +168,8 @@
             <strong>Order Points</strong> = level × {f4(D_ORDER)} - flat per point.
           </li>
           <li>
-            <strong>Each option</strong> = its level × the per-level % damage below (depends on your role).
+            <strong>Each option</strong> = its level × the per-level % damage below (depends on your
+            role).
           </li>
         </ul>
         <table class="sh-coeff">
@@ -191,9 +198,9 @@
         <p class="sh-eq">Grade &amp; rank</p>
         <ul class="sh-list">
           <li>
-            Each gem also gets a <strong>0-100 grade</strong> (0 = worst possible, 100 = a perfect gem)
-            and a letter <strong>rank</strong>. Cutoffs: S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40, D ≥ 20, F ≥ 0 -
-            each split into +/·/- thirds (S+, S, S-, A+ …).
+            Each gem also gets a <strong>0-100 grade</strong> (0 = worst possible, 100 = a perfect
+            gem) and a letter <strong>rank</strong>. Cutoffs: S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40, D ≥
+            20, F ≥ 0 - each split into +/·/- thirds (S+, S, S-, A+ …).
           </li>
         </ul>
         <div class="sh-ranks">
@@ -211,6 +218,35 @@
       <div class="baseline-slot">
         <BaselineControl {profile} />
       </div>
+    </div>
+
+    <div class="refresh-slot">
+      <button
+        class="refresh-button"
+        onclick={() => runSolve(profile)}
+        disabled={solveState.isSolving}
+      >
+        Refresh removal candidates
+      </button>
+      {#if solveState.isSolving}
+        <div class="compact-progress">
+          <div class="compact-progress-label">
+            {solveState.progress?.totalPercent ?? 0}% · {getProgressLabel(solveState.progress)}
+          </div>
+          <div
+            class="compact-progress-bar"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={solveState.progress?.totalPercent ?? 0}
+          >
+            <div
+              class="compact-fill"
+              style={`width: ${solveState.progress?.totalPercent ?? 0}%`}
+            ></div>
+          </div>
+        </div>
+      {/if}
     </div>
 
     <div class="summary-row">
@@ -238,15 +274,15 @@
         </span>
         {#if keepCount > 0}
           <span class="note">
-            Gems below your baseline tier are kept, not flagged for removal, while their cores
-            aren't maxed - a core upgrade could still slot them. Removal only appears once that
-            attribute's cores are all Ancient.
+            Gems below your baseline tier are kept, not flagged for removal, as long as your current
+            grid or a fully-maxed (all-Ancient) grid would still slot them. Removal only appears for
+            gems no grid — current or maxed — would use.
           </span>
         {/if}
         {#if profile.dualRole}
           <span class="note">
-            Dual-role: a gem your {role === 'support' ? 'DPS' : 'Support'} build still uses is never
-            flagged Remove (run the optimizer on both builds first).
+            Dual-role: a gem either build still uses (now or at a maxed grid) is never flagged
+            Remove. Run the optimizer on both builds first.
           </span>
         {/if}
       </div>
@@ -287,7 +323,9 @@
                   </span>
                 </span>
               </span>
-              <span class="rank" data-rank={row.rank} title="Grade {row.grade} / 100">{row.rank}</span>
+              <span class="rank" data-rank={row.rank} title="Grade {row.grade} / 100"
+                >{row.rank}</span
+              >
               <span class="action" data-action={row.action}>{ACTION_LABEL[row.action]}</span>
             </div>
           </div>
@@ -451,6 +489,60 @@
   .baseline-slot {
     flex: 1 1 22rem;
     min-width: 18rem;
+  }
+  .refresh-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .refresh-button {
+    width: auto;
+    min-width: 0;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
+  }
+  .refresh-button:hover:not(:disabled) {
+    background: rgba(184, 134, 11, 0.18);
+  }
+  .refresh-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  :global(.dark-mode) .refresh-button {
+    color: #f0c040;
+    border-color: rgba(240, 192, 64, 0.55);
+    background: rgba(240, 192, 64, 0.12);
+  }
+  :global(.dark-mode) .refresh-button:hover:not(:disabled) {
+    background: rgba(240, 192, 64, 0.2);
+  }
+  .compact-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-top: 0.15rem;
+    width: min(24rem, 100%);
+  }
+  .compact-progress-label {
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.9;
+  }
+  .compact-progress-bar {
+    width: 100%;
+    height: 0.25rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border) 70%, white);
+    overflow: hidden;
+  }
+  .compact-progress-bar > .compact-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #b8860b 0%, #f0c040 100%);
+    transition: width 160ms ease-out;
   }
   .sort-toggle {
     width: auto;
