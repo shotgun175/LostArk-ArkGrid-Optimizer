@@ -48,7 +48,9 @@
     action: TriageAction;
   };
 
-  let worstFirst = $state(true);
+  // 'default' keeps the Astrogems inventory order; 'high'/'low' sort by score.
+  type SortMode = 'default' | 'high' | 'low';
+  let sortMode = $state<SortMode>('default');
   let showHelp = $state(false);
 
   let build = $derived(activeBuildState(profile));
@@ -100,7 +102,9 @@
       const { score, grade, rank } = computeGemScore(gem, role);
       return { gem, score, grade, rank, action: results[i].action };
     });
-    scored.sort((a, b) => (worstFirst ? a.score - b.score : b.score - a.score));
+    // 'default' leaves the Astrogems inventory order (orderGems then chaosGems) untouched.
+    if (sortMode === 'high') scored.sort((a, b) => b.score - a.score);
+    else if (sortMode === 'low') scored.sort((a, b) => a.score - b.score);
     return scored;
   });
 
@@ -231,7 +235,7 @@
       {#if solveState.isSolving}
         <div class="compact-progress">
           <div class="compact-progress-label">
-            {solveState.progress?.totalPercent ?? 0}% · {getProgressLabel(solveState.progress)}
+            {Math.round(solveState.progress?.totalPercent ?? 0)}% · {getProgressLabel(solveState.progress)}
           </div>
           <div
             class="compact-progress-bar"
@@ -287,9 +291,37 @@
         {/if}
       </div>
       {#if rows.length > 0}
-        <button class="sort-toggle" onclick={() => (worstFirst = !worstFirst)}>
-          Sort: {worstFirst ? 'worst first' : 'best first'}
-        </button>
+        <div class="sort-group" role="group" aria-label="Sort order">
+          <button
+            class="sort-seg"
+            class:active={sortMode === 'default'}
+            aria-pressed={sortMode === 'default'}
+            title="Astrogems inventory order"
+            onclick={() => (sortMode = 'default')}
+          >
+            Default
+          </button>
+          <button
+            class="sort-seg arrow"
+            class:active={sortMode === 'high'}
+            aria-pressed={sortMode === 'high'}
+            aria-label="Highest score first"
+            title="Highest score first"
+            onclick={() => (sortMode = 'high')}
+          >
+            ↑
+          </button>
+          <button
+            class="sort-seg arrow"
+            class:active={sortMode === 'low'}
+            aria-pressed={sortMode === 'low'}
+            aria-label="Lowest score first"
+            title="Lowest score first"
+            onclick={() => (sortMode = 'low')}
+          >
+            ↓
+          </button>
+        </div>
       {/if}
     </div>
 
@@ -544,27 +576,54 @@
     background: linear-gradient(90deg, #b8860b 0%, #f0c040 100%);
     transition: width 160ms ease-out;
   }
-  .sort-toggle {
-    width: auto;
-    min-width: 9rem;
-    font-weight: 700;
-    font-size: 0.95rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: #b8860b;
+  /* Compact three-way sort: Default (inventory order) + up/down arrows for high/low. */
+  .sort-group {
+    display: inline-flex;
+    align-self: flex-start;
     border: 1px solid rgba(184, 134, 11, 0.55);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .sort-seg {
+    width: auto;
+    min-width: 0;
+    border: none;
+    border-radius: 0;
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 0.4rem 0.7rem;
+    color: #b8860b;
     background: rgba(184, 134, 11, 0.1);
   }
-  .sort-toggle:hover {
+  .sort-seg.arrow {
+    min-width: 2.2rem;
+    font-size: 1.05rem;
+    line-height: 1;
+  }
+  .sort-seg + .sort-seg {
+    border-left: 1px solid rgba(184, 134, 11, 0.4);
+  }
+  .sort-seg:hover {
     background: rgba(184, 134, 11, 0.18);
   }
-  :global(.dark-mode) .sort-toggle {
-    color: #f0c040;
+  .sort-seg.active {
+    background: rgba(184, 134, 11, 0.32);
+  }
+  :global(.dark-mode) .sort-group {
     border-color: rgba(240, 192, 64, 0.55);
+  }
+  :global(.dark-mode) .sort-seg {
+    color: #f0c040;
     background: rgba(240, 192, 64, 0.12);
   }
-  :global(.dark-mode) .sort-toggle:hover {
+  :global(.dark-mode) .sort-seg + .sort-seg {
+    border-left-color: rgba(240, 192, 64, 0.4);
+  }
+  :global(.dark-mode) .sort-seg:hover {
     background: rgba(240, 192, 64, 0.2);
+  }
+  :global(.dark-mode) .sort-seg.active {
+    background: rgba(240, 192, 64, 0.34);
   }
   .summary-row {
     display: flex;
