@@ -129,6 +129,30 @@
     keep: 'Keep',
     remove: 'Remove',
   };
+
+  // Lock the row list to exactly one gem per mouse-wheel notch. Mandatory scroll-snap alone lands on
+  // the NEAREST snap point, so a notch whose pixel delta exceeds ~1.5 rows skips two gems at once
+  // (Chromium ignores scroll-snap-stop for wheel scrolling), so we drive one row-step per notch here.
+  let rowsEl = $state<HTMLDivElement>();
+  function onRowsWheel(e: WheelEvent) {
+    const el = rowsEl;
+    if (!el || el.scrollHeight <= el.clientHeight) return; // nothing to scroll — let the page take it
+    if (e.deltaMode === 0 && Math.abs(e.deltaY) < 40) return; // leave trackpad pixel-scroll to native
+    const dir = Math.sign(e.deltaY);
+    if (dir === 0) return;
+    // At the list's top/bottom edge, let the notch bubble so the page scrolls normally.
+    const atTop = el.scrollTop <= 0;
+    const atBottom = el.scrollTop >= el.scrollHeight - el.clientHeight - 1;
+    if ((dir < 0 && atTop) || (dir > 0 && atBottom)) return;
+    e.preventDefault();
+    // Snap step = distance between adjacent row tops (row height + gap); measure it live.
+    const rowEls = el.querySelectorAll<HTMLElement>('.triage-row');
+    const step =
+      rowEls.length >= 2
+        ? rowEls[1].getBoundingClientRect().top - rowEls[0].getBoundingClientRect().top
+        : (rowEls[0]?.getBoundingClientRect().height ?? 0);
+    if (step) el.scrollBy({ top: dir * step, behavior: 'smooth' });
+  }
 </script>
 
 <div class="panel triage-panel">
@@ -235,7 +259,9 @@
       {#if solveState.isSolving}
         <div class="compact-progress">
           <div class="compact-progress-label">
-            {Math.round(solveState.progress?.totalPercent ?? 0)}% · {getProgressLabel(solveState.progress)}
+            {Math.round(solveState.progress?.totalPercent ?? 0)}% · {getProgressLabel(
+              solveState.progress
+            )}
           </div>
           <div
             class="compact-progress-bar"
@@ -326,7 +352,7 @@
     </div>
 
     {#if rows.length > 0}
-      <div class="rows">
+      <div class="rows" bind:this={rowsEl} onwheel={onRowsWheel}>
         {#each rows as row (row.gem)}
           {@const factors = explainGemScore(row.gem, role)}
           <div
@@ -374,6 +400,9 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    /* Establish a container so the row-list can react to the panel's real width (which drives
+       whether a row's badges wrap), not the viewport — the side nav shifts that mapping. */
+    container-type: inline-size;
   }
   /* "? Glossary" pill sits next to the fold marker on the right, in the gold theme. */
   .help-toggle {
@@ -662,9 +691,22 @@
   .rows {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    max-height: 39rem;
+    /* One triage row = 3rem gem art + 0.8rem gem padding (0.4rem top+bottom) + 0.6rem row
+       padding (0.3rem top+bottom) + 2px row border. Kept as a variable so the visible-row cap
+       below stays correct if the row's box model ever changes. */
+    --triage-row-h: calc(3rem + 0.8rem + 0.6rem + 2px);
+    --triage-row-gap: 0.5rem;
+    --triage-visible-rows: 9;
+    gap: var(--triage-row-gap);
+    /* Cap the list at exactly 9 rows (mirrors the in-game inventory column) and never show a
+       clipped gem: mandatory scroll snapping lands every scroll on a row's top edge, so scrolling
+       never leaves half a gem peeking. Shrinks to content when there are fewer than 9 gems. */
+    max-height: calc(
+      var(--triage-visible-rows) * var(--triage-row-h) + (var(--triage-visible-rows) - 1) *
+        var(--triage-row-gap)
+    );
     overflow-y: auto;
+    scroll-snap-type: y mandatory;
     padding-right: 0.25rem;
   }
   .triage-row {
@@ -675,6 +717,18 @@
     border: 1px solid var(--border);
     border-radius: 0.4rem;
     padding: 0.3rem 0.6rem;
+    scroll-snap-align: start;
+  }
+  /* When the panel gets narrow enough that a row's badges wrap under the gem, rows grow taller
+     and a fixed 9-row cap would clip the bottom row. Below that width, let the list flow with the
+     page instead of capping it — nothing is clipped, and the 9-row/in-game framing is a desktop
+     concept anyway. Container-width (not viewport) so it tracks the actual wrap point: rows go
+     single-line above ~34.25rem of panel content width, so switch just above that. */
+  @container (max-width: 34.5rem) {
+    .rows {
+      max-height: none;
+      scroll-snap-type: none;
+    }
   }
   /* The whole row is the card here, so drop ArkGridGemDetail's own border so it doesn't read as a
      box-in-box; the gem detail keeps its internal padding for the icon/text. */
