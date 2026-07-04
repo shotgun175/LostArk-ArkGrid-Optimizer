@@ -26,9 +26,11 @@ export { GOLD_PER_DAMAGE };
 /**
  * Map a baseline GRADE to the exact baked % key the DP cells were solved at. Shizukaziye bakes one
  * solve per GRADE_ROWS anchor at baseline = gradeToScore(anchor), stored (same order) in
- * `meta.baselines`, and reads cells by exact key — so a baseline grade maps to meta.baselines at the
- * grade's anchor index. Any non-anchor grade snaps to its nearest anchor. (GRADE_ROWS and
- * meta.baselines are kept parallel; the length guard tolerates a future re-bake with fewer anchors.)
+ * `meta.baselines[axis]`, and reads cells by exact key — so a baseline grade maps to that array at
+ * the grade's anchor index. Any non-anchor grade snaps to its nearest anchor. Pass the AXIS-matching
+ * array: DPS and support cells are baked at different % scales (support ÷3), so feeding the DPS array
+ * to a support read clamps every cell to its top anchor (cut ≈ 0). (GRADE_ROWS and each axis array
+ * are kept parallel; the length guard tolerates a future re-bake with fewer anchors.)
  */
 export function pipelineBaselineForGrade(grade: number, baselines: number[]): number {
   const n = Math.min(GRADE_ROWS.length, baselines.length);

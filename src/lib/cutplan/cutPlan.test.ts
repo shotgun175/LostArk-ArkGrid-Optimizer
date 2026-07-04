@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { GRADE_ROWS } from '../scoring/gemScore';
 import {
   actionFor,
   actionLabel,
@@ -8,9 +9,11 @@ import {
   getCutCell,
   getThru,
   headerCut,
+  pipelineBaselineForGrade,
   verdictFor,
   weeksBand,
 } from './cutPlan';
+import realPipeline from './pipeline.json';
 import type { PipelineData, PipelineMeta } from './types';
 
 const verdict: PipelineMeta['verdict'] = {
@@ -53,7 +56,9 @@ const meta: PipelineMeta = {
   boxSchedule: [],
   freshBucketMix: { '2_damage': 0.17, optimal_damage: 0.33, suboptimal_damage: 0.33, no_damage: 0.17 },
   anchorGpd: [500000],
-  baselines: [1, 2],
+  // Per-axis anchors: support sits on a smaller % scale than DPS (support cells below are baked at
+  // b=0.1/0.2, mimicking the real ~0.12–0.28 support range vs DPS's ~0.66–1.43).
+  baselines: { dps: [1, 2], support: [0.1, 0.2] },
 };
 const data: PipelineData = {
   _provenance: {},
@@ -91,7 +96,30 @@ const data: PipelineData = {
         },
       } as unknown as PipelineData['axes']['dps']['thru'],
     },
-    support: { cells: {} as unknown as PipelineData['axes']['dps']['cells'], thru: {} as unknown as PipelineData['axes']['dps']['thru'] },
+    // Support cells baked on the support % scale (b=0.1/0.2). The top anchor (0.2) has cut=0,
+    // like the real data — so reading it at a DPS-scale baseline (>0.2) clamps to zero (the bug),
+    // while reading it at an in-range support baseline yields a real, cuttable value (the fix).
+    support: {
+      cells: {
+        epic: {
+          '8': {
+            '2_damage': {
+              '500000': [
+                { b: 0.1, nrb: { cut: 8000, pAbove: 0.4, expScore: 0.13, fLeg: 0.3, fRelic: 0.1, fAnc: 0.05 }, rb: { cut: 9000, pAbove: 0.45, expScore: 0.14 } },
+                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.03, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 200, pAbove: 0.01, expScore: 0.03 } },
+              ],
+            },
+            no_damage: {
+              '500000': [
+                { b: 0.1, nrb: { cut: 1500, pAbove: 0.1, expScore: 0.09, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 1800, pAbove: 0.12, expScore: 0.09 } },
+                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.02, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.02 } },
+              ],
+            },
+          },
+        },
+      } as unknown as PipelineData['axes']['dps']['cells'],
+      thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+    },
   },
 };
 
@@ -184,5 +212,76 @@ describe('labels / bands', () => {
     expect(weeksBand(6.8)).toBe('fast');
     expect(weeksBand(20)).toBe('med');
     expect(weeksBand(40)).toBe('slow');
+  });
+});
+
+describe('pipelineBaselineForGrade', () => {
+  // A realistic 12-anchor support-scale array (parallel to GRADE_ROWS).
+  const supportBaselines = [
+    0.124, 0.138, 0.153, 0.167, 0.181, 0.196, 0.21, 0.224, 0.239, 0.253, 0.267, 0.282,
+  ];
+  it('maps a grade to the anchor at its GRADE_ROWS index', () => {
+    expect(GRADE_ROWS.length).toBe(supportBaselines.length);
+    expect(pipelineBaselineForGrade(GRADE_ROWS[0], supportBaselines)).toBe(supportBaselines[0]); // 40
+    expect(pipelineBaselineForGrade(GRADE_ROWS[11], supportBaselines)).toBe(supportBaselines[11]); // 95
+  });
+  it('snaps an off-anchor grade to the nearest anchor', () => {
+    expect(pipelineBaselineForGrade(72, supportBaselines)).toBe(supportBaselines[6]); // nearest 70
+  });
+  it('keeps the whole grade range inside the support anchor span (no clamp)', () => {
+    const lo = supportBaselines[0];
+    const hi = supportBaselines[supportBaselines.length - 1];
+    for (const g of GRADE_ROWS) {
+      const pct = pipelineBaselineForGrade(g, supportBaselines);
+      expect(pct).toBeGreaterThanOrEqual(lo);
+      expect(pct).toBeLessThanOrEqual(hi);
+    }
+  });
+});
+
+describe('support axis (baseline scale-mismatch regression)', () => {
+  // The bug: feeding a DPS-scale baseline (>0.2) into support cells clamps every read to the top
+  // anchor, where cut=0 -> "Best: 0" / "Don't cut" on every card.
+  it('collapses to dont-cut when read at a DPS-scale baseline (reproduces the bug)', () => {
+    const c = getCutCell(data, 'support', 'epic', 8, '2_damage', 'nrb', 500000, 1.5)!;
+    expect(c.cut).toBe(0);
+    expect(c.action).toBe('dont-cut');
+    expect(headerCut(data, 'support', 'epic', 8, 'nrb', 500000, 1.5)).toBe(0);
+  });
+  // The fix: reading support cells at an in-range support baseline yields real, cuttable values.
+  it('yields a non-zero, cuttable value at an in-range support baseline (the fix)', () => {
+    const c = getCutCell(data, 'support', 'epic', 8, '2_damage', 'nrb', 500000, 0.15)!;
+    expect(c.cut).toBeGreaterThan(0);
+    expect(c.action).not.toBe('dont-cut');
+    expect(headerCut(data, 'support', 'epic', 8, 'nrb', 500000, 0.15)).toBeGreaterThan(0);
+  });
+  // End-to-end at the panel layer: pipelineBaselineForGrade(grade, meta.baselines[axis]) must pick
+  // the support anchors so the read lands in-range. Same grade, same cells — the support array lands
+  // in-range (cut>0); the DPS array (the bug) clamps to the zero top anchor.
+  it('picks the support anchors via meta.baselines[axis], not the DPS array', () => {
+    const supportPct = pipelineBaselineForGrade(40, data.meta.baselines.support);
+    const dpsPct = pipelineBaselineForGrade(40, data.meta.baselines.dps);
+    expect(supportPct).toBeLessThanOrEqual(0.2); // in the support span
+    expect(dpsPct).toBeGreaterThan(0.2); // above the support cells' top anchor
+    expect(getCutCell(data, 'support', 'epic', 8, '2_damage', 'nrb', 500000, supportPct)!.cut).toBeGreaterThan(0);
+    expect(getCutCell(data, 'support', 'epic', 8, '2_damage', 'nrb', 500000, dpsPct)!.cut).toBe(0);
+  });
+});
+
+describe('committed pipeline.json shape (locks types <-> data)', () => {
+  const meta = (realPipeline as unknown as PipelineData).meta;
+  it('carries a per-axis baselines record, each 12 ascending anchors', () => {
+    expect(Array.isArray(meta.baselines)).toBe(false);
+    for (const axis of ['dps', 'support'] as const) {
+      const arr = meta.baselines[axis];
+      expect(arr).toHaveLength(GRADE_ROWS.length);
+      for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThan(arr[i - 1]);
+    }
+  });
+  it('keeps DPS on the ~0.66–1.43 scale and support on the smaller ~0.12–0.28 scale', () => {
+    expect(meta.baselines.dps[0]).toBeCloseTo(0.659, 2);
+    expect(meta.baselines.dps.at(-1)).toBeCloseTo(1.432, 2);
+    // Support anchors must all sit below the DPS floor — the whole point of the split.
+    expect(meta.baselines.support.at(-1)).toBeLessThan(meta.baselines.dps[0]);
   });
 });

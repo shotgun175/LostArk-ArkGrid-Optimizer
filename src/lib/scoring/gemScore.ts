@@ -237,9 +237,10 @@ export function rankFromGrade(g: number): GemRank {
 
 // Shizukaziye's baseline rank ladder: the 12 grade anchors his exact-DP cut pipeline bakes ONE solve
 // per (each maps 1:1 to a distinct rank, C- … S+, under the RANK_CUTS above). pipeline.json's
-// meta.baselines[i] is the % damage this grade anchor was baked at (his gradeToScore(GRADE_ROWS[i])),
-// so the Cutting Plan reads cell i by exact key lookup. KEEP ALIGNED with meta.baselines (same length,
-// same order). Used as the shared triage/cut-plan baseline ladder.
+// meta.baselines is now per-axis (Record<CutAxis, number[]>): meta.baselines[axis][i] is the % damage
+// this grade anchor was baked at for that role (his gradeToScore/supportGradeToScore(GRADE_ROWS[i])),
+// so the Cutting Plan reads cell i by exact key lookup. KEEP ALIGNED with each meta.baselines[axis]
+// array (same length, same order). Used as the shared triage/cut-plan baseline ladder.
 export const GRADE_ROWS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95] as const;
 export const BASELINE_MIN_GRADE = GRADE_ROWS[0];
 export const BASELINE_MAX_GRADE = GRADE_ROWS[GRADE_ROWS.length - 1];

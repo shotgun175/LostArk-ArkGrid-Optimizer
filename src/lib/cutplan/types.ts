@@ -56,7 +56,9 @@ export interface PipelineMeta {
   boxSchedule: { count: number; rarity: Rarity }[];
   freshBucketMix: Record<BucketKey, number>;
   anchorGpd: number[];
-  baselines: number[];
+  // Per-axis baseline anchors (DPS and support cells are baked at different % scales). Each array is
+  // parallel to GRADE_ROWS; read the axis-matching one, like effectBuckets above.
+  baselines: Record<CutAxis, number[]>;
 }
 type CellsByGpd = Record<string, PipelineCellEntry[]>;
 type ThruByGpd = Record<string, PipelineThruEntry[]>;
