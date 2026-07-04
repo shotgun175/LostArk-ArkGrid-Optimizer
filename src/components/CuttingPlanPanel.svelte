@@ -67,7 +67,9 @@
   // Baseline is a GRADE tier (the same value the Gem Triage uses). The DP data is keyed by the % damage
   // each grade anchor was baked at, so convert grade -> baked % (exact key lookup) before reading cells.
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
-  let baselinePct = $derived(data ? pipelineBaselineForGrade(baseline, data.meta.baselines) : 0);
+  // Baselines are per-axis: DPS and support cells are baked at different % scales, so read the
+  // axis-matching anchor array (using the shared DPS array for support clamps every cell to 0).
+  let baselinePct = $derived(data ? pipelineBaselineForGrade(baseline, data.meta.baselines[axis]) : 0);
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');

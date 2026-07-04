@@ -137,7 +137,8 @@ const out = {
     buckets: meta.buckets,
     bucketLabels: meta.bucketLabels,
     // Per-axis effect-pair labels: each source file pairs different effects into each bucket
-    // (DPS vs support). Every OTHER meta field is identical across the two, so only this is split.
+    // (DPS vs support). Two meta fields differ across the axes and are split by CutAxis:
+    // effectBuckets (below) and baselines (further down). Every other meta field is identical.
     effectBuckets: { dps: meta.effectBuckets, support: support.json.meta.effectBuckets },
     verdict: meta.verdict,
     slots: meta.slots,
@@ -145,7 +146,9 @@ const out = {
     boxSchedule: meta.boxSchedule,
     freshBucketMix: meta.freshBucketMix,
     anchorGpd: meta.anchorGpd,
-    baselines: dpsT.baselines,
+    // Per-axis baseline anchors: support scores on a smaller (per-DPS ÷3) % scale, so its cells are
+    // baked at a different baseline range than DPS. Both arrays stay parallel to GRADE_ROWS.
+    baselines: { dps: dpsT.baselines, support: supportT.baselines },
   },
   axes: {
     dps: { cells: dpsT.cells, thru: dpsT.thru },
