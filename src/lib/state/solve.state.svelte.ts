@@ -1,3 +1,5 @@
+import { toast } from '@zerodevx/svelte-toast';
+
 import type { AppLocale } from '../constants/enums';
 import { type ArkGridGem, gemFingerprint } from '../models/arkGridGems';
 import { overallPercent } from '../solver/progress';
@@ -22,11 +24,15 @@ export const solveState = $state<{
   progress: SolverProgress | null;
   phaseLabel: string | null;
   progressLog: { header: string; text: string; phase: string }[];
+  // Set when a solve fails (worker crash / rejection) so the UI can show a real error instead of a
+  // bar that silently sweeps to 100%. Cleared at the start of each run.
+  error: string | null;
 }>({
   isSolving: false,
   progress: null,
   phaseLabel: null,
   progressLog: [],
+  error: null,
 });
 
 type SolvePassKind = 'live' | 'perfect';
@@ -220,6 +226,7 @@ export async function runSolve(profile: CharacterProfile) {
   solveState.isSolving = true;
   solveState.progressLog = [];
   solveState.phaseLabel = null;
+  solveState.error = null;
   solveState.progress = { stage: 'preparing', totalPercent: 0, stagePercent: 0 };
 
   // Dual-role characters solve both builds (they share one gem pool, so triage/cutplan can see what
@@ -244,10 +251,20 @@ export async function runSolve(profile: CharacterProfile) {
     }
   } catch (error) {
     console.error(error);
+    solveState.error = 'Optimization failed. Please run it again.';
+    toast.push('Optimization failed — please run it again.', {
+      theme: {
+        '--toastBackground': '#8a3a3a',
+        '--toastColor': '#fff',
+        '--toastBarBackground': '#5a2525',
+      },
+    });
   } finally {
     activePass = null;
     solveState.isSolving = false;
-    if (solveState.progress) {
+    // Only mark the bar complete on success. On failure, leave it where it stalled — forcing 100%
+    // "Finalizing" would masquerade a crash as a finished (but stale) solve.
+    if (solveState.progress && !solveState.error) {
       solveState.progress = {
         ...solveState.progress,
         stage: 'finalizing',

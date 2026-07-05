@@ -44,6 +44,7 @@
   let { profile }: Props = $props();
 
   let data = $state<PipelineData | null>(null);
+  let loadFailed = $state(false);
   let dataRequested = false;
 
   // Defer the ~1.3MB cutting-plan dataset out of the initial bundle: load it (as its own
@@ -51,8 +52,18 @@
   async function loadPipeline() {
     if (dataRequested) return;
     dataRequested = true;
-    const m = await import('../lib/cutplan/pipeline.json');
-    data = m.default as unknown as PipelineData;
+    loadFailed = false;
+    try {
+      const m = await import('../lib/cutplan/pipeline.json');
+      data = m.default as unknown as PipelineData;
+    } catch (e) {
+      // Realistically this 404s after a redeploy (the content-hashed chunk is gone for tabs opened
+      // before the deploy) or on a transient network drop. Without this the rejection is swallowed,
+      // the panel shows its empty state forever, and dataRequested blocks any retry until a reload.
+      console.error('[cutplan] failed to load pipeline.json', e);
+      dataRequested = false; // allow a retry
+      loadFailed = true;
+    }
   }
   $effect(() => {
     if (sectionUI.showCuttingPlan) void loadPipeline();
@@ -315,6 +326,11 @@
         CP% headroom:
         <strong>{cpHeadroom != null ? `+${cpHeadroom.toFixed(2)}%` : 'run the optimizer'}</strong>
       </div>
+    {:else if loadFailed}
+      <div class="cutplan-loading">
+        Couldn't load the cutting-plan data.
+        <button class="cutplan-retry" onclick={() => void loadPipeline()}>Retry</button>
+      </div>
     {:else}
       <div class="cutplan-loading">Loading cutting plan…</div>
     {/if}
@@ -325,6 +341,25 @@
   .cutplan-loading {
     padding: 1rem;
     opacity: 0.7;
+  }
+  .cutplan-retry {
+    width: auto;
+    min-width: 0;
+    margin-left: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.4rem;
+    font-weight: 600;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
+  }
+  .cutplan-retry:hover {
+    background: rgba(184, 134, 11, 0.18);
+  }
+  :global(.dark-mode) .cutplan-retry {
+    color: #f0c040;
+    border-color: rgba(240, 192, 64, 0.55);
+    background: rgba(240, 192, 64, 0.12);
   }
   .cutplan-panel {
     display: flex;

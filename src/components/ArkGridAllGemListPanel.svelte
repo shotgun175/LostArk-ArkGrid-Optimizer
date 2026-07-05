@@ -6,6 +6,7 @@
   import { LChaos, LOrder } from '../lib/constants/localization';
   import { appLocale } from '../lib/state/locale.state.svelte';
   import { type AllGems, clearGems } from '../lib/state/profile.state.svelte';
+  import { solveState } from '../lib/state/solve.state.svelte';
   import Wrapper from './ArkGridGemAddPanel/Wrapper.svelte';
   import ArkGridGemList from './ArkGridGemList.svelte';
 
@@ -98,7 +99,13 @@
   );
 </script>
 
-<div class="panel">
+<!-- Lock the pool while a solve runs: the worker's result maps positional indexes onto this exact
+  gem array, so a delete/clear mid-solve would shift them and corrupt the persisted assignment.
+  `inert` blocks every control in the panel (add / delete / clear) for the few-second solve. -->
+<div class="panel" class:locked={solveState.isSolving} inert={solveState.isSolving}>
+  {#if solveState.isSolving}
+    <div class="lock-note">Locked while optimizing…</div>
+  {/if}
   <div class="title">{LTitle}</div>
   <div class="tab-container">
     {#each tabs as tab, i}
@@ -139,6 +146,20 @@
 </div>
 
 <style>
+  .panel.locked {
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
+  }
+  .lock-note {
+    align-self: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #b8860b;
+    opacity: 0.9;
+  }
+  :global(.dark-mode) .lock-note {
+    color: #f0c040;
+  }
   .tab-container {
     display: flex;
     gap: 0.3em;

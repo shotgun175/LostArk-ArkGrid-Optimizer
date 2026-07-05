@@ -176,35 +176,6 @@ function valueBounds(role: GemRole): { min: number; max: number } {
   return bounds;
 }
 
-// Highest achievable additive score (% damage) for a role — bounds the baseline UI so the
-// slider can't run far past where any real gem could land (DPS ≈ 1.42%, support ≈ 0.28% per-DPS).
-const _scoreMax: Partial<Record<GemRole, number>> = {};
-export function maxScoreForRole(role: GemRole): number {
-  const cached = _scoreMax[role];
-  if (cached != null) return cached;
-  let max = -Infinity;
-  for (const baseCost of [8, 9, 10]) {
-    const pool = EFFECT_POOLS[baseCost];
-    for (let i = 0; i < pool.length; i++)
-      for (let j = i + 1; j < pool.length; j++)
-        for (let wpLevel = 1; wpLevel <= 5; wpLevel++) {
-          const req = baseCost - wpLevel;
-          for (let point = 1; point <= 5; point++)
-            for (let a = 1; a <= 5; a++)
-              for (let b = 1; b <= 5; b++) {
-                const s =
-                  willpowerScore(req, role) +
-                  point * orderPerPoint(role) +
-                  effectD(role, pool[i]) * a +
-                  effectD(role, pool[j]) * b;
-                if (s > max) max = s;
-              }
-        }
-  }
-  _scoreMax[role] = max;
-  return max;
-}
-
 /** 0-100 grade (rounded to 1 decimal): 0 = worst possible gem, 100 = a perfect gem. */
 export function grade(gem: ScoredGem, role: GemRole): number {
   const b = valueBounds(role);

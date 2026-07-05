@@ -29,7 +29,11 @@ export type SpriteDecoder = (fileName: string) => Promise<CvMat>;
 async function fetchSpriteMat(url: string): Promise<CvMat> {
   // Read the image at the url, then convert it to a Mat
   const cv = getCv();
-  const img = await createImageBitmap(await fetch(url).then((r) => r.blob()));
+  const res = await fetch(url);
+  // Fail fast on a 404 (e.g. a hashed sprite invalidated by a redeploy) instead of trying to decode
+  // an HTML error page as an image — this surfaces as init:error, which the controller cleans up.
+  if (!res.ok) throw new Error(`sprite fetch failed: ${res.status} ${url}`);
+  const img = await createImageBitmap(await res.blob());
   const off = new OffscreenCanvas(img.width, img.height);
   const ctx = off.getContext('2d');
   if (!ctx) throw new Error('Canvas context creation failed');

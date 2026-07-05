@@ -44,7 +44,16 @@ export function getPossibleGemSets(core: Core, gems: Gem[]): GemSet[] {
 
     if (pi >= point && ei >= 0) result.push(new GemSet([g[i]], core));
 
-    if (ei < 3) break;
+    // Gems are sorted ascending by req, so once a gem overflows the core's energy every later gem
+    // does too — but a gem that fits yet leaves < 3 energy (no room for a second gem, since the
+    // minimum req is 3) is still a valid single: `continue` to keep enumerating later singles
+    // instead of `break`ing the whole loop and dropping them.
+    // Gems are sorted ascending by req, so once a gem overflows the core's energy every later gem
+    // does too — but a gem that fits yet leaves < 3 energy (no room for a second gem, since the
+    // minimum req is 3) is still a valid single: `continue` to keep enumerating later singles
+    // instead of `break`ing the whole loop and dropping them.
+    if (ei < 0) break;
+    if (ei < 3) continue;
     if (pi + 3 * MAX_GEM_POINT < point) continue; // 3 slots (j,k,m) still open
 
     for (let j = i + 1; j < n; j++) {
