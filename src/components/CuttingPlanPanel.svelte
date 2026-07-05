@@ -47,8 +47,11 @@
   let loadFailed = $state(false);
   let dataRequested = false;
 
-  // Defer the ~1.3MB cutting-plan dataset out of the initial bundle: load it (as its own
-  // chunk) only once the panel is actually open, so visitors who never open it never download it.
+  // The ~1.3MB cutting-plan dataset is split into its own chunk, so it never bloats the initial
+  // bundle. It loads lazily via the $effect below when the Cutting Plan section is open — but that
+  // section defaults to expanded (and isn't persisted), so in practice every visitor fetches it
+  // shortly after load, not only those who use it. Gating the import on real intent (e.g. the panel
+  // scrolling into view) would be needed to actually skip it for visitors who never open it.
   async function loadPipeline() {
     if (dataRequested) return;
     dataRequested = true;
