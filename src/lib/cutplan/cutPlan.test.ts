@@ -204,7 +204,7 @@ describe('cellBreakdown', () => {
   it('assembles the DPS buckets with role-correct labels + weighted average', () => {
     const b = cellBreakdown(data, 'dps', 'epic', 8, 'nrb', 500000, 1.5)!;
     expect(b.buckets.map((x) => x.label)).toEqual(['2D', 'No']); // fixture has only these two buckets
-    expect(b.buckets[0].description).toBe('both effects damage');
+    expect(b.buckets[0].effects).toBe('Additional Damage + Attack Power'); // concrete DPS effect pair
     expect(b.buckets[0].cut).toBeCloseTo(15000, 6); // interpolated 10000..20000
     expect(b.buckets[0].expSpend).toBeCloseTo(7500, 6); // interpolated 7000..8000
     // [1,2,2,1]/6 weights: 2_damage w=1, no_damage w=1 (both present) -> (15000 + no)/2
@@ -214,14 +214,15 @@ describe('cellBreakdown', () => {
   it('uses the 2S label + support wording on the support axis', () => {
     const b = cellBreakdown(data, 'support', 'epic', 8, 'nrb', 500000, 0.15)!;
     expect(b.buckets[0].label).toBe('2S');
-    expect(b.buckets[0].description).toBe('both effects support');
+    // Regression: the effect pair must be the SUPPORT pairing, not the DPS one.
+    expect(b.buckets[0].effects).toBe('Ally Attack Enh. + Brand Power');
     expect(b.buckets[0].cut).toBeGreaterThan(0);
   });
   it('returns null when no cells exist for the archetype', () => {
     expect(cellBreakdown(data, 'dps', 'rare', 8, 'nrb', 500000, 1.5)).toBeNull();
   });
-  it('applies the 1:2:2:1 weights and all four bucket descriptions', () => {
-    // A 4-bucket fixture so the weight-2 (Op/Sub) path and their descriptions are exercised — the
+  it('applies the 1:2:2:1 weights and all four bucket effect pairs', () => {
+    // A 4-bucket fixture so the weight-2 (Op/Sub) path and their effect pairs are exercised — the
     // 2-bucket `data` fixture above can't catch a wrong optimal/suboptimal weight.
     const mkCell = (cut: number) => ({
       '500000': [
@@ -262,11 +263,12 @@ describe('cellBreakdown', () => {
     };
     const b = cellBreakdown(data4, 'dps', 'epic', 8, 'nrb', 500000, 1)!;
     expect(b.buckets.map((x) => x.label)).toEqual(['2D', 'Op', 'Sub', 'No']);
-    expect(b.buckets.map((x) => x.description)).toEqual([
-      'both effects damage',
-      'best single damage + dead',
-      'worse single damage + dead',
-      'both effects dead',
+    // Concrete effect pair per bucket (2D/Op/Sub/No), so the popover lists real stat names.
+    expect(b.buckets.map((x) => x.effects)).toEqual([
+      'Additional Damage + Attack Power',
+      'Additional Damage + Brand Power',
+      'Attack Power + Brand Power',
+      'Brand Power + Ally Damage Enh.',
     ]);
     // (1·1000 + 2·100 + 2·10 + 1·1) / (1+2+2+1) = 1221/6 — a wrong Op/Sub weight fails this.
     expect(b.averageCut).toBeCloseTo(1221 / 6, 6);

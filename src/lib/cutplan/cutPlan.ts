@@ -115,7 +115,7 @@ export function getCutCell(
 export interface BucketBreakdown {
   key: BucketKey;
   label: string; // 2D/2S/Op/Sub/No (role-aware)
-  description: string; // "both effects damage" etc. (role-aware)
+  effects: string; // the concrete effect pair, e.g. "Boss Damage + Attack Power" (role- and cost-aware)
   cut: number;
   pAbove: number;
   expScore: number;
@@ -135,23 +135,10 @@ const BUCKET_AVG_WEIGHT: Record<BucketKey, number> = {
   no_damage: 1,
 };
 
-function describeBucket(bucket: BucketKey, word: 'damage' | 'support'): string {
-  switch (bucket) {
-    case '2_damage':
-      return `both effects ${word}`;
-    case 'optimal_damage':
-      return `best single ${word} + dead`;
-    case 'suboptimal_damage':
-      return `worse single ${word} + dead`;
-    case 'no_damage':
-      return 'both effects dead';
-  }
-}
-
 /**
  * Per-bucket breakdown for one archetype card: each bucket's cut / hit / expected score + spend, plus
- * the 1:2:2:1 weighted-average cut. Role-aware (2D vs 2S label, "damage" vs "support" wording) via
- * `axis`. Returns null when the archetype has no cells at this axis / gpd.
+ * the 1:2:2:1 weighted-average cut. Role-aware (2D vs 2S label, per-axis effect pairs) via `axis`.
+ * Returns null when the archetype has no cells at this axis / gpd.
  */
 export function cellBreakdown(
   data: PipelineData,
@@ -162,7 +149,6 @@ export function cellBreakdown(
   gpd: number,
   baseline: number
 ): CellBreakdown | null {
-  const word = axis === 'support' ? 'support' : 'damage';
   const buckets: BucketBreakdown[] = [];
   let accWeighted = 0;
   let accWeight = 0;
@@ -174,7 +160,7 @@ export function cellBreakdown(
     buckets.push({
       key,
       label,
-      description: describeBucket(key, word),
+      effects: effectPair(data.meta, axis, cost, key),
       cut: cell.cut,
       pAbove: cell.pAbove,
       expScore: cell.expScore,
