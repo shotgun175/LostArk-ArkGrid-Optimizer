@@ -337,9 +337,17 @@ export class CaptureController {
       const classified = this.classifyCaptureError(err);
       this.onStartCaptureError?.(classified);
     } finally {
-      // Back to idle if startup failed
+      // If startup failed it never reached 'recording', so loop() (the only other track-teardown
+      // path) never runs. Release the screen share here — otherwise a stream that was already
+      // granted before the failure (e.g. worker-init rejected, or the first reader.read() threw)
+      // stays live and the browser's "sharing your screen" indicator never clears. On success the
+      // state is already 'recording' and loop() owns the track / reader, so this branch is skipped.
       if (this.state == 'loading') {
         this.state = 'idle';
+        this.track?.stop();
+        this.track = null;
+        void this.reader?.cancel().catch(() => {});
+        this.reader = null;
       }
     }
   }

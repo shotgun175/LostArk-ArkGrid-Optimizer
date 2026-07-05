@@ -90,3 +90,29 @@ describe('capture worker error recovery', () => {
     expect(c.awaitFrameCompletion).toBeNull();
   });
 });
+
+describe('startCapture failure teardown', () => {
+  it('stops and releases the screen share when init fails after permission was granted', async () => {
+    const c = new CaptureController() as any;
+    c.worker = { postMessage() {} }; // fake so startCapture skips creating a real Worker
+    let stopped = false;
+    let readerCancelled = false;
+    // Permission granted: requestDisplayMedia sets a live track + reader before init fails.
+    c.requestDisplayMedia = async () => {
+      c.track = { stop: () => (stopped = true) };
+      c.reader = { cancel: () => ((readerCancelled = true), Promise.resolve()) };
+    };
+
+    const p = c.startCapture();
+    // The worker's init rejects after the screen share was already granted.
+    c.awaitWorkerInitialization.reject('worker-init-failed');
+    await p;
+
+    // The granted stream must be stopped (indicator clears) and the fields cleared for a clean retry.
+    expect(stopped).toBe(true);
+    expect(readerCancelled).toBe(true);
+    expect(c.track).toBeNull();
+    expect(c.reader).toBeNull();
+    expect(c.state).toBe('idle');
+  });
+});
