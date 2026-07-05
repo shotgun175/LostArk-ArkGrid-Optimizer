@@ -234,7 +234,11 @@ export function deleteProfile(name: string) {
 
   if (index === -1) return;
   if (currentProfileName.current === name) {
-    setCurrentProfileName(profiles[index - 1].characterName);
+    // Switch to a neighbour before splicing. At index 0 `profiles[index - 1]` is undefined (the
+    // old crash), so fall back to the next profile, then to the default name — getCurrentProfile()
+    // recreates the default if it somehow no longer exists.
+    const fallback = profiles[index - 1] ?? profiles[index + 1];
+    setCurrentProfileName(fallback?.characterName ?? DEFAULT_PROFILE_NAME);
   }
   profiles.splice(index, 1);
   // If the deleted profile was the currently selected one, reset it
@@ -244,6 +248,10 @@ export function updateProfileCharacterName(name: string) {
   // Update the name of the current profile (same rules as addNewProfile:
   // non-empty, max 16 chars, unique).
   if (name.length == 0 || name.length > 16) return false;
+  // The default profile must keep its name: it's the guaranteed always-present fallback that
+  // deleteProfile refuses to remove, so renaming it away would let it be deleted and break that
+  // invariant (and could crash deleteProfile at index 0).
+  if (currentProfileName.current === DEFAULT_PROFILE_NAME) return false;
   const existProfile = appConfig.current.characterProfiles.findIndex(
     (p) => p.characterName === name
   );
