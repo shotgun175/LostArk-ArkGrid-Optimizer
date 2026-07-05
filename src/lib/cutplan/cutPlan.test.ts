@@ -220,6 +220,57 @@ describe('cellBreakdown', () => {
   it('returns null when no cells exist for the archetype', () => {
     expect(cellBreakdown(data, 'dps', 'rare', 8, 'nrb', 500000, 1.5)).toBeNull();
   });
+  it('applies the 1:2:2:1 weights and all four bucket descriptions', () => {
+    // A 4-bucket fixture so the weight-2 (Op/Sub) path and their descriptions are exercised — the
+    // 2-bucket `data` fixture above can't catch a wrong optimal/suboptimal weight.
+    const mkCell = (cut: number) => ({
+      '500000': [
+        {
+          b: 1,
+          nrb: { cut, pAbove: 0.5, expScore: 0.5, expSpend: 100, fLeg: 0, fRelic: 0, fAnc: 0 },
+          rb: { cut, pAbove: 0.5, expScore: 0.5, expSpend: 0 },
+        },
+      ],
+    });
+    const meta4: PipelineMeta = {
+      ...meta,
+      buckets: ['2_damage', 'optimal_damage', 'suboptimal_damage', 'no_damage'],
+    };
+    const data4: PipelineData = {
+      _provenance: {},
+      meta: meta4,
+      axes: {
+        dps: {
+          cells: {
+            epic: {
+              '8': {
+                '2_damage': mkCell(1000),
+                optimal_damage: mkCell(100),
+                suboptimal_damage: mkCell(10),
+                no_damage: mkCell(1),
+              },
+            },
+          } as unknown as PipelineData['axes']['dps']['cells'],
+          thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+        },
+        // Support unused here.
+        support: {
+          cells: {} as unknown as PipelineData['axes']['dps']['cells'],
+          thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+        },
+      },
+    };
+    const b = cellBreakdown(data4, 'dps', 'epic', 8, 'nrb', 500000, 1)!;
+    expect(b.buckets.map((x) => x.label)).toEqual(['2D', 'Op', 'Sub', 'No']);
+    expect(b.buckets.map((x) => x.description)).toEqual([
+      'both effects damage',
+      'best single damage + dead',
+      'worse single damage + dead',
+      'both effects dead',
+    ]);
+    // (1·1000 + 2·100 + 2·10 + 1·1) / (1+2+2+1) = 1221/6 — a wrong Op/Sub weight fails this.
+    expect(b.averageCut).toBeCloseTo(1221 / 6, 6);
+  });
 });
 
 describe('labels / bands', () => {
