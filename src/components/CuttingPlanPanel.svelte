@@ -269,7 +269,7 @@
               <Popover label={`${arch.label} breakdown`}>
                 {#snippet trigger()}
                   <div class="gem-header gem-header-trigger">
-                    <span class="gem-title">{arch.label} <span class="gem-info" aria-hidden="true">ⓘ</span></span>
+                    <span class="gem-title">{arch.label} <span class="gem-info" aria-hidden="true">i</span></span>
                     <span class="gem-ev">Best: {fmtGold(best)}</span>
                   </div>
                 {/snippet}
@@ -565,12 +565,29 @@
     cursor: pointer;
   }
   .gem-header-trigger:hover .gem-info {
-    opacity: 0.9;
+    opacity: 1;
   }
+  /* Circled "i" in the panel's gold accent, mirroring the Glossary button's .q-circle so the
+     affordance reads as info. CSS-drawn so it never depends on a font's ⓘ character. */
   .gem-info {
-    font-size: 0.75rem;
-    opacity: 0.5;
-    margin-left: 0.15rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.95rem;
+    height: 0.95rem;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.62rem;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1;
+    color: #b8860b;
+    opacity: 0.75;
+    vertical-align: text-bottom;
+    margin-left: 0.25rem;
+  }
+  :global(.dark-mode) .gem-info {
+    color: #f0c040;
   }
   .gem-title {
     font-weight: 700;
