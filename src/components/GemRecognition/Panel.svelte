@@ -197,6 +197,10 @@
             gemListElem?.selectTab(gemAttr == 'Order' ? 0 : 1);
             gemListElem?.scroll('bottom');
             // console.log($state.snapshot(totalGems));
+            // Stop after the first qualifying merge. With several identical gems, more than one
+            // foundIndex can reach the threshold, and merging each would append the same tail gems
+            // once per match — double-counting the owned list.
+            break;
           }
         }
 
@@ -230,6 +234,9 @@
               gemListElem?.selectTab(gemAttr == 'Order' ? 0 : 1);
               gemListElem?.scroll('top');
               // console.log($state.snapshot(totalGems));
+              // Stop after the first qualifying merge (see the downward branch): duplicate runs would
+              // otherwise unshift the same head gems once per matching index.
+              break;
             }
           }
         }
@@ -375,6 +382,17 @@
     if (text) importFromText(text);
   }
 
+  // Warm the recognition worker (download + JIT-compile the ~10.8MB OpenCV WASM) on the user's first
+  // hint of intent — hovering or focusing the Start button — so the first "Start Screen Sharing"
+  // click doesn't pay the cold ~5s cost, WITHOUT making every desktop visitor download the chunk on
+  // load. Idempotent: warmup() no-ops once the worker exists, and `warmed` prevents repeat calls.
+  let warmed = false;
+  function warmCapture() {
+    if (warmed || !captureSupported) return;
+    warmed = true;
+    void getCaptureController().then((c) => c.warmup());
+  }
+
   async function startGemCapture() {
     // The button is hidden when unsupported; guard defensively anyway.
     if (!captureSupported) return;
@@ -481,25 +499,12 @@
     };
     window.addEventListener('paste', onPaste);
 
-    // On desktop, warm the recognition worker (download + JIT-compile the OpenCV WASM) shortly
-    // after load so the first "Start Screen Sharing" doesn't pay the cold ~5s cost. Deferred to
-    // idle so it never competes with first paint; gated on captureSupported so mobile never
-    // fetches the 10.8MB CV chunk on load (upload lazy-loads it only when a file is chosen).
-    let cancelWarm: (() => void) | undefined;
-    if (captureSupported) {
-      const warm = () => void getCaptureController().then((c) => c.warmup());
-      if (typeof requestIdleCallback === 'function') {
-        const id = requestIdleCallback(warm, { timeout: 3000 });
-        cancelWarm = () => cancelIdleCallback(id);
-      } else {
-        const id = window.setTimeout(warm, 1200);
-        cancelWarm = () => clearTimeout(id);
-      }
-    }
+    // The recognition worker is no longer warmed on load — it's warmed on the user's first hover /
+    // focus of the Start button instead (see warmCapture), so only visitors who intend to use screen
+    // recognition pay the ~10.8MB CV chunk. Upload still lazy-loads it when a file is chosen.
 
     return () => {
       window.removeEventListener('paste', onPaste);
-      cancelWarm?.();
     };
   });
 
@@ -551,7 +556,9 @@
       <div class="left">
         {#if captureSupported && mode === 'capture'}
           {#if !isRecording}
-            <button onclick={startGemCapture}>🖥️ {LStartCapture[locale]}</button>
+            <button onclick={startGemCapture} onpointerenter={warmCapture} onfocus={warmCapture}
+              >🖥️ {LStartCapture[locale]}</button
+            >
           {:else}
             <button onclick={stopGemCapture}>🖥️ {LStopCapture[locale]}</button>
           {/if}
