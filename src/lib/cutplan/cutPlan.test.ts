@@ -5,6 +5,7 @@ import {
   actionFor,
   actionLabel,
   bracketLabel,
+  cellBreakdown,
   effectPair,
   getCutCell,
   getThru,
@@ -196,6 +197,28 @@ describe('getThru', () => {
     const t = getThru(data, 'dps', 'epic', 8, 500000, 5)!; // clamps to the b=3 anchor (total 0)
     expect(t.totalPerWk).toBe(0);
     expect(t.weeks).toBeNull();
+  });
+});
+
+describe('cellBreakdown', () => {
+  it('assembles the DPS buckets with role-correct labels + weighted average', () => {
+    const b = cellBreakdown(data, 'dps', 'epic', 8, 'nrb', 500000, 1.5)!;
+    expect(b.buckets.map((x) => x.label)).toEqual(['2D', 'No']); // fixture has only these two buckets
+    expect(b.buckets[0].description).toBe('both effects damage');
+    expect(b.buckets[0].cut).toBeCloseTo(15000, 6); // interpolated 10000..20000
+    expect(b.buckets[0].expSpend).toBeCloseTo(7500, 6); // interpolated 7000..8000
+    // [1,2,2,1]/6 weights: 2_damage w=1, no_damage w=1 (both present) -> (15000 + no)/2
+    const no = b.buckets[1].cut;
+    expect(b.averageCut).toBeCloseTo((15000 + no) / 2, 6);
+  });
+  it('uses the 2S label + support wording on the support axis', () => {
+    const b = cellBreakdown(data, 'support', 'epic', 8, 'nrb', 500000, 0.15)!;
+    expect(b.buckets[0].label).toBe('2S');
+    expect(b.buckets[0].description).toBe('both effects support');
+    expect(b.buckets[0].cut).toBeGreaterThan(0);
+  });
+  it('returns null when no cells exist for the archetype', () => {
+    expect(cellBreakdown(data, 'dps', 'rare', 8, 'nrb', 500000, 1.5)).toBeNull();
   });
 });
 
