@@ -172,24 +172,19 @@ export class CaptureController {
   }
 
   private async requestDisplayMedia() {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 30 },
-        audio: false,
-      });
-      if (!stream) {
-        throw Error('No stream');
-      }
-      this.track = stream.getVideoTracks()[0];
-      if (!this.track) {
-        throw Error('No video track');
-      }
-      const processor = new MediaStreamTrackProcessor({ track: this.track });
-      this.reader = processor.readable.getReader();
-    } catch (err: any) {
-      throw err;
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30 },
+      audio: false,
+    });
+    if (!stream) {
+      throw Error('No stream');
     }
-    return;
+    this.track = stream.getVideoTracks()[0];
+    if (!this.track) {
+      throw Error('No video track');
+    }
+    const processor = new MediaStreamTrackProcessor({ track: this.track });
+    this.reader = processor.readable.getReader();
   }
 
   isStartCaptureError(err: unknown): err is StartCaptureErrorType {

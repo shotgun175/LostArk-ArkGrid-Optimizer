@@ -11,7 +11,6 @@ export default defineConfig({
     // WASM bundle hangs under Vitest's worker/transform pipeline.
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    passWithNoTests: true,
   },
   worker: {
     // 'es' bundles the worker as an ES module (import/export usable) — more efficient in
