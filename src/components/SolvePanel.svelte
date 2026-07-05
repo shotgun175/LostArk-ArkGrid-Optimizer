@@ -206,6 +206,9 @@
       {#if solveState.progress || solveState.progressLog.length > 0}
         <div class="solve-progress">
           <div class="title">{LProgressTitle}</div>
+          {#if solveState.error}
+            <div class="solve-error" role="alert">{solveState.error}</div>
+          {/if}
           {#if solveState.progress}
             <div class="progress-label">
               <span>
@@ -294,6 +297,18 @@
   .solve-progress > .title {
     font-size: 1rem;
     font-weight: 600;
+  }
+  .solve-error {
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.4rem;
+    border: 1px solid #8a3a3a;
+    background: rgba(138, 58, 58, 0.14);
+    color: #8a3a3a;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  :global(.dark-mode) .solve-error {
+    color: #ef8a8a;
   }
   .progress-label {
     display: flex;
