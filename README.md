@@ -7,7 +7,7 @@ Part of [Lost Ark Tools](https://shotgun175.github.io/). **Live app:**
 > supersede this fan tool. The live app and this repository will be retired once the in-game feature
 > ships; until then everything still works.
 
-An Ark Grid combat-power optimizer: a fully client-side web app for Lost Ark's **Ark Grid** astrogem
+An Ark Grid combat-power optimizer: a client-side web app for Lost Ark's **Ark Grid** astrogem
 system. It finds the highest-combat-power gem loadout from the gems you own, triages which gems to keep
 or replace, and tells you what to farm next — with on-screen gem recognition so you don't have to type
 anything in.
@@ -31,8 +31,10 @@ anything in.
 
 - **Frontend:** Svelte 5 (runes) + TypeScript, Vite
 - **Solver:** custom backtracking with upper-bound pruning (TypeScript)
-- **Image processing:** OpenCV (template matching) in a Web Worker
-- **Deployment:** GitHub Pages (fully client-side)
+- **Image processing:** OpenCV (template matching) in a Web Worker; the screenshot-upload OCR path
+  adds tesseract.js, whose engine + English data are fetched from a CDN (jsdelivr) on first use — the
+  only assets not served from the app's own origin
+- **Deployment:** GitHub Pages (client-side; no backend or SSR)
 
 ## Running locally
 
