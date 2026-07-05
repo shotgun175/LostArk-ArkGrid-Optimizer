@@ -807,25 +807,34 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
       break;
 
     case 'frame':
-      // Frame analysis request
-      const result = processor.processFrame(data.frame, data.drawDebug, data.detectionMargin);
-      postToMain({
-        type: 'frame:done',
-        result,
-      });
-      if (data.drawDebug) {
-        postToMain({
-          type: 'debug',
-          image: processor.debugCanvas.transferToImageBitmap(),
-        });
+      // Frame analysis request. Wrap so a throw (an OpenCV / WASM failure) still posts frame:done: the
+      // capture loop's `await waitForAnalysis` would otherwise never settle, hanging the loop and
+      // leaving the screen share live. processFrame's own `finally` has already closed the frame.
+      try {
+        const result = processor.processFrame(data.frame, data.drawDebug, data.detectionMargin);
+        postToMain({ type: 'frame:done', result });
+        if (data.drawDebug) {
+          postToMain({
+            type: 'debug',
+            image: processor.debugCanvas.transferToImageBitmap(),
+          });
+        }
+      } catch {
+        postToMain({ type: 'frame:done', result: undefined });
       }
       break;
 
     case 'image': {
       // Static-image (upload/paste) recognition request — independent of the live frame loop. Async:
-      // the OCR path lazy-loads tesseract and runs many OCR calls.
-      const result = await processor.processImage(data.bitmap);
-      postToMain({ type: 'image:done', result });
+      // the OCR path lazy-loads tesseract and runs many OCR calls. Wrap so a throw (e.g. a tesseract
+      // load failure) still posts image:done — otherwise recognizeImage() never resolves and the upload
+      // zone shows "Recognizing…" forever. processImage's `finally` has already closed the bitmap.
+      try {
+        const result = await processor.processImage(data.bitmap);
+        postToMain({ type: 'image:done', result });
+      } catch {
+        postToMain({ type: 'image:done', result: undefined });
+      }
       break;
     }
   }

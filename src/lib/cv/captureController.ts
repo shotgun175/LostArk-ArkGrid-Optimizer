@@ -59,6 +59,16 @@ export class CaptureController {
     this.worker.postMessage(msg);
   }
 
+  // Create the worker and wire BOTH handlers — onmessage and onerror. onerror is the backstop for a
+  // hard worker crash (uncaught exception / WASM abort) that posts no `*:done`; without it a pending
+  // init / image / frame promise would hang forever. Mirrors SolverController's constructor.
+  private createWorker(): Worker {
+    const worker = new Worker(new URL('./captureWorker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e) => this.handleWorkerMessage(e);
+    worker.onerror = (e) => this.handleWorkerError(e);
+    return worker;
+  }
+
   private handleWorkerMessage(e: MessageEvent<CaptureWorkerResponse>) {
     const data = e.data;
 
@@ -142,6 +152,25 @@ export class CaptureController {
     }
   }
 
+  private handleWorkerError(e: ErrorEvent) {
+    // A hard worker crash never posts a `*:done`, so every pending promise would hang: the upload zone
+    // spins "Recognizing…" forever and the frame loop keeps the screen share live. Settle them all —
+    // reject a pending init, resolve in-flight image / frame work as "no result" — so the UI recovers.
+    console.error('[capture] worker error:', e.message);
+    if (this.awaitWorkerInitialization) {
+      this.awaitWorkerInitialization.reject('worker-init-failed');
+      this.awaitWorkerInitialization = null;
+    }
+    if (this.awaitImageCompletion) {
+      this.awaitImageCompletion(null);
+      this.awaitImageCompletion = null;
+    }
+    if (this.awaitFrameCompletion) {
+      this.awaitFrameCompletion();
+      this.awaitFrameCompletion = null;
+    }
+  }
+
   private async requestDisplayMedia() {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -195,10 +224,7 @@ export class CaptureController {
   warmup() {
     if (this.worker) return;
     try {
-      this.worker = new Worker(new URL('./captureWorker.ts', import.meta.url), {
-        type: 'module',
-      });
-      this.worker.onmessage = this.handleWorkerMessage.bind(this);
+      this.worker = this.createWorker();
       this.postMessage({ type: 'init' });
     } catch {
       // Best-effort; if worker creation fails here, startCapture() will try again normally.
@@ -217,10 +243,7 @@ export class CaptureController {
   async recognizeImage(bitmap: ImageBitmap): Promise<ImageRecognition | null> {
     try {
       if (!this.worker) {
-        this.worker = new Worker(new URL('./captureWorker.ts', import.meta.url), {
-          type: 'module',
-        });
-        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+        this.worker = this.createWorker();
       }
       if (!this.workerInitialized) {
         const waitForInit = new Promise<void>((resolve, reject) => {
@@ -267,12 +290,9 @@ export class CaptureController {
       // Switch to loading (lock)
       this.state = 'loading';
 
-      // Register the handler after creating the worker
+      // Register the handlers after creating the worker
       if (!this.worker) {
-        this.worker = new Worker(new URL('./captureWorker.ts', import.meta.url), {
-          type: 'module',
-        });
-        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+        this.worker = this.createWorker();
       }
       // Create a promise that waits for the worker's init, then send the init request
       // (it may be rejected depending on the worker's response!)

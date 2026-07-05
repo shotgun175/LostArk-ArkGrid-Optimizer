@@ -60,3 +60,33 @@ describe('capture loop teardown', () => {
     expect(onStopCalled()).toBe(true);
   });
 });
+
+describe('capture worker error recovery', () => {
+  it('resolves a pending recognizeImage() to null on a worker error instead of hanging', async () => {
+    const c = new CaptureController() as any;
+    c.worker = { postMessage() {} }; // fake so recognizeImage skips creating a real Worker
+    c.workerInitialized = true; // skip re-init so it goes straight to the image request
+    const bitmap = { close() {} } as unknown as ImageBitmap;
+
+    const pending = c.recognizeImage(bitmap);
+    // Simulate a hard worker crash: no image:done is ever posted.
+    c.handleWorkerError({ message: 'worker crashed' });
+
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it('settles a pending init reject and frame lock on a worker error', () => {
+    const c = new CaptureController() as any;
+    let initRejected: string | null = null;
+    c.awaitWorkerInitialization = { resolve: () => {}, reject: (r: string) => (initRejected = r) };
+    let frameReleased = false;
+    c.awaitFrameCompletion = () => (frameReleased = true);
+
+    c.handleWorkerError({ message: 'boom' });
+
+    expect(initRejected).toBe('worker-init-failed');
+    expect(frameReleased).toBe(true);
+    expect(c.awaitWorkerInitialization).toBeNull();
+    expect(c.awaitFrameCompletion).toBeNull();
+  });
+});
