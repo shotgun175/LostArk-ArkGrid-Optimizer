@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/lib/cv/captureWorker.ts",
+    "src/lib/solver/solverWorker.ts",
+    "scripts/*.{mts,cjs}"
+  ],
+  "project": ["src/**/*.{ts,svelte}", "scripts/**/*.{mts,cjs}"],
+  "ignoreDependencies": ["@fontsource/inter", "@fontsource/jetbrains-mono"]
+}

@@ -56,6 +56,7 @@ npm run test:unit  # pure-logic unit tests (Vitest)
 npm run test:cv    # OpenCV-dependent tests (run via tsx; Vitest hangs on the WASM bundle)
 npm run test       # both of the above
 npm run check      # svelte-check + tsc type checking
+npm run knip       # advisory: reports orphaned exports / files / dependencies (not a CI gate)
 ```
 
 ## Data generators
