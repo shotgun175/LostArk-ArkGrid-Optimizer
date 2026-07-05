@@ -101,6 +101,7 @@ export function getCutCell(
     cut,
     pAbove: field((e) => e[binding].pAbove),
     expScore: field((e) => e[binding].expScore),
+    expSpend: field((e) => e[binding].expSpend),
     // The fodder tier split only exists for roster-free gems (rb gems are free to cut).
     fLeg: binding === 'nrb' ? field((e) => e.nrb.fLeg) : 0,
     fRelic: binding === 'nrb' ? field((e) => e.nrb.fRelic) : 0,
@@ -109,6 +110,82 @@ export function getCutCell(
     action: actionFor(verdict),
     resetWorthy: verdict === 'green',
   };
+}
+
+export interface BucketBreakdown {
+  key: BucketKey;
+  label: string; // 2D/2S/Op/Sub/No (role-aware)
+  description: string; // "both effects damage" etc. (role-aware)
+  cut: number;
+  pAbove: number;
+  expScore: number;
+  expSpend: number;
+}
+export interface CellBreakdown {
+  buckets: BucketBreakdown[];
+  averageCut: number; // (1·2D + 2·Op + 2·Sub + 1·No)/6 over the present buckets
+}
+
+// Average weights: (1·2D + 2·Op + 2·Sub + 1·No)/6 — the fresh-drop bucket mix (meta.freshBucketMix is
+// the rounded form). Use the exact integers so the displayed average matches shizukaziye's tooltip.
+const BUCKET_AVG_WEIGHT: Record<BucketKey, number> = {
+  '2_damage': 1,
+  optimal_damage: 2,
+  suboptimal_damage: 2,
+  no_damage: 1,
+};
+
+function describeBucket(bucket: BucketKey, word: 'damage' | 'support'): string {
+  switch (bucket) {
+    case '2_damage':
+      return `both effects ${word}`;
+    case 'optimal_damage':
+      return `best single ${word} + dead`;
+    case 'suboptimal_damage':
+      return `worse single ${word} + dead`;
+    case 'no_damage':
+      return 'both effects dead';
+  }
+}
+
+/**
+ * Per-bucket breakdown for one archetype card: each bucket's cut / hit / expected score + spend, plus
+ * the 1:2:2:1 weighted-average cut. Role-aware (2D vs 2S label, "damage" vs "support" wording) via
+ * `axis`. Returns null when the archetype has no cells at this axis / gpd.
+ */
+export function cellBreakdown(
+  data: PipelineData,
+  axis: CutAxis,
+  rarity: Rarity,
+  cost: number,
+  binding: BindingMode,
+  gpd: number,
+  baseline: number
+): CellBreakdown | null {
+  const word = axis === 'support' ? 'support' : 'damage';
+  const buckets: BucketBreakdown[] = [];
+  let accWeighted = 0;
+  let accWeight = 0;
+  for (const key of data.meta.buckets) {
+    const cell = getCutCell(data, axis, rarity, cost, key, binding, gpd, baseline);
+    if (!cell) continue;
+    const base = data.meta.bucketLabels[key];
+    const label = axis === 'support' && base === '2D' ? '2S' : base;
+    buckets.push({
+      key,
+      label,
+      description: describeBucket(key, word),
+      cut: cell.cut,
+      pAbove: cell.pAbove,
+      expScore: cell.expScore,
+      expSpend: cell.expSpend,
+    });
+    const w = BUCKET_AVG_WEIGHT[key];
+    accWeighted += w * cell.cut;
+    accWeight += w;
+  }
+  if (buckets.length === 0) return null;
+  return { buckets, averageCut: accWeight > 0 ? accWeighted / accWeight : 0 };
 }
 
 /** Best (max) cut value across an archetype's four buckets — the per-cell header EV. */

@@ -2,6 +2,7 @@
   import {
     actionLabel,
     bracketLabel,
+    cellBreakdown,
     effectPair,
     getCutCell,
     getThru,
@@ -34,6 +35,8 @@
   } from '../lib/state/profile.state.svelte';
   import BaselineControl from './BaselineControl.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
+  import CutplanBreakdown from './CutplanBreakdown.svelte';
+  import Popover from './Popover.svelte';
 
   interface Props {
     profile: CharacterProfile;
@@ -260,11 +263,26 @@
         {#each ARCHES as arch}
           {@const best = headerCut(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
           {@const thru = binding === 'nrb' ? getThru(data, axis, arch.rarity, arch.cost, goldPerDamage, baselinePct) : null}
+          {@const bd = cellBreakdown(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
           <div class="gem-card" data-rarity={arch.rarity}>
-            <div class="gem-header">
-              <span class="gem-title">{arch.label}</span>
-              <span class="gem-ev">Best: {fmtGold(best)}</span>
-            </div>
+            {#if bd}
+              <Popover label={`${arch.label} breakdown`}>
+                {#snippet trigger()}
+                  <div class="gem-header gem-header-trigger">
+                    <span class="gem-title">{arch.label} <span class="gem-info" aria-hidden="true">i</span></span>
+                    <span class="gem-ev">Best: {fmtGold(best)}</span>
+                  </div>
+                {/snippet}
+                {#snippet content()}
+                  <CutplanBreakdown breakdown={bd} rarity={arch.rarity} cost={arch.cost} {binding} />
+                {/snippet}
+              </Popover>
+            {:else}
+              <div class="gem-header">
+                <span class="gem-title">{arch.label}</span>
+                <span class="gem-ev">Best: {fmtGold(best)}</span>
+              </div>
+            {/if}
             <div class="gem-buckets">
               {#each data.meta.buckets as bkt}
                 {@const cell = getCutCell(data, axis, arch.rarity, arch.cost, bkt, binding, goldPerDamage, baselinePct)}
@@ -542,6 +560,34 @@
     padding: 0.5rem 0.75rem;
     background: var(--muted);
     border-bottom: 1px solid var(--border);
+  }
+  .gem-header-trigger {
+    cursor: pointer;
+  }
+  .gem-header-trigger:hover .gem-info {
+    opacity: 1;
+  }
+  /* Circled "i" in the panel's gold accent, mirroring the Glossary button's .q-circle so the
+     affordance reads as info. CSS-drawn so it never depends on a font's ⓘ character. */
+  .gem-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.95rem;
+    height: 0.95rem;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.62rem;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1;
+    color: #b8860b;
+    opacity: 0.75;
+    vertical-align: text-bottom;
+    margin-left: 0.25rem;
+  }
+  :global(.dark-mode) .gem-info {
+    color: #f0c040;
   }
   .gem-title {
     font-weight: 700;

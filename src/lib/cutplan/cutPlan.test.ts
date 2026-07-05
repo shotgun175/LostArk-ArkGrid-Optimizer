@@ -5,6 +5,7 @@ import {
   actionFor,
   actionLabel,
   bracketLabel,
+  cellBreakdown,
   effectPair,
   getCutCell,
   getThru,
@@ -70,14 +71,14 @@ const data: PipelineData = {
           '8': {
             '2_damage': {
               '500000': [
-                { b: 1, nrb: { cut: 10000, pAbove: 0.5, expScore: 1.0, fLeg: 0.3, fRelic: 0.1, fAnc: 0.1 }, rb: { cut: 12000, pAbove: 0.6, expScore: 1.1 } },
-                { b: 2, nrb: { cut: 20000, pAbove: 0.2, expScore: 1.5, fLeg: 0.5, fRelic: 0.2, fAnc: 0.1 }, rb: { cut: 22000, pAbove: 0.3, expScore: 1.6 } },
+                { b: 1, nrb: { cut: 10000, pAbove: 0.5, expScore: 1.0, expSpend: 7000, fLeg: 0.3, fRelic: 0.1, fAnc: 0.1 }, rb: { cut: 12000, pAbove: 0.6, expScore: 1.1, expSpend: 0 } },
+                { b: 2, nrb: { cut: 20000, pAbove: 0.2, expScore: 1.5, expSpend: 8000, fLeg: 0.5, fRelic: 0.2, fAnc: 0.1 }, rb: { cut: 22000, pAbove: 0.3, expScore: 1.6, expSpend: 0 } },
               ],
             },
             no_damage: {
               '500000': [
-                { b: 1, nrb: { cut: -500, pAbove: 0.01, expScore: 0.4, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.01, expScore: 0.4 } },
-                { b: 2, nrb: { cut: -500, pAbove: 0.0, expScore: 0.4, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.4 } },
+                { b: 1, nrb: { cut: -500, pAbove: 0.01, expScore: 0.4, expSpend: 6000, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.01, expScore: 0.4, expSpend: 0 } },
+                { b: 2, nrb: { cut: -500, pAbove: 0.0, expScore: 0.4, expSpend: 6000, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.4, expSpend: 0 } },
               ],
             },
           },
@@ -105,14 +106,14 @@ const data: PipelineData = {
           '8': {
             '2_damage': {
               '500000': [
-                { b: 0.1, nrb: { cut: 8000, pAbove: 0.4, expScore: 0.13, fLeg: 0.3, fRelic: 0.1, fAnc: 0.05 }, rb: { cut: 9000, pAbove: 0.45, expScore: 0.14 } },
-                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.03, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 200, pAbove: 0.01, expScore: 0.03 } },
+                { b: 0.1, nrb: { cut: 8000, pAbove: 0.4, expScore: 0.13, expSpend: 7850, fLeg: 0.3, fRelic: 0.1, fAnc: 0.05 }, rb: { cut: 9000, pAbove: 0.45, expScore: 0.14, expSpend: 0 } },
+                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.03, expSpend: 7850, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 200, pAbove: 0.01, expScore: 0.03, expSpend: 0 } },
               ],
             },
             no_damage: {
               '500000': [
-                { b: 0.1, nrb: { cut: 1500, pAbove: 0.1, expScore: 0.09, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 1800, pAbove: 0.12, expScore: 0.09 } },
-                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.02, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.02 } },
+                { b: 0.1, nrb: { cut: 1500, pAbove: 0.1, expScore: 0.09, expSpend: 6500, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 1800, pAbove: 0.12, expScore: 0.09, expSpend: 0 } },
+                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.02, expSpend: 6500, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.02, expSpend: 0 } },
               ],
             },
           },
@@ -196,6 +197,79 @@ describe('getThru', () => {
     const t = getThru(data, 'dps', 'epic', 8, 500000, 5)!; // clamps to the b=3 anchor (total 0)
     expect(t.totalPerWk).toBe(0);
     expect(t.weeks).toBeNull();
+  });
+});
+
+describe('cellBreakdown', () => {
+  it('assembles the DPS buckets with role-correct labels + weighted average', () => {
+    const b = cellBreakdown(data, 'dps', 'epic', 8, 'nrb', 500000, 1.5)!;
+    expect(b.buckets.map((x) => x.label)).toEqual(['2D', 'No']); // fixture has only these two buckets
+    expect(b.buckets[0].description).toBe('both effects damage');
+    expect(b.buckets[0].cut).toBeCloseTo(15000, 6); // interpolated 10000..20000
+    expect(b.buckets[0].expSpend).toBeCloseTo(7500, 6); // interpolated 7000..8000
+    // [1,2,2,1]/6 weights: 2_damage w=1, no_damage w=1 (both present) -> (15000 + no)/2
+    const no = b.buckets[1].cut;
+    expect(b.averageCut).toBeCloseTo((15000 + no) / 2, 6);
+  });
+  it('uses the 2S label + support wording on the support axis', () => {
+    const b = cellBreakdown(data, 'support', 'epic', 8, 'nrb', 500000, 0.15)!;
+    expect(b.buckets[0].label).toBe('2S');
+    expect(b.buckets[0].description).toBe('both effects support');
+    expect(b.buckets[0].cut).toBeGreaterThan(0);
+  });
+  it('returns null when no cells exist for the archetype', () => {
+    expect(cellBreakdown(data, 'dps', 'rare', 8, 'nrb', 500000, 1.5)).toBeNull();
+  });
+  it('applies the 1:2:2:1 weights and all four bucket descriptions', () => {
+    // A 4-bucket fixture so the weight-2 (Op/Sub) path and their descriptions are exercised — the
+    // 2-bucket `data` fixture above can't catch a wrong optimal/suboptimal weight.
+    const mkCell = (cut: number) => ({
+      '500000': [
+        {
+          b: 1,
+          nrb: { cut, pAbove: 0.5, expScore: 0.5, expSpend: 100, fLeg: 0, fRelic: 0, fAnc: 0 },
+          rb: { cut, pAbove: 0.5, expScore: 0.5, expSpend: 0 },
+        },
+      ],
+    });
+    const meta4: PipelineMeta = {
+      ...meta,
+      buckets: ['2_damage', 'optimal_damage', 'suboptimal_damage', 'no_damage'],
+    };
+    const data4: PipelineData = {
+      _provenance: {},
+      meta: meta4,
+      axes: {
+        dps: {
+          cells: {
+            epic: {
+              '8': {
+                '2_damage': mkCell(1000),
+                optimal_damage: mkCell(100),
+                suboptimal_damage: mkCell(10),
+                no_damage: mkCell(1),
+              },
+            },
+          } as unknown as PipelineData['axes']['dps']['cells'],
+          thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+        },
+        // Support unused here.
+        support: {
+          cells: {} as unknown as PipelineData['axes']['dps']['cells'],
+          thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+        },
+      },
+    };
+    const b = cellBreakdown(data4, 'dps', 'epic', 8, 'nrb', 500000, 1)!;
+    expect(b.buckets.map((x) => x.label)).toEqual(['2D', 'Op', 'Sub', 'No']);
+    expect(b.buckets.map((x) => x.description)).toEqual([
+      'both effects damage',
+      'best single damage + dead',
+      'worse single damage + dead',
+      'both effects dead',
+    ]);
+    // (1·1000 + 2·100 + 2·10 + 1·1) / (1+2+2+1) = 1221/6 — a wrong Op/Sub weight fails this.
+    expect(b.averageCut).toBeCloseTo(1221 / 6, 6);
   });
 });
 
@@ -283,5 +357,11 @@ describe('committed pipeline.json shape (locks types <-> data)', () => {
     expect(meta.baselines.dps.at(-1)).toBeCloseTo(1.432, 2);
     // Support anchors must all sit below the DPS floor — the whole point of the split.
     expect(meta.baselines.support.at(-1)).toBeLessThan(meta.baselines.dps[0]);
+  });
+  it('carries a numeric expSpend on each cell (nrb positive, rb zero)', () => {
+    const c = (realPipeline as unknown as PipelineData).axes.dps.cells.epic['8']['2_damage']['5000000'][0];
+    expect(typeof c.nrb.expSpend).toBe('number');
+    expect(c.nrb.expSpend).toBeGreaterThan(0);
+    expect(c.rb.expSpend).toBe(0);
   });
 });
