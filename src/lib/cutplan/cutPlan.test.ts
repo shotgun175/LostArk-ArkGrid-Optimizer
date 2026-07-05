@@ -70,14 +70,14 @@ const data: PipelineData = {
           '8': {
             '2_damage': {
               '500000': [
-                { b: 1, nrb: { cut: 10000, pAbove: 0.5, expScore: 1.0, fLeg: 0.3, fRelic: 0.1, fAnc: 0.1 }, rb: { cut: 12000, pAbove: 0.6, expScore: 1.1 } },
-                { b: 2, nrb: { cut: 20000, pAbove: 0.2, expScore: 1.5, fLeg: 0.5, fRelic: 0.2, fAnc: 0.1 }, rb: { cut: 22000, pAbove: 0.3, expScore: 1.6 } },
+                { b: 1, nrb: { cut: 10000, pAbove: 0.5, expScore: 1.0, expSpend: 7000, fLeg: 0.3, fRelic: 0.1, fAnc: 0.1 }, rb: { cut: 12000, pAbove: 0.6, expScore: 1.1, expSpend: 0 } },
+                { b: 2, nrb: { cut: 20000, pAbove: 0.2, expScore: 1.5, expSpend: 8000, fLeg: 0.5, fRelic: 0.2, fAnc: 0.1 }, rb: { cut: 22000, pAbove: 0.3, expScore: 1.6, expSpend: 0 } },
               ],
             },
             no_damage: {
               '500000': [
-                { b: 1, nrb: { cut: -500, pAbove: 0.01, expScore: 0.4, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.01, expScore: 0.4 } },
-                { b: 2, nrb: { cut: -500, pAbove: 0.0, expScore: 0.4, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.4 } },
+                { b: 1, nrb: { cut: -500, pAbove: 0.01, expScore: 0.4, expSpend: 6000, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.01, expScore: 0.4, expSpend: 0 } },
+                { b: 2, nrb: { cut: -500, pAbove: 0.0, expScore: 0.4, expSpend: 6000, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.4, expSpend: 0 } },
               ],
             },
           },
@@ -105,14 +105,14 @@ const data: PipelineData = {
           '8': {
             '2_damage': {
               '500000': [
-                { b: 0.1, nrb: { cut: 8000, pAbove: 0.4, expScore: 0.13, fLeg: 0.3, fRelic: 0.1, fAnc: 0.05 }, rb: { cut: 9000, pAbove: 0.45, expScore: 0.14 } },
-                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.03, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 200, pAbove: 0.01, expScore: 0.03 } },
+                { b: 0.1, nrb: { cut: 8000, pAbove: 0.4, expScore: 0.13, expSpend: 7850, fLeg: 0.3, fRelic: 0.1, fAnc: 0.05 }, rb: { cut: 9000, pAbove: 0.45, expScore: 0.14, expSpend: 0 } },
+                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.03, expSpend: 7850, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 200, pAbove: 0.01, expScore: 0.03, expSpend: 0 } },
               ],
             },
             no_damage: {
               '500000': [
-                { b: 0.1, nrb: { cut: 1500, pAbove: 0.1, expScore: 0.09, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 1800, pAbove: 0.12, expScore: 0.09 } },
-                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.02, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.02 } },
+                { b: 0.1, nrb: { cut: 1500, pAbove: 0.1, expScore: 0.09, expSpend: 6500, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 1800, pAbove: 0.12, expScore: 0.09, expSpend: 0 } },
+                { b: 0.2, nrb: { cut: 0, pAbove: 0.0, expScore: 0.02, expSpend: 6500, fLeg: 0.9, fRelic: 0, fAnc: 0 }, rb: { cut: 0, pAbove: 0.0, expScore: 0.02, expSpend: 0 } },
               ],
             },
           },
@@ -283,5 +283,11 @@ describe('committed pipeline.json shape (locks types <-> data)', () => {
     expect(meta.baselines.dps.at(-1)).toBeCloseTo(1.432, 2);
     // Support anchors must all sit below the DPS floor — the whole point of the split.
     expect(meta.baselines.support.at(-1)).toBeLessThan(meta.baselines.dps[0]);
+  });
+  it('carries a numeric expSpend on each cell (nrb positive, rb zero)', () => {
+    const c = (realPipeline as unknown as PipelineData).axes.dps.cells.epic['8']['2_damage']['5000000'][0];
+    expect(typeof c.nrb.expSpend).toBe('number');
+    expect(c.nrb.expSpend).toBeGreaterThan(0);
+    expect(c.rb.expSpend).toBe(0);
   });
 });

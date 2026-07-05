@@ -16,6 +16,7 @@ export interface CellNrb {
   cut: number; // exact Bellman gold value of cutting a fresh gem of this archetype
   pAbove: number; // P(the optimal cut ends at/above baseline)
   expScore: number; // expected % damage of the cut
+  expSpend: number; // expected gold spent per cut attempt of this archetype
   fLeg: number; // fodder tier split (legendary / relic / ancient), sums to 1 − pAbove
   fRelic: number;
   fAnc: number;
@@ -24,6 +25,7 @@ export interface CellRb {
   cut: number;
   pAbove: number;
   expScore: number;
+  expSpend: number; // 0 in the source (rb is free to cut); shown as "—"
 }
 export interface PipelineCellEntry {
   b: number; // baseline anchor (% damage)
@@ -77,6 +79,7 @@ export interface CutCell {
   cut: number;
   pAbove: number;
   expScore: number;
+  expSpend: number;
   fLeg: number;
   fRelic: number;
   fAnc: number;

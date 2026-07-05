@@ -101,6 +101,7 @@ export function getCutCell(
     cut,
     pAbove: field((e) => e[binding].pAbove),
     expScore: field((e) => e[binding].expScore),
+    expSpend: field((e) => e[binding].expSpend),
     // The fodder tier split only exists for roster-free gems (rb gems are free to cut).
     fLeg: binding === 'nrb' ? field((e) => e.nrb.fLeg) : 0,
     fRelic: binding === 'nrb' ? field((e) => e.nrb.fRelic) : 0,

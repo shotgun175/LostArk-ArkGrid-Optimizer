@@ -58,6 +58,7 @@ function transform(src, meta) {
                 cut: Math.round(c.nrb.cut),
                 pAbove: round(c.nrb.pAbove, 4),
                 expScore: round(c.nrb.expScore, 4),
+                expSpend: Math.round(c.nrb.expSpend || 0),
                 fLeg: round(c.nrb.fLeg, 4),
                 fRelic: round(c.nrb.fRelic, 4),
                 fAnc: round(c.nrb.fAnc, 4),
@@ -66,6 +67,7 @@ function transform(src, meta) {
                 cut: Math.round(c.rb.cut),
                 pAbove: round(c.rb.pAbove, 4),
                 expScore: round(c.rb.expScore, 4),
+                expSpend: Math.round(c.rb.expSpend || 0),
               },
             };
           });
