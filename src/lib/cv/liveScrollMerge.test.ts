@@ -72,6 +72,19 @@ describe('mergeScrolledGems', () => {
     expect(reqs(r.gems)).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4]);
   });
 
+  it('prepends the head EXACTLY once on an upward scroll when duplicates match the anchor at several positions', () => {
+    // Upward mirror of the downward double-count guard: the first gem (req 2) is absent, forcing the
+    // upward path; the last gem (req 1) matches all eight known positions, so several upIndices clear
+    // the threshold. The head [2,3,4,1,1] must be prepended once, not once per qualifying index.
+    const total = Array.from({ length: 8 }, () => mk(1));
+    const current = [2, 3, 4, 1, 1, 1, 1, 1, 1].map(mk);
+    const r = mergeScrolledGems(total, current);
+    expect(r.changed).toBe(true);
+    expect(r.scroll).toBe('top');
+    expect(r.gems.length).toBe(13); // 8 + 5 prepended once (a double-prepend would balloon past 13)
+    expect(reqs(r.gems)).toEqual([2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+  });
+
   it('does not fall back to an upward merge when the first gem is present but the downward overlap is below threshold', () => {
     // req 1 is present (downward anchor matches) but the downward run is only 1, below threshold, so
     // no downward merge. The last gem (req 9) DOES anchor a qualifying upward run (9,8,7,6) — the
