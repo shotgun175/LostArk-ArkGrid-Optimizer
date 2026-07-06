@@ -71,4 +71,14 @@ describe('mergeScrolledGems', () => {
     expect(r.gems.length).toBe(11); // 8 + 3, appended once (a double-count would be 14+)
     expect(reqs(r.gems)).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4]);
   });
+
+  it('does not fall back to an upward merge when the first gem is present but the downward overlap is below threshold', () => {
+    // req 1 is present (downward anchor matches) but the downward run is only 1, below threshold, so
+    // no downward merge. The last gem (req 9) DOES anchor a qualifying upward run (9,8,7,6) — the
+    // `downIndices.length === 0` guard must suppress that upward merge because the first gem was found.
+    const total = [1, 6, 7, 8, 9].map(mk);
+    const current = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(mk);
+    const r = mergeScrolledGems(total, current);
+    expect(r.changed).toBe(false); // dropping the guard would wrongly prepend [1,2,3,4,5]
+  });
 });
