@@ -4,6 +4,7 @@
   import Icon from '../shared/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
+  import { mergeScrolledGems } from '../../lib/cv/liveScrollMerge';
   import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';
   import type { OwnedCount } from '../../lib/cv/types';
   import {
@@ -146,101 +147,13 @@
         _prevGem = gemKey;
       }
     }
-    const totalGems = gemAttr == 'Order' ? totalOrderGems : totalChaosGems;
-    // Add gems
-    const SAME_COUNT_THRESHOLD = 4;
-    if (totalGems.length == 0 && currentGems.length > 0) {
-      // If there are no current gems, replace with the gems on screen.
-      // The count need not be exactly 9 here (some people cut few gems).
-      for (const gem of currentGems) {
-        totalGems.push(gem);
-      }
-      gemListElem?.selectTab(gemAttr == 'Order' ? 0 : 1);
-      gemListElem?.scroll('bottom');
-      // console.log($state.snapshot(totalGems));
-    } else {
-      if (currentGems.length == 9 && totalGems.length < 100) {
-        // Proceed only when all 9 gems were recognized normally.
-
-        // Q. Where does the first gem on my screen sit within the full gem list?
-        // Save all candidates in case two or more gems share the same options.
-        let foundIndices: number[] = [];
-        for (let i = 0; i < totalGems.length; i++) {
-          if (isSameArkGridGem(totalGems[i], currentGems[0])) {
-            foundIndices.push(i);
-          }
-        }
-        // For each index found above,
-        // consecutively check how many of the on-screen gems are already known.
-        for (let foundIndex of foundIndices) {
-          let sameCount = 1;
-          for (let i = 1; i < currentGems.length; i++) {
-            if (foundIndex + i >= totalGems.length) break;
-            if (isSameArkGridGem(totalGems[foundIndex + i], currentGems[i])) {
-              sameCount += 1;
-            } else {
-              break;
-            }
-          }
-          // If every gem currently on screen was already added consecutively, skip.
-          if (sameCount == 9) continue;
-
-          // To exclude cases where the user scrolled too fast,
-          // only proceed when at least 4 of the on-screen gems are already known.
-          // Also, a mismatched index for same-option gems yields sameCount = 1, so filter it out.
-          if (sameCount >= SAME_COUNT_THRESHOLD) {
-            // Gems from sameCount to the end of my screen are candidates to add.
-            for (let i = sameCount; i < 9; i++) {
-              totalGems.push(currentGems[i]);
-              // console.log('add:', currentGems[i]);
-            }
-            gemListElem?.selectTab(gemAttr == 'Order' ? 0 : 1);
-            gemListElem?.scroll('bottom');
-            // console.log($state.snapshot(totalGems));
-            // Stop after the first qualifying merge. With several identical gems, more than one
-            // foundIndex can reach the threshold, and merging each would append the same tail gems
-            // once per match — double-counting the owned list.
-            break;
-          }
-        }
-
-        if (foundIndices.length == 0) {
-          // If the first on-screen gem is missing entirely, assume the user is scrolling upward.
-          // Check whether the last gem is already known.
-          for (let i = 0; i < totalGems.length; i++) {
-            if (isSameArkGridGem(totalGems[i], currentGems[8])) {
-              foundIndices.push(i);
-            }
-          }
-          // For each index found above,
-          // consecutively check how many of the on-screen gems are already known.
-          for (let foundIndex of foundIndices) {
-            let sameCount = 1;
-            for (let i = 1; i < currentGems.length; i++) {
-              if (foundIndex - i < 0) break;
-              if (isSameArkGridGem(totalGems[foundIndex - i], currentGems[8 - i])) {
-                sameCount += 1;
-              } else {
-                break;
-              }
-            }
-            if (sameCount == 9) continue;
-            if (sameCount >= SAME_COUNT_THRESHOLD) {
-              // Gems from 0 to 9-sameCount-1 on my screen are candidates to add.
-              for (let i = 9 - sameCount - 1; i >= 0; i--) {
-                totalGems.unshift(currentGems[i]);
-                // console.log('add:', currentGems[i]);
-              }
-              gemListElem?.selectTab(gemAttr == 'Order' ? 0 : 1);
-              gemListElem?.scroll('top');
-              // console.log($state.snapshot(totalGems));
-              // Stop after the first qualifying merge (see the downward branch): duplicate runs would
-              // otherwise unshift the same head gems once per matching index.
-              break;
-            }
-          }
-        }
-      }
+    const totalGems = gemAttr === 'Order' ? totalOrderGems : totalChaosGems;
+    const result = mergeScrolledGems(totalGems, currentGems);
+    if (result.changed) {
+      if (gemAttr === 'Order') totalOrderGems = result.gems;
+      else totalChaosGems = result.gems;
+      gemListElem?.selectTab(gemAttr === 'Order' ? 0 : 1);
+      if (result.scroll) gemListElem?.scroll(result.scroll);
     }
   }
 
