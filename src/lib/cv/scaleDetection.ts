@@ -61,3 +61,30 @@ export function chooseBestScale<K extends string>(
   }
   return best;
 }
+
+/**
+ * Seed the non-standard on-screen UI scale `g0` from the captured frame HEIGHT, used to NARROW the
+ * calibration sweep (the worker already receives the height each frame). The game UI's discrete tiers
+ * are 1080→g 1.0, 1440→g 1.333, 2160→g 2.0. {@link snapResolutionScale} works in RESAMPLE-FACTOR space
+ * (canonicals [0.5,0.75,1.0]) — the exact inverses of those g tiers — so invert → snap → invert reuses
+ * the tested tier-snap: a near-tier windowed height snaps to its tier, a genuinely between-tier window
+ * keeps its measured value. The ~27px Windows title bar is subtracted to match the standard path's
+ * sub-FHD formula; the ±band in {@link buildNarrowScaleLadder} absorbs any residual.
+ */
+export function seedGeomScaleFromHeight(height: number, titlebarPx = 27): number {
+  const usable = Math.max(1, height - titlebarPx);
+  return 1 / snapResolutionScale(1080 / usable);
+}
+
+/**
+ * A narrow scale ladder centred on the height seed `g0` (±`frac`, default 15%) for the FAST first
+ * non-standard calibration attempt — ~7–13 scales vs the full 41, since the icon-row pitch measurement
+ * (`scaleFromPitch`) and `refineScale` (±0.04) supply the final precision, so the seed only has to land
+ * in the neighbourhood. Bounds are rounded to 2dp so {@link buildScaleLadder}'s trailing-max append
+ * doesn't add a near-duplicate scale.
+ */
+export function buildNarrowScaleLadder(g0: number, frac = 0.15, step = 0.05): number[] {
+  const lo = Math.max(step, Number((g0 * (1 - frac)).toFixed(2)));
+  const hi = Number((g0 * (1 + frac)).toFixed(2));
+  return buildScaleLadder(lo, hi, step);
+}

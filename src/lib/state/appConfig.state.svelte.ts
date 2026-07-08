@@ -10,7 +10,11 @@ interface UIConfig {
   /** True once the user has explicitly toggled the theme; from then on the
    *  persisted darkMode wins over the OS prefers-color-scheme at startup. */
   themeSetByUser: boolean;
-  deferredScreenSharingInit: boolean;
+  /** true = the live client is forced 21:9 (its header and gem-list scales diverge, so the fast
+   *  height-tier path can't normalise both); the worker skips the standard-path priority and primes the
+   *  non-standard (icon-seed) path on frame 1. false = adaptive default — the fallback still handles an
+   *  odd-size windowed client, just a few frames slower to lock on. */
+  forcedNonStandardClient: boolean;
   newGemAddStyle: boolean;
 }
 const defaultUIConfig: UIConfig = {
@@ -18,7 +22,7 @@ const defaultUIConfig: UIConfig = {
   debugMode: false,
   darkMode: false,
   themeSetByUser: false,
-  deferredScreenSharingInit: false,
+  forcedNonStandardClient: false,
   newGemAddStyle: false,
 };
 
@@ -85,9 +89,9 @@ export function migrateAppConfig(appConfig: Partial<AppConfig>) {
   if ('appLocale' in appConfig) {
     delete appConfig.appLocale;
   }
-  // deferredScreenSharingInit
-  if (appConfig.uiConfig && appConfig.uiConfig.deferredScreenSharingInit === undefined) {
-    appConfig.uiConfig.deferredScreenSharingInit = false;
+  // forcedNonStandardClient (replaces the retired deferredScreenSharingInit toggle; see cleanup below)
+  if (appConfig.uiConfig && appConfig.uiConfig.forcedNonStandardClient === undefined) {
+    appConfig.uiConfig.forcedNonStandardClient = false;
   }
   // newGemAddStyle
   if (appConfig.uiConfig && appConfig.uiConfig.newGemAddStyle === undefined) {
@@ -101,6 +105,8 @@ export function migrateAppConfig(appConfig: Partial<AppConfig>) {
     delete ui.showGemTriage;
     delete ui.showCuttingPlan;
     delete ui.showOptimization;
+    // Retired: the "Prevent Screen Sharing Crash" toggle (parallel share ordering is now hardcoded).
+    delete ui.deferredScreenSharingInit;
   }
 }
 
@@ -139,6 +145,16 @@ export function addNewProfile(profile: CharacterProfile) {
   appConfig.current.characterProfiles.push(profile);
   return true;
 }
+export function overwriteProfile(profile: CharacterProfile) {
+  // Replace an existing same-name profile in place (the import "overwrite" path).
+  // Returns true on success, false if the name is invalid or no same-name profile exists.
+  const name = profile.characterName;
+  if (name.length == 0 || name.length > 16) return false;
+  const index = appConfig.current.characterProfiles.findIndex((p) => p.characterName === name);
+  if (index === -1) return false;
+  appConfig.current.characterProfiles.splice(index, 1, profile);
+  return true;
+}
 export function toggleUI(optionName: keyof UIConfig) {
   appConfig.current.uiConfig[optionName] = !appConfig.current.uiConfig[optionName];
 }
@@ -155,8 +171,4 @@ export function applyOsThemePreference(prefersDark: boolean) {
   // an explicit toggle persists and must survive reloads.
   if (appConfig.current.uiConfig.themeSetByUser) return;
   appConfig.current.uiConfig.darkMode = prefersDark;
-}
-export function toggleDeferredScreenSharingInit() {
-  appConfig.current.uiConfig.deferredScreenSharingInit =
-    !appConfig.current.uiConfig.deferredScreenSharingInit;
 }

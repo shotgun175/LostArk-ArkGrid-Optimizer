@@ -66,7 +66,12 @@
         1. Open an Astrogem list and unequip all.<br />
         You can switch to an unused Ark Grid preset to quickly unequip all astrogems.
       </p>
-      <p>2. Press the [🖥️ Start Screen Sharing] button to share your Lost Ark game screen.</p>
+      <p>
+        2. Press the [🖥️ Start Screen Sharing] button to share your Lost Ark game screen.<br />
+        <b>On an ultrawide / forced 21:9 screen</b>, toggle [Forced 21:9] on before sharing so
+        recognition primes the right scale right away. On a standard 16:9 screen, leave it off —
+        recognition still adapts on its own, just a moment slower to lock on.
+      </p>
       <p>3. Scroll down and check that recognized astrogems are being added to the list.</p>
       <p>
         4. Verify the total number of collected astrogems. Once <b>all Order and Chaos astrogems</b>

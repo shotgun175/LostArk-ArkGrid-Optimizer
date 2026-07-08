@@ -6,6 +6,7 @@
     appConfig,
     bigIntSerializer,
     getProfile,
+    overwriteProfile,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import {
@@ -19,6 +20,7 @@
     setCurrentProfileName,
     updateProfileCharacterName,
   } from '../../lib/state/profile.state.svelte';
+  import { alertDialog, confirmDialog } from '../../lib/ui/confirmDialog.svelte';
 
   let locale = $derived(appLocale.current);
   const LTitle = $derived(
@@ -74,11 +76,11 @@
       en_us: 'Import profile from JSON',
     }[locale]
   );
-  const LImportProfileFailedMsgDuplicated = $derived(
-    {
-      en_us: 'A profile with this name already exists.',
-    }[locale]
-  );
+  const LConfirmImportOverwrite: Record<string, (name: string) => string> = {
+    en_us: (name) =>
+      `A profile named "${name}" already exists.\n` +
+      'Overwrite it with the imported profile? This replaces its gems, cores, and saved results.',
+  };
   const LImportProfileFailedMsgWrongFormat = $derived(
     {
       en_us: 'Failed to import the profile file due to an invalid file format.',
@@ -115,11 +117,11 @@
     {/each}
     <button
       title={LNewProfile}
-      onclick={() => {
+      onclick={async () => {
         const profileName = window.prompt(LAddNewProfile)?.trim();
         if (profileName === undefined || profileName.length == 0) return;
         if (!addNewProfile(initNewProfile(profileName))) {
-          window.alert(LNewProfileFailedMsg);
+          await alertDialog({ message: LNewProfileFailedMsg });
           return;
         }
         setCurrentProfileName(profileName);
@@ -128,14 +130,14 @@
     <button
       title={LEditProfile}
       disabled={currentProfileName.current === DEFAULT_PROFILE_NAME}
-      onclick={() => {
+      onclick={async () => {
         // Pre-fill the current name so the user can tweak it instead of retyping the whole thing.
         const profileName = window.prompt(LEditProfileMsg, currentProfileName.current)?.trim();
         if (profileName === undefined || profileName.length == 0) return;
         // Confirming the unchanged name is a no-op (avoids a false "already exists" on self-match).
         if (profileName === currentProfileName.current) return;
         if (updateProfileCharacterName(profileName) === false) {
-          window.alert(LEditProfileFailedMsg);
+          await alertDialog({ message: LEditProfileFailedMsg });
           return;
         }
         setCurrentProfileName(profileName);
@@ -143,8 +145,15 @@
     >
     <button
       title={LDeleteProfile}
-      onclick={() => {
-        if (window.confirm(LConfirmDeleteProfile[locale](currentProfileName.current))) {
+      onclick={async () => {
+        if (
+          await confirmDialog({
+            title: 'Delete profile',
+            message: LConfirmDeleteProfile[locale](currentProfileName.current),
+            confirmText: 'Delete',
+            tone: 'danger',
+          })
+        ) {
           deleteProfile(currentProfileName.current);
         }
       }}
@@ -186,17 +195,25 @@
           if (!file) return;
 
           const reader = new FileReader();
-          reader.onload = (e) => {
+          reader.onload = async (e) => {
             try {
               const data: CharacterProfile = bigIntSerializer.parse(e.target?.result as string);
               migrateProfile(data);
               if (addNewProfile(data)) {
                 currentProfileName.current = data.characterName;
-              } else {
-                alert(LImportProfileFailedMsgDuplicated);
+              } else if (
+                await confirmDialog({
+                  title: 'Overwrite profile?',
+                  message: LConfirmImportOverwrite[locale](data.characterName),
+                  confirmText: 'Overwrite',
+                  tone: 'danger',
+                })
+              ) {
+                // Name collision: replace the existing same-name profile with the imported one.
+                if (overwriteProfile(data)) currentProfileName.current = data.characterName;
               }
             } catch (err) {
-              alert(LImportProfileFailedMsgWrongFormat);
+              await alertDialog({ message: LImportProfileFailedMsgWrongFormat });
             }
           };
           reader.readAsText(file);

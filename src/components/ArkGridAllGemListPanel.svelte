@@ -7,6 +7,7 @@
   import { appLocale } from '../lib/state/locale.state.svelte';
   import { type AllGems, clearGems } from '../lib/state/profile.state.svelte';
   import { solveState } from '../lib/state/solve.state.svelte';
+  import { confirmDialog } from '../lib/ui/confirmDialog.svelte';
   import Wrapper from './ArkGridGemAddPanel/Wrapper.svelte';
   import ArkGridGemList from './ArkGridGemList.svelte';
 
@@ -57,8 +58,14 @@
   });
   let currentAttr: ArkGridAttr = $derived(activeTab == 0 ? 'Order' : 'Chaos');
 
-  function clearGemWithConfirm() {
-    if (!window.confirm(LResetConfirm)) return;
+  async function clearGemWithConfirm() {
+    const ok = await confirmDialog({
+      title: 'Reset astrogems',
+      message: LResetConfirm,
+      confirmText: 'Reset',
+      tone: 'danger',
+    });
+    if (!ok) return;
     clearGems();
     toast.push(LResetDone);
   }

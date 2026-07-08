@@ -2,8 +2,8 @@ import type { CV } from '@techstark/opencv-js';
 
 import type { GemRecognitionLocale } from '../constants/enums';
 import { getCv, initOpenCv } from './cvRuntime';
-import { multiScaleAnchorMatch } from './matcher';
 import { loadGemAsset } from './matStore';
+import { multiScaleAnchorMatch } from './matcher';
 import {
   type RecognizeResult,
   type ScaledFieldAtlases,
@@ -14,8 +14,12 @@ import {
   findBest,
   scaleFromPitch,
 } from './recognize';
-import { findIconRows, recognizeGemsOcr, type OcrResult, type OcrRunner } from './recognizeOcr';
-import { buildScaleLadder } from './scaleDetection';
+import { type OcrResult, type OcrRunner, findIconRows, recognizeGemsOcr } from './recognizeOcr';
+import {
+  buildNarrowScaleLadder,
+  buildScaleLadder,
+  seedGeomScaleFromHeight,
+} from './scaleDetection';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types';
 
 /**
@@ -24,7 +28,8 @@ import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types
  * ~30 column/cell OCR calls per image. Each cv.Mat is rendered to ImageData for tesseract.
  */
 class BrowserOcrRunner implements OcrRunner {
-  private worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | null = null;
+  private worker: Awaited<ReturnType<(typeof import('tesseract.js'))['createWorker']>> | null =
+    null;
   private psmMap: Record<number, unknown> = {};
   private initPromise: Promise<void> | null = null;
   // Set per-call so the worker's recognition logger can drive a determinate progress bar for the slow
@@ -39,7 +44,8 @@ class BrowserOcrRunner implements OcrRunner {
         this.psmMap = { 6: T.PSM.SINGLE_BLOCK, 7: T.PSM.SINGLE_LINE, 10: T.PSM.SINGLE_CHAR };
         this.worker = await T.createWorker('eng', 1, {
           logger: (m: { status?: string; progress?: number }) => {
-            if (m.status === 'recognizing text' && typeof m.progress === 'number') this.onProgress?.(m.progress);
+            if (m.status === 'recognizing text' && typeof m.progress === 'number')
+              this.onProgress?.(m.progress);
           },
         });
       })();
@@ -68,9 +74,12 @@ class BrowserOcrRunner implements OcrRunner {
     const { data } = await this.worker!.recognize(canvas, {}, { blocks: true });
     this.onProgress = null;
     const lines: OcrResult['lines'] = [];
-    for (const b of (data.blocks ?? []) as Array<{ paragraphs?: Array<{ lines?: Array<{ text: string; bbox: { y0: number; y1: number } }> }> }>)
+    for (const b of (data.blocks ?? []) as Array<{
+      paragraphs?: Array<{ lines?: Array<{ text: string; bbox: { y0: number; y1: number } }> }>;
+    }>)
       for (const p of b.paragraphs ?? [])
-        for (const l of p.lines ?? []) lines.push({ text: String(l.text).trim(), cy: (l.bbox.y0 + l.bbox.y1) / 2 });
+        for (const l of p.lines ?? [])
+          lines.push({ text: String(l.text).trim(), cy: (l.bbox.y0 + l.bbox.y1) / 2 });
     return { text: String(data.text).trim(), lines };
   }
 }
@@ -127,12 +136,15 @@ class FrameProcessor {
   private nsRelockMiss = 0; // consecutive fast-pass re-lock misses (panel moved/closed)
   private nsEmptyStreak = 0; // consecutive frames the strip RE-LOCKED but read no gems (stale geometry)
   private nullStdFails = 0; // consecutive unclassified frames where the standard path read no gems
+  private nsPriorityFails = 0; // (forced-NS hint) consecutive frames NS failed to commit → also retry standard
+  private nsNarrowTried = false; // first calibration attempt sweeps the height-narrowed ladder; retries use full
   private lastNsHeavyAt = 0; // throttle for the expensive ops (calibration sweep, full-frame re-acquire)
   private nsLocale: GemRecognitionLocale = 'en_us'; // live template path is en_us (icons are language-agnostic)
   private static readonly NS_HEAVY_INTERVAL_MS = 1000;
   private static readonly NS_RELOCK_REACQUIRE = 6; // strip-miss streak before a (throttled) full re-acquire
   private static readonly NS_EMPTY_REACQUIRE = 8; // locked-but-empty streak before forcing a re-acquire
   private static readonly STANDARD_PRIORITY_FRAMES = 5; // standard gets this many tries before non-standard is attempted
+  private static readonly NONSTANDARD_PRIORITY_FRAMES = 5; // (forced-NS hint) NS-miss streak before standard is retried
 
   constructor() {
     const ctx = this.canvas.getContext('2d', { willReadFrequently: true });
@@ -189,6 +201,8 @@ class FrameProcessor {
     this.nsRelockMiss = 0;
     this.nsEmptyStreak = 0;
     this.nullStdFails = 0;
+    this.nsPriorityFails = 0;
+    this.nsNarrowTried = false;
     this.lastNsHeavyAt = 0;
     if (this.nsScaledAtlases) {
       disposeScaledFieldAtlases(this.nsScaledAtlases);
@@ -262,7 +276,12 @@ class FrameProcessor {
     return { resolutionScale, expectedResolution };
   }
 
-  processFrame(frame: VideoFrame, drawDebug: boolean = false, detectionMargin: number = 0) {
+  processFrame(
+    frame: VideoFrame,
+    drawDebug: boolean = false,
+    detectionMargin: number = 0,
+    forcedNonStandard: boolean = false
+  ) {
     const start = performance.now();
     const cv = this.cv;
     let gray: CvMat | null = null;
@@ -272,9 +291,11 @@ class FrameProcessor {
     try {
       if (!this.loadedAsset) return;
 
-      // STANDARD path (today's fast height-tier + header-anchor design) — try it unless this session is
-      // already classified non-standard.
-      if (this.liveMode !== 'nonstandard') {
+      // (A) STANDARD path (today's fast height-tier + header-anchor design). Runs when the session is
+      // committed-standard, or still unclassified with the forced-non-standard hint OFF. Skipped on the
+      // FIRST unclassified frame when the hint is ON (so the non-standard path primes immediately), and
+      // always skipped once committed non-standard.
+      if (this.liveMode !== 'nonstandard' && !(forcedNonStandard && this.liveMode === null)) {
         const std = this.tryStandardPath(frame, drawDebug, detectionMargin);
         // Commit 'standard' ONLY once it has actually READ a gem. A bare header match must not lock the
         // session in — Lost Ark menus have gold-bordered panel headers that can match the "Astrogem"
@@ -290,16 +311,16 @@ class FrameProcessor {
         // Already locked to 'standard' (it read gems earlier): this frame just found a header but no
         // gems, or lost the panel (a menu / black frame) — stay standard and re-search next frame.
         if (this.liveMode === 'standard') return std.result;
-        // Still classifying and standard didn't read gems. Give standard a few frames of priority before
-        // paying the non-standard icon sweep, so a transient standard miss on a real 16:9 client can't
-        // commit it to the slower non-standard path.
+        // Still classifying (hint OFF) and standard didn't read gems. Give standard a few frames of
+        // priority before paying the non-standard icon sweep, so a transient standard miss on a real
+        // 16:9 client can't commit it to the slower non-standard path.
         if (++this.nullStdFails < FrameProcessor.STANDARD_PRIORITY_FRAMES) return std.result;
         // Standard has failed to read for several frames running — fall through to the non-standard path.
       }
 
       // NON-STANDARD path (forced-21:9 / windowed): recognise on the NATIVE frame at the measured gem-
       // list scale, since the header is at a different scale and can't anchor the list. Decode native
-      // gray once (used by both calibration and the fast pass).
+      // gray once (used by calibration, the fast pass, and the safety fallback).
       gray = this.decodeToGray(frame, frame.displayWidth, frame.displayHeight);
       if (drawDebug) {
         this.debugCanvas.width = frame.displayWidth;
@@ -308,25 +329,37 @@ class FrameProcessor {
         debugCtx?.drawImage(frame, 0, 0, this.debugCanvas.width, this.debugCanvas.height);
       }
 
+      // (B) Committed non-standard fast per-frame pass: re-lock the icon column in a narrow strip (cheap)
+      // and read at the cached scale against the pre-scaled atlases — no per-frame sweep or rescaling.
       if (this.liveMode === 'nonstandard' && this.nsScaledAtlases && this.nsScale != null) {
-        // Fast per-frame pass: re-lock the icon column in a narrow strip (cheap) and read at the cached
-        // scale against the pre-scaled atlases — no per-frame multi-scale sweep, no template rescaling.
         return this.processFrameNonStandard(gray, frame, drawDebug, detectionMargin, debugCtx);
       }
 
-      // Not yet classified: attempt the one-time non-standard calibration. Throttle the (expensive)
-      // icon sweep so an idle stream with no gem panel doesn't pay it every frame.
-      const now = performance.now();
-      if (now - this.lastNsHeavyAt < FrameProcessor.NS_HEAVY_INTERVAL_MS) {
-        if (drawDebug && debugCtx) this.drawNsDebug(debugCtx, frame, detectionMargin, null);
-        return;
-      }
-      this.lastNsHeavyAt = now;
-      const calib = this.calibrateNonStandard(gray, detectionMargin, debugCtx, frame, drawDebug);
-      if (calib.calibrated) {
+      // (C) One-time non-standard calibration (throttled). The FIRST attempt sweeps a NARROW ladder
+      // seeded from the frame height (fast); a later throttled retry widens to the full 0.5–2.5 ladder.
+      const calib = this.tryCalibrateThrottled(gray, frame, drawDebug, detectionMargin, debugCtx);
+      if (calib && calib.calibrated) {
         this.liveMode = 'nonstandard';
         return calib.result;
       }
+
+      // (D) Safety fallback (hint ON only): once the non-standard path has failed to read for a short
+      // frame streak, ALSO try the standard path each frame, so a mis-set hint or a client the non-
+      // standard path can't read never strands the session. Mirrors the hint-OFF "keep trying both until
+      // some path reads a gem" guarantee with the priorities flipped. Frame-counted (not throttled), so
+      // the streak is genuinely short (~5 frames) rather than gated by the 1s calibration throttle.
+      if (
+        forcedNonStandard &&
+        ++this.nsPriorityFails >= FrameProcessor.NONSTANDARD_PRIORITY_FRAMES
+      ) {
+        const std = this.tryStandardPath(frame, drawDebug, detectionMargin);
+        if (std.result && std.result.gems.length > 0) {
+          this.liveMode = 'standard';
+          this.nullStdFails = 0;
+          return std.result;
+        }
+      }
+
       if (drawDebug && debugCtx) this.drawNsDebug(debugCtx, frame, detectionMargin, null);
       return;
     } finally {
@@ -338,6 +371,34 @@ class FrameProcessor {
       this.frameTimes.push(performance.now() - start);
       if (this.frameTimes.length > 10) this.frameTimes.shift();
     }
+  }
+
+  // The scale ladder for the next non-standard calibration attempt: a NARROW band seeded from the frame
+  // height on the first attempt (fast — g ≈ height/1080), falling back to the full 0.5–2.5 ladder on any
+  // later (throttled) retry. The pitch measurement + refineScale supply final precision, so the seed only
+  // needs to land in the neighbourhood; a non-finite/degenerate seed falls straight through to the full ladder.
+  private ladderForCalibration(frame: VideoFrame): number[] {
+    if (this.nsNarrowTried) return this.anchorScaleLadder;
+    const g0 = seedGeomScaleFromHeight(frame.displayHeight);
+    return Number.isFinite(g0) && g0 > 0 ? buildNarrowScaleLadder(g0) : this.anchorScaleLadder;
+  }
+
+  // Run the one-time non-standard calibration under the existing 1s throttle (so an idle stream with no
+  // gem panel doesn't pay the sweep every frame). Returns null when throttled this frame. The narrow
+  // ladder gets exactly one attempt (`nsNarrowTried`); the next throttled attempt uses the full ladder.
+  private tryCalibrateThrottled(
+    gray: CvMat,
+    frame: VideoFrame,
+    drawDebug: boolean,
+    detectionMargin: number,
+    debugCtx: OffscreenCanvasRenderingContext2D | null
+  ): { calibrated: boolean; result?: RecognizeResult } | null {
+    const now = performance.now();
+    if (now - this.lastNsHeavyAt < FrameProcessor.NS_HEAVY_INTERVAL_MS) return null;
+    this.lastNsHeavyAt = now;
+    const ladder = this.ladderForCalibration(frame);
+    this.nsNarrowTried = true;
+    return this.calibrateNonStandard(gray, detectionMargin, debugCtx, frame, drawDebug, ladder);
   }
 
   // The STANDARD live path — verbatim today's behaviour: derive the UI scale from the frame HEIGHT,
@@ -495,7 +556,15 @@ class FrameProcessor {
 
     let lock =
       this.nsColX != null && this.nsRow0Y != null && this.nsPitch != null
-        ? this.relockStrip(gray, scaled.gemImage, this.nsColX, this.nsRow0Y, this.nsPitch, g, detectionMargin)
+        ? this.relockStrip(
+            gray,
+            scaled.gemImage,
+            this.nsColX,
+            this.nsRow0Y,
+            this.nsPitch,
+            g,
+            detectionMargin
+          )
         : null;
     if (!lock) {
       this.nsRelockMiss++;
@@ -560,14 +629,15 @@ class FrameProcessor {
     detectionMargin: number,
     debugCtx: OffscreenCanvasRenderingContext2D | null,
     frame: VideoFrame,
-    drawDebug: boolean
+    drawDebug: boolean,
+    ladder: number[]
   ): { calibrated: boolean; result?: RecognizeResult } {
     const cv = this.cv!;
     const asset = this.loadedAsset!;
     const locale = this.nsLocale;
     const gemAtlas = asset.atlasGemImage[locale];
 
-    const seed = multiScaleAnchorMatch(cv, gray, gemAtlas, this.anchorScaleLadder);
+    const seed = multiScaleAnchorMatch(cv, gray, gemAtlas, ladder);
     if (!seed) return { calibrated: false };
     const { colX, rows } = findIconRows(
       cv,
@@ -715,8 +785,14 @@ class FrameProcessor {
         if (tpl.cols > roi.cols || tpl.rows > roi.rows) continue;
         const res = new cv.Mat();
         cv.matchTemplate(roi, tpl, res, cv.TM_CCOEFF_NORMED);
-        const mm = (cv.minMaxLoc as unknown as (m: CvMat) => { maxVal: number; maxLoc: { x: number; y: number } })(res);
-        if (!best || mm.maxVal > best.score) best = { score: mm.maxVal, x: sx + mm.maxLoc.x, y: sy + mm.maxLoc.y };
+        const mm = (
+          cv.minMaxLoc as unknown as (m: CvMat) => {
+            maxVal: number;
+            maxLoc: { x: number; y: number };
+          }
+        )(res);
+        if (!best || mm.maxVal > best.score)
+          best = { score: mm.maxVal, x: sx + mm.maxLoc.x, y: sy + mm.maxLoc.y };
         res.delete();
       }
     } finally {
@@ -811,7 +887,12 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
       // capture loop's `await waitForAnalysis` would otherwise never settle, hanging the loop and
       // leaving the screen share live. processFrame's own `finally` has already closed the frame.
       try {
-        const result = processor.processFrame(data.frame, data.drawDebug, data.detectionMargin);
+        const result = processor.processFrame(
+          data.frame,
+          data.drawDebug,
+          data.detectionMargin,
+          data.forcedNonStandard
+        );
         postToMain({ type: 'frame:done', result });
         if (data.drawDebug) {
           postToMain({
