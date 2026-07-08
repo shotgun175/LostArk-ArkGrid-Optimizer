@@ -16,7 +16,13 @@ export interface OwnedCount {
 // main → worker
 export type CaptureWorkerRequest =
   | { type: 'init' } // init worker
-  | { type: 'frame'; frame: VideoFrame; drawDebug: boolean; detectionMargin: number } // send frame
+  | {
+      type: 'frame';
+      frame: VideoFrame;
+      drawDebug: boolean;
+      detectionMargin: number;
+      forcedNonStandard: boolean;
+    } // send frame
   | { type: 'image'; bitmap: ImageBitmap; detectionMargin: number } // recognize a single uploaded/pasted screenshot
   | { type: 'reset' } // clear cached anchor location + scale (force fresh detection)
   | { type: 'stop' };

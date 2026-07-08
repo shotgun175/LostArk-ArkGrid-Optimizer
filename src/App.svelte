@@ -12,6 +12,7 @@
   import AppConfiguration from './components/Header/AppConfiguration.svelte';
   import ProfileEditor from './components/Header/ProfileEditor.svelte';
   import SectionNav from './components/SectionNav.svelte';
+  import ConfirmDialog from './components/shared/ConfirmDialog.svelte';
   import DeprecationBanner from './components/shared/DeprecationBanner.svelte';
   import { type LocalizationName } from './lib/constants/enums';
   import { appConfig, applyOsThemePreference, toggleUI } from './lib/state/appConfig.state.svelte';
@@ -64,6 +65,7 @@
 
 <main>
   <SvelteToast options={{ reversed: true, intro: { y: 192 } }} />
+  <ConfirmDialog />
   <div class="contents">
     <DeprecationBanner />
     <div class="title">{LTitle[locale]}</div>

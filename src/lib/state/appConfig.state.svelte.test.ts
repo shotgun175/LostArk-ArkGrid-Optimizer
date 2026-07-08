@@ -47,3 +47,22 @@ describe('theme startup decision', () => {
     expect(ui.darkMode).toBe(false);
   });
 });
+
+describe('forcedNonStandardClient migration', () => {
+  it('backfills the new flag to false on payloads that predate it', () => {
+    const payload = { uiConfig: {} } as never;
+    migrateAppConfig(payload);
+    expect(
+      (payload as { uiConfig: { forcedNonStandardClient: boolean } }).uiConfig
+        .forcedNonStandardClient
+    ).toBe(false);
+  });
+
+  it('sheds the retired deferredScreenSharingInit key and adds the new flag', () => {
+    const payload = { uiConfig: { deferredScreenSharingInit: true } } as never;
+    migrateAppConfig(payload);
+    const ui = (payload as { uiConfig: Record<string, unknown> }).uiConfig;
+    expect('deferredScreenSharingInit' in ui).toBe(false);
+    expect(ui.forcedNonStandardClient).toBe(false);
+  });
+});

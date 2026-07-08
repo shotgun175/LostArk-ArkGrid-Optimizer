@@ -3,7 +3,11 @@ import { type ArkGridGem } from '../models/arkGridGems';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, OwnedCount } from './types';
 
 /** What recognizeImage resolves with: the gems plus the footer owned-count checksum. */
-export type ImageRecognition = { gemAttr: ArkGridAttr; gems: ArkGridGem[]; owned: OwnedCount | null };
+export type ImageRecognition = {
+  gemAttr: ArkGridAttr;
+  gems: ArkGridGem[];
+  owned: OwnedCount | null;
+};
 
 const START_CAPTURE_ERROR_TYPES = [
   'recording',
@@ -24,6 +28,10 @@ export class CaptureController {
   // web worker
   private worker: Worker | null = null;
   detectionMargin: number = 0;
+  // Live client-type hint set by the Panel from uiConfig at startCapture (see Panel.startGemCapture).
+  // true = forced-21:9 client → the worker skips the standard-path priority and primes the non-standard
+  // path on frame 1. Sent per-frame (like detectionMargin); resolved once per session.
+  forcedNonStandard: boolean = false;
 
   // debug
   private drawDebug: boolean = false;
@@ -271,7 +279,7 @@ export class CaptureController {
     }
   }
 
-  async startCapture(deferDisplayRequest: boolean = false) {
+  async startCapture() {
     // Only allowed from the idle state.
     // Starts recording.
     // Creates the worker and loads assets, then asks the user to share their screen.
@@ -296,13 +304,10 @@ export class CaptureController {
       });
       this.postMessage({ type: 'init' });
 
-      if (deferDisplayRequest) {
-        await waitForInit;
-        await this.requestDisplayMedia();
-      } else {
-        // Request screen sharing from the user while initializing, and wait for both
-        await Promise.all([this.requestDisplayMedia(), waitForInit]);
-      }
+      // Request screen sharing from the user WHILE the ~10.8MB OpenCV WASM downloads/compiles, and wait
+      // for both. Firing the picker in parallel hides the compile behind the user's window-picking time;
+      // on a warm worker (warmup ran on first hover) init resolves immediately, so the picker is instant.
+      await Promise.all([this.requestDisplayMedia(), waitForInit]);
 
       // Once done, the reader is set up and readable
       if (!this.reader) {
@@ -377,6 +382,7 @@ export class CaptureController {
               frame: value,
               drawDebug: this.drawDebug,
               detectionMargin: this.detectionMargin,
+              forcedNonStandard: this.forcedNonStandard,
             } satisfies CaptureWorkerRequest,
             [value]
           );

@@ -12,6 +12,7 @@
     clearGems,
     getCurrentProfile,
   } from '../../lib/state/profile.state.svelte';
+  import { confirmDialog } from '../../lib/ui/confirmDialog.svelte';
   import ArkGridGemList from '../ArkGridGemList.svelte';
 
   interface Props {
@@ -176,7 +177,7 @@
       <div>
         <button
           disabled={orderGems.length == 0 && chaosGems.length == 0}
-          onclick={() => {
+          onclick={async () => {
             // Warn once if Chaos gems were not recognized
             // if (chaosGems.length == 0) {
             //   if (
@@ -192,7 +193,12 @@
             let overrideGem = true;
 
             if (profile.gems.orderGems.length > 0 || profile.gems.chaosGems.length > 0) {
-              overrideGem = window.confirm(LWarning[locale]);
+              overrideGem = await confirmDialog({
+                message: LWarning[locale],
+                confirmText: 'Overwrite',
+                cancelText: 'Add only',
+                tone: 'danger',
+              });
             }
             if (applyGemList(overrideGem)) toast.push(LConfirm[locale]);
           }}

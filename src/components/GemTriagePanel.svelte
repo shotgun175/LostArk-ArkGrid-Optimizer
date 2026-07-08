@@ -25,6 +25,7 @@
   import { solveInputSignature } from '../lib/solver/solveSignature';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
+    type BuildRole,
     type CharacterProfile,
     activeBuildState,
     buildState,
@@ -62,6 +63,25 @@
   );
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
+
+  // "Out of sync": a stored solve the triage relies on no longer matches the live cores + gems, so
+  // its verdicts (and any withheld removals) are stale until you re-run. Mirrors the Optimization
+  // panel's stale badge; for a dual-role profile BOTH builds count, since the refresh button
+  // re-solves both. A solve with no signature (pre-feature / never run) never reads as stale.
+  let solveStale = $derived.by(() => {
+    const buildStaleFor = (r: BuildRole) => {
+      const b = buildState(r, profile);
+      const s = solveInputSignature(b.cores, profile.gems);
+      const after = b.solveInfo.after;
+      const endgame = b.solveInfo.endgame;
+      return (
+        (!!after?.inputSig && after.inputSig !== s) ||
+        (!!endgame?.inputSig && endgame.inputSig !== s)
+      );
+    };
+    if (buildStaleFor(profile.activeBuild)) return true;
+    return profile.dualRole && buildStaleFor(otherRole(profile.activeBuild));
+  });
 
   let rows: Row[] = $derived.by(() => {
     const owned = [...profile.gems.orderGems, ...profile.gems.chaosGems];
@@ -275,6 +295,11 @@
               style={`width: ${solveState.progress?.totalPercent ?? 0}%`}
             ></div>
           </div>
+        </div>
+      {/if}
+      {#if solveStale && !solveState.isSolving}
+        <div class="stale-badge">
+          ⟳ Inputs changed since the last optimization. Re-run to refresh the results.
         </div>
       {/if}
     </div>
@@ -580,6 +605,24 @@
   }
   :global(.dark-mode) .refresh-button:hover:not(:disabled) {
     background: rgba(240, 192, 64, 0.2);
+  }
+  /* Same gold "inputs changed" badge as the Optimization panel, mirrored under the refresh button. */
+  .stale-badge {
+    align-self: center;
+    max-width: 32rem;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.8rem;
+    border-radius: 0.4rem;
+    color: #b8860b;
+    background: rgba(184, 134, 11, 0.12);
+    border: 1px solid rgba(184, 134, 11, 0.55);
+  }
+  :global(.dark-mode) .stale-badge {
+    color: #f0c040;
+    background: rgba(240, 192, 64, 0.12);
+    border-color: rgba(240, 192, 64, 0.55);
   }
   .compact-progress {
     display: flex;

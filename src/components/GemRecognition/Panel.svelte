@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
-  import Icon from '../shared/Icon.svelte';
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
   import { mergeScrolledGems } from '../../lib/cv/liveScrollMerge';
@@ -18,10 +17,11 @@
     appConfig,
     sectionUI,
     setSection,
-    toggleDeferredScreenSharingInit,
     toggleSection,
+    toggleUI,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
+  import Icon from '../shared/Icon.svelte';
   import GemRecognitionGuide from './Guide.svelte';
   import RecognizedGemList from './RecognizedGemList.svelte';
 
@@ -58,9 +58,9 @@
       en_us: 'Supported Clients: Korean, English, Russian (Beta)',
     }[locale]
   );
-  const LControllerLazyLoading = $derived(
+  const LForcedNonStandard = $derived(
     {
-      en_us: 'Prevent Screen Sharing Crash',
+      en_us: 'Forced 21:9',
     }[locale]
   );
   const LUpload: LocalizationName = {
@@ -68,7 +68,8 @@
   };
   const LUploadHint = $derived(
     {
-      en_us: 'Drop screenshots here (several at once is fine), paste (Ctrl/⌘+V), or click to choose files.',
+      en_us:
+        'Drop screenshots here (several at once is fine), paste (Ctrl/⌘+V), or click to choose files.',
     }[locale]
   );
   const LUploadProcessing = $derived(
@@ -196,7 +197,8 @@
     try {
       for (let i = 0; i < images.length; i++) {
         // Map this file's 0..1 recognition progress into the overall bar across all files.
-        controller.onImageProgress = (f) => (uploadProg = { frac: (i + f) / images.length, index: i, total: images.length });
+        controller.onImageProgress = (f) =>
+          (uploadProg = { frac: (i + f) / images.length, index: i, total: images.length });
         try {
           if (await recognizeIntoShots(images[i])) recognized++;
         } catch {
@@ -348,7 +350,9 @@
     controller.onStop = () => {
       isRecording = false;
     };
-    await controller.startCapture(appConfig.current.uiConfig.deferredScreenSharingInit);
+    // Pass the client-type hint (forced-21:9 / windowed) resolved once at capture start.
+    controller.forcedNonStandard = appConfig.current.uiConfig.forcedNonStandardClient;
+    await controller.startCapture();
   }
 
   async function stopGemCapture() {
@@ -365,16 +369,16 @@
     isDebugging = controller.toggleDrawDebug();
   }
   // Switch recognition mode. Activating Upload Screenshot / Import Loadout means the user is NOT
-  // screen-sharing, so turn the two capture-only toggles OFF: "Display Sharing Screen" (whose leftover
-  // debug canvas sits outside the capture block and would otherwise linger over the upload/import view)
-  // and "Prevent Screen Sharing Crash". Clicking the active mode again returns to capture.
+  // screen-sharing, so turn the "Display Sharing Screen" debug toggle OFF (its leftover debug canvas
+  // sits outside the capture block and would otherwise linger over the upload/import view). Clicking
+  // the active mode again returns to capture. The "Forced 21:9 / windowed client" toggle is a persisted
+  // client-type setting independent of mode, so it is deliberately NOT reset here.
   async function selectMode(target: 'upload' | 'import') {
     mode = mode === target ? 'capture' : target;
     if (mode !== 'capture') {
       // Guard on isDebugging so we don't lazily construct the capture controller just to turn debug off
       // (isDebugging is only ever true once a controller already exists).
       if (isDebugging) await toggleDrawDebug();
-      appConfig.current.uiConfig.deferredScreenSharingInit = false;
     }
   }
   async function updateControllerDetectionMargin(detectionMargin: number) {
@@ -454,17 +458,13 @@
     <button
       class="fold-button"
       onclick={() => toggleSection('showGemRecognitionPanel')}
-      disabled={isRecording}
-      >{sectionUI.showGemRecognitionPanel ? '▼' : '▲'}</button
+      disabled={isRecording}>{sectionUI.showGemRecognitionPanel ? '▼' : '▲'}</button
     >
   </div>
   {#if !captureSupported}
     <p class="unsupported-note">{LUnsupported}</p>
   {/if}
-  <div
-    class="content"
-    style:display={!sectionUI.showGemRecognitionPanel ? 'none' : 'flex'}
-  >
+  <div class="content" style:display={!sectionUI.showGemRecognitionPanel ? 'none' : 'flex'}>
     <div class="buttons">
       <div class="left">
         {#if captureSupported && mode === 'capture'}
@@ -478,12 +478,10 @@
           <button class:active={isDebugging} aria-pressed={isDebugging} onclick={toggleDrawDebug}>
             🔨 {isDebugging ? LHideScreen[locale] : LShowScreen[locale]}
           </button>
-          <button onclick={toggleDeferredScreenSharingInit}>
-            {LControllerLazyLoading}
+          <button onclick={() => toggleUI('forcedNonStandardClient')} disabled={isRecording}>
+            {LForcedNonStandard}
             <Icon
-              name={appConfig.current.uiConfig.deferredScreenSharingInit
-                ? 'circle-dot'
-                : 'circle'}
+              name={appConfig.current.uiConfig.forcedNonStandardClient ? 'circle-dot' : 'circle'}
             />
           </button>
         {/if}
@@ -537,7 +535,13 @@
         }}
       >
         {#if uploadProg}
-          <div class="upload-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(uploadProg.frac * 100)}>
+          <div
+            class="upload-progress"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(uploadProg.frac * 100)}
+          >
             <span class="upload-zone-text">
               {uploadProg.total > 1
                 ? `Recognizing screenshot ${Math.min(uploadProg.index + 1, uploadProg.total)} of ${uploadProg.total}…`
@@ -545,7 +549,10 @@
               {Math.round(uploadProg.frac * 100)}%
             </span>
             <div class="upload-progress-track">
-              <div class="upload-progress-fill" style:width={`${Math.max(3, uploadProg.frac * 100)}%`}></div>
+              <div
+                class="upload-progress-fill"
+                style:width={`${Math.max(3, uploadProg.frac * 100)}%`}
+              ></div>
             </div>
           </div>
         {:else}
@@ -607,7 +614,11 @@
           placeholder="…or paste the page source here (Ctrl/⌘+U → select all → copy)"
           rows="3"
         ></textarea>
-        <button class="import-go" disabled={!importText.trim()} onclick={() => importFromText(importText)}>
+        <button
+          class="import-go"
+          disabled={!importText.trim()}
+          onclick={() => importFromText(importText)}
+        >
           Import from pasted source
         </button>
         {#if importMsg}
