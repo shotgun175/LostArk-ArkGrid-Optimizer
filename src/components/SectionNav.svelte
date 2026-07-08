@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
 
   import BuildViewSwitch from './BuildViewSwitch.svelte';
+  import ProfileNavSwitcher from './ProfileNavSwitcher.svelte';
 
   // Section anchors are rendered in App.svelte / BuildSection.svelte with these ids.
   const sections = [
@@ -67,6 +68,7 @@
       <span class="nav-label">{s.label}</span>
     </button>
   {/each}
+  <ProfileNavSwitcher />
   <div class="nav-switch"><BuildViewSwitch compact /></div>
 </nav>
 

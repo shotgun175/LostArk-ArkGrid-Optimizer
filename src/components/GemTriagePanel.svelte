@@ -173,6 +173,16 @@
         : (rowEls[0]?.getBoundingClientRect().height ?? 0);
     if (step) el.scrollBy({ top: dir * step, behavior: 'smooth' });
   }
+
+  // After a solve finishes (Run Optimization or Refresh removal candidates — both go through
+  // runSolve), snap the row list back to the first gem so the freshly-scored list starts at the top
+  // instead of wherever it happened to be scrolled before.
+  let wasSolving = false;
+  $effect(() => {
+    const solving = solveState.isSolving;
+    if (wasSolving && !solving && rowsEl) rowsEl.scrollTop = 0;
+    wasSolving = solving;
+  });
 </script>
 
 <div class="panel triage-panel">
