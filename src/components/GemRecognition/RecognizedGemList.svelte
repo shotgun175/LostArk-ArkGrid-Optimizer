@@ -10,6 +10,7 @@
     type AllGems,
     addGem,
     clearGems,
+    currentProfileName,
     getCurrentProfile,
   } from '../../lib/state/profile.state.svelte';
   import { confirmDialog } from '../../lib/ui/confirmDialog.svelte';
@@ -40,12 +41,11 @@
   const LConfirm: LocalizationName = {
     en_us: 'Astrogems applied',
   };
-  const LWarning: LocalizationName = {
+  const LWarning = $derived({
     en_us:
-      '⚠️ Astrogems already exist in the current profile.\n' +
-      'Do you want to delete all existing astrogems and overwrite them?\n' +
-      'If you cancel, the recognized astrogems will only be added.',
-  };
+      `⚠️ Astrogems already exist for "${currentProfileName.current}".\n` +
+      'Delete them and replace with the recognized astrogems?',
+  });
   let container: ArkGridGemList;
   let orderGems = $derived(gems.orderGems);
   let chaosGems = $derived(gems.chaosGems);
@@ -115,18 +115,19 @@
     container.scroll(command);
   }
 
-  function applyGemList(overrideGem: boolean) {
-    // Overwrite the current profile with the gems collected so far.
+  function applyGemList() {
+    // Overwrite the current profile with the gems collected so far. Only a scanned attribute is
+    // replaced: an empty Order/Chaos tab leaves that attribute's existing gems untouched.
     let done = false;
     if (orderGems.length > 0) {
-      if (overrideGem) clearGems('Order');
+      clearGems('Order');
       for (const gem of orderGems) {
         addGem(gem);
       }
       done = true;
     }
     if (chaosGems.length > 0) {
-      if (overrideGem) clearGems('Chaos');
+      clearGems('Chaos');
       for (const gem of chaosGems) {
         addGem(gem);
       }
@@ -188,19 +189,19 @@
             //     return;
             // }
 
-            // If the current profile already has gems, ask whether to overwrite.
+            // If the current profile already has gems, confirm before replacing them.
             const profile = getCurrentProfile();
-            let overrideGem = true;
-
             if (profile.gems.orderGems.length > 0 || profile.gems.chaosGems.length > 0) {
-              overrideGem = await confirmDialog({
+              const overwrite = await confirmDialog({
                 message: LWarning[locale],
                 confirmText: 'Overwrite',
-                cancelText: 'Add only',
+                cancelText: 'Cancel',
                 tone: 'danger',
               });
+              // Cancel aborts: recognition captures the whole inventory, so appending would only duplicate it.
+              if (!overwrite) return;
             }
-            if (applyGemList(overrideGem)) toast.push(LConfirm[locale]);
+            if (applyGemList()) toast.push(LConfirm[locale]);
           }}
         >
           ✅ {LApply[locale]}
