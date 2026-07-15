@@ -175,14 +175,16 @@ export function migrateProfile(profile: Partial<CharacterProfile>) {
     }
   }
 
-  // Backfill core.goalPoint (introduced after some cores were saved) across both builds.
+  // Minimum Core Points retired with the Optimization section (0.3.0): the editor UI is gone and
+  // the solver always receives point 0, so reset any saved non-zero minimum. Setting every core to
+  // 0 also covers the old backfill for pre-goalPoint payloads (undefined !== 0).
   for (const role of ['dps', 'support'] as BuildRole[]) {
     const cores = profile.builds?.[role]?.cores;
     if (!cores) continue;
     for (const attr of Object.values(ArkGridAttrs)) {
       for (const ctype of Object.values(ArkGridCoreTypes)) {
         const core = cores[attr][ctype];
-        if (core && core.goalPoint === undefined) {
+        if (core && core.goalPoint !== 0) {
           core.goalPoint = 0;
         }
       }
