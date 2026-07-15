@@ -57,7 +57,7 @@
   let build = $derived(activeBuildState(profile));
   let role: GemRole = $derived(profile.activeBuild);
 
-  // Equipped loadout = the gems the optimizer (Engine A) assigned across the 6 cores.
+  // Equipped loadout = the gems the internal solver assigned across the 6 cores.
   let equipped: ArkGridGem[] = $derived(
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
@@ -65,9 +65,9 @@
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
 
   // "Out of sync": a stored solve the triage relies on no longer matches the live cores + gems, so
-  // its verdicts (and any withheld removals) are stale until you re-run. Mirrors the Optimization
-  // panel's stale badge; for a dual-role profile BOTH builds count, since the refresh button
-  // re-solves both. A solve with no signature (pre-feature / never run) never reads as stale.
+  // its verdicts (and any withheld removals) are stale until you refresh. For a dual-role profile
+  // BOTH builds count, since the refresh button re-solves both. A solve with no signature
+  // (pre-feature / never run) never reads as stale.
   let solveStale = $derived.by(() => {
     const buildStaleFor = (r: BuildRole) => {
       const b = buildState(r, profile);
@@ -174,9 +174,9 @@
     if (step) el.scrollBy({ top: dir * step, behavior: 'smooth' });
   }
 
-  // After a solve finishes (Run Optimization or Refresh removal candidates — both go through
-  // runSolve), snap the row list back to the first gem so the freshly-scored list starts at the top
-  // instead of wherever it happened to be scrolled before.
+  // After a solve finishes (Refresh removal candidates runs the full solve), snap the row list
+  // back to the first gem so the freshly-scored list starts at the top instead of wherever it
+  // happened to be scrolled before.
   let wasSolving = false;
   $effect(() => {
     const solving = solveState.isSolving;
@@ -309,7 +309,7 @@
       {/if}
       {#if solveStale && !solveState.isSolving}
         <div class="stale-badge">
-          ⟳ Inputs changed since the last optimization. Re-run to refresh the results.
+          ⟳ Inputs changed since the last analysis. Refresh to update the results.
         </div>
       {/if}
     </div>
@@ -347,7 +347,7 @@
         {#if profile.dualRole}
           <span class="note">
             Dual-role: a gem either build still uses (now or at a maxed grid) is never flagged
-            Remove. Run the optimizer on both builds first.
+            Remove. Use Refresh removal candidates to analyze both builds first.
           </span>
         {/if}
       </div>
@@ -616,7 +616,7 @@
   :global(.dark-mode) .refresh-button:hover:not(:disabled) {
     background: rgba(240, 192, 64, 0.2);
   }
-  /* Same gold "inputs changed" badge as the Optimization panel, mirrored under the refresh button. */
+  /* Gold "inputs changed" badge under the refresh button. */
   .stale-badge {
     align-self: center;
     max-width: 32rem;

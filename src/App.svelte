@@ -54,7 +54,7 @@
   });
   const pageTitle = $derived(
     {
-      en_us: 'ArkGrid Optimizer - Combat Power Maximizer for Lost Ark',
+      en_us: 'ArkGrid Optimizer - Gem Triage and Cutting Plan for Lost Ark',
     }[appLocale.current]
   );
 </script>

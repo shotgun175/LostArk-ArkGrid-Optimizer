@@ -3,8 +3,8 @@
   <p>This service is not an official service of the game operator or the official API provider.</p>
   <p>
     This service is a tool that analyzes Ark Grid information provided by users either through input
-    or screen recognition in the browser and displays optimized results. By using this site, you
-    agree to its terms and policies.
+    or screen recognition in the browser and displays the resulting analysis. By using this site,
+    you agree to its terms and policies.
   </p>
   <p>
     The analysis results and evaluations provided by the service do not guarantee accuracy,

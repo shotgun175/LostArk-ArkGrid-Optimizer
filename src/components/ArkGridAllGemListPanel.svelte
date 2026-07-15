@@ -111,7 +111,7 @@
   `inert` blocks every control in the panel (add / delete / clear) for the few-second solve. -->
 <div class="panel" class:locked={solveState.isSolving} inert={solveState.isSolving}>
   {#if solveState.isSolving}
-    <div class="lock-note">Locked while optimizing…</div>
+    <div class="lock-note">Locked while analyzing…</div>
   {/if}
   <div class="title">{LTitle}</div>
   <div class="tab-container">

@@ -58,7 +58,7 @@
       </p>
       <p>
         This imports only the gems your character has <b>equipped</b>, so it is a quick way to seed
-        the optimizer without screenshots.
+        your gem list without screenshots.
       </p>
     {:else}
       <h2>Live screen sharing</h2>

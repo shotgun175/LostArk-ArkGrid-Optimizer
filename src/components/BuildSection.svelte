@@ -2,7 +2,6 @@
   import type { CharacterProfile } from '../lib/state/profile.state.svelte';
   import ArkGridAllGemListPanel from './ArkGridAllGemListPanel.svelte';
   import ArkGridCoreEditPanel from './ArkGridCoreEditPanel.svelte';
-  import SolvePanel from './SolvePanel.svelte';
 
   interface Props {
     profile: CharacterProfile | null;
@@ -18,8 +17,5 @@
     <div>
       <ArkGridAllGemListPanel gems={profile.gems} />
     </div>
-  </div>
-  <div id="sec-optimize">
-    <SolvePanel bind:profile></SolvePanel>
   </div>
 {/if}

@@ -91,7 +91,7 @@
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');
 
-  // CP% headroom = how much CP the active build can still gain (from the optimizer's scoreSet).
+  // CP% headroom = how much CP the active build can still gain (from the solve's scoreSet).
   let scoreSet = $derived(build.solveInfo.after?.scoreSet);
   let cpHeadroom = $derived(scoreSet ? scoreSet.bestScore - scoreSet.score : null);
 
@@ -325,9 +325,9 @@
         {/each}
       </div>
 
-      <div class="cp-callout" title="Combat power still available from better gems (optimizer's max − current).">
+      <div class="cp-callout" title="Combat power still available from better gems (best possible minus current).">
         CP% headroom:
-        <strong>{cpHeadroom != null ? `+${cpHeadroom.toFixed(2)}%` : 'run the optimizer'}</strong>
+        <strong>{cpHeadroom != null ? `+${cpHeadroom.toFixed(2)}%` : 'refresh Gem Triage first'}</strong>
       </div>
     {:else if loadFailed}
       <div class="cutplan-loading">

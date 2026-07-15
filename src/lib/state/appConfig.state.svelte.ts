@@ -35,13 +35,11 @@ interface SectionVisibility {
   showGemRecognitionPanel: boolean;
   showGemTriage: boolean;
   showCuttingPlan: boolean;
-  showOptimization: boolean;
 }
 export const sectionUI = $state<SectionVisibility>({
   showGemRecognitionPanel: true,
   showGemTriage: true,
   showCuttingPlan: true,
-  showOptimization: true,
 });
 export function toggleSection(name: keyof SectionVisibility) {
   sectionUI[name] = !sectionUI[name];

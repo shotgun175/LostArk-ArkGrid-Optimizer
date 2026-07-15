@@ -80,4 +80,39 @@ describe('migrateProfile', () => {
     expect('before' in profile.builds.dps.solveInfo).toBe(false);
     expect('before' in profile.builds.support.solveInfo).toBe(false);
   });
+
+  it('resets saved Minimum Core Points to 0 (feature retired with the Optimization section)', () => {
+    const dpsCores = initBuildCores(false);
+    const supportCores = initBuildCores(true);
+    const profile = {
+      characterName: 'MinPoints',
+      gems: { orderGems: [], chaosGems: [] },
+      builds: {
+        dps: { cores: dpsCores, solveInfo: {} },
+        support: { cores: supportCores, solveInfo: {} },
+      },
+      activeBuild: 'dps',
+      dualRole: false,
+    } as any;
+    // A saved non-zero minimum, and a pre-goalPoint payload (field missing entirely).
+    profile.builds.dps.cores.Order.Sun.goalPoint = 10;
+    profile.builds.support.cores.Chaos.Star.goalPoint = 14;
+    delete profile.builds.dps.cores.Order.Moon.goalPoint;
+
+    migrateProfile(profile);
+
+    for (const build of [profile.builds.dps, profile.builds.support]) {
+      for (const attr of ['Order', 'Chaos']) {
+        for (const ctype of ['Sun', 'Moon', 'Star']) {
+          const core = build.cores[attr][ctype];
+          if (core) expect(core.goalPoint).toBe(0);
+        }
+      }
+    }
+
+    // Idempotent: a second pass changes nothing.
+    const snapshot = JSON.parse(JSON.stringify(profile));
+    migrateProfile(profile);
+    expect(profile).toEqual(snapshot);
+  });
 });
