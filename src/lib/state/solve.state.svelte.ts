@@ -15,42 +15,27 @@ import {
   setBuildSolveAfter,
 } from './profile.state.svelte';
 
-// Module-singleton solver + ephemeral solve/progress state, shared across panels so any panel
-// (SolvePanel, Gem Triage) can trigger a solve and observe the same progress.
+// Module-singleton solver + ephemeral solve/progress state, shared so Gem Triage's refresh button
+// triggers a solve and every panel (triage progress bar, gem-pool lock) observes the same state.
 const controller = new SolverController();
 
 export const solveState = $state<{
   isSolving: boolean;
   progress: SolverProgress | null;
-  phaseLabel: string | null;
-  progressLog: { header: string; text: string; phase: string }[];
-  // Set when a solve fails (worker crash / rejection) so the UI can show a real error instead of a
-  // bar that silently sweeps to 100%. Cleared at the start of each run.
-  error: string | null;
 }>({
   isSolving: false,
   progress: null,
-  phaseLabel: null,
-  progressLog: [],
-  error: null,
 });
 
 type SolvePassKind = 'live' | 'perfect';
 type SolvePass = { kind: SolvePassKind; role: BuildRole };
 
-// A full optimization runs a sequence of worker solves (live per role, then the perfect-grid pass
-// per role); each emits its own 0→100% sweep. `activePass` tells the progress handler which pass in
+// A full analysis runs a sequence of worker solves (live per role, then the perfect-grid pass per
+// role); each emits its own 0→100% sweep. `activePass` tells the progress handler which pass in
 // that sequence is currently reporting, so it can remap the per-pass percentage onto one monotonic
-// overall bar and label the phase. It's safe as a module singleton because passes run strictly
-// sequentially (each is awaited) and the worker rejects a second concurrent solve.
-let activePass: { index: number; total: number; pass: SolvePass; dual: boolean } | null = null;
-
-function phaseLabelFor(pass: SolvePass, dual: boolean): string {
-  const roleSuffix = dual ? (pass.role === 'support' ? ' — Support' : ' — DPS') : '';
-  return pass.kind === 'live'
-    ? `Optimizing your grid${roleSuffix}`
-    : `Analyzing perfect grid (for gem triage)${roleSuffix}`;
-}
+// overall bar. It's safe as a module singleton because passes run strictly sequentially (each is
+// awaited) and the worker rejects a second concurrent solve.
+let activePass: { index: number; total: number } | null = null;
 
 controller.onProgress = (progress: SolverProgress) => {
   const ctx = activePass;
@@ -58,28 +43,6 @@ controller.onProgress = (progress: SolverProgress) => {
     ? overallPercent(ctx.index, ctx.total, progress.totalPercent)
     : progress.totalPercent;
   solveState.progress = { ...progress, totalPercent };
-
-  const phase = ctx ? phaseLabelFor(ctx.pass, ctx.dual) : '';
-  solveState.phaseLabel = phase || null;
-
-  // Namespace each log row by pass index so a later pass emitting the same stage appends a fresh row
-  // instead of resetting an earlier pass's row back to 0% in place.
-  const header = `${ctx?.index ?? 0}:${getProgressLogKey(progress)}`;
-  const text = `${progress.stagePercent}% ${getProgressLabel(progress)}`;
-  const index = solveState.progressLog.findIndex((entry) => entry.header === header);
-
-  if (index === -1) {
-    solveState.progressLog = [...solveState.progressLog, { header, text, phase }];
-    return;
-  }
-
-  if (solveState.progressLog[index].text === text) {
-    return;
-  }
-
-  solveState.progressLog = solveState.progressLog.map((entry, entryIndex) =>
-    entryIndex === index ? { ...entry, text } : entry
-  );
 };
 
 function buildAssignedGems(
@@ -176,12 +139,6 @@ export function getProgressLabel(progress: SolverProgress | null) {
   return `${baseLabel} (${attrLabel} ${progress.current}/${progress.total})`;
 }
 
-export function getProgressLogKey(progress: SolverProgress | null) {
-  if (!progress) return '';
-  if (progress.stage !== 'simulating_launcher_gems') return progress.stage;
-  return `${progress.stage}:${progress.attr ?? ''}`;
-}
-
 async function solveOne(profile: CharacterProfile, role: BuildRole) {
   // Per-slot previous assignment for isNew + replaces detection (this build's prior result).
   const previousAssigned = buildState(role, profile).solveInfo.after?.solveAnswer?.assignedGems;
@@ -224,9 +181,6 @@ export async function runSolve(profile: CharacterProfile) {
   if (solveState.isSolving) return;
 
   solveState.isSolving = true;
-  solveState.progressLog = [];
-  solveState.phaseLabel = null;
-  solveState.error = null;
   solveState.progress = { stage: 'preparing', totalPercent: 0, stagePercent: 0 };
 
   // Dual-role characters solve both builds (they share one gem pool, so triage/cutplan can see what
@@ -239,10 +193,13 @@ export async function runSolve(profile: CharacterProfile) {
     ...roles.map((role): SolvePass => ({ kind: 'perfect', role })),
   ];
 
+  // Tracks a worker crash / rejection so the finally block leaves the bar stalled instead of
+  // sweeping it to 100%; the toast below is the user-facing failure signal.
+  let failed = false;
   try {
     for (let i = 0; i < passes.length; i++) {
       const pass = passes[i];
-      activePass = { index: i, total: passes.length, pass, dual: profile.dualRole };
+      activePass = { index: i, total: passes.length };
       if (pass.kind === 'live') {
         await solveOne(profile, pass.role);
       } else {
@@ -251,8 +208,8 @@ export async function runSolve(profile: CharacterProfile) {
     }
   } catch (error) {
     console.error(error);
-    solveState.error = 'Optimization failed. Please run it again.';
-    toast.push('Optimization failed — please run it again.', {
+    failed = true;
+    toast.push('Analysis failed. Please run it again.', {
       theme: {
         '--toastBackground': '#8a3a3a',
         '--toastColor': '#fff',
@@ -262,9 +219,9 @@ export async function runSolve(profile: CharacterProfile) {
   } finally {
     activePass = null;
     solveState.isSolving = false;
-    // Only mark the bar complete on success. On failure, leave it where it stalled — forcing 100%
+    // Only mark the bar complete on success. On failure, leave it where it stalled; forcing 100%
     // "Finalizing" would masquerade a crash as a finished (but stale) solve.
-    if (solveState.progress && !solveState.error) {
+    if (solveState.progress && !failed) {
       solveState.progress = {
         ...solveState.progress,
         stage: 'finalizing',
