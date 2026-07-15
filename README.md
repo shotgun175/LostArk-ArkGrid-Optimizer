@@ -3,19 +3,18 @@
 Part of [Lost Ark Tools](https://shotgun175.github.io/). **Live app:**
 <https://shotgun175.github.io/LostArk-ArkGrid-Optimizer/>
 
-> **Status: winding down.** Lost Ark is introducing built-in Ark Grid optimization, which will
-> supersede this fan tool. The live app and this repository will be retired once the in-game feature
-> ships; until then everything still works.
+> **Status: optimizer retired, triage tools live.** Lost Ark's July 2026 update added in-game Ark
+> Grid auto equip, so this tool's manual Optimization section was removed in 0.3.0. The surviving
+> tools, Gem Triage and Cutting Plan, still work: the game equips gems for you, but it still doesn't
+> cut them or decide which to keep.
 
-An Ark Grid combat-power optimizer: a client-side web app for Lost Ark's **Ark Grid** astrogem
-system. It finds the highest-combat-power gem loadout from the gems you own, triages which gems to keep
-or replace, and tells you what to farm next — with on-screen gem recognition so you don't have to type
-anything in.
+A client-side web app for Lost Ark's **Ark Grid** astrogem system. It scores every gem you own,
+triages which gems to keep or replace, and tells you what to farm and cut next, with on-screen gem
+recognition so you don't have to type anything in. An internal combat-power solver supplies the
+evidence: verdicts reflect what your current grid and a fully maxed grid would actually slot.
 
 ## Features
 
-- **Loadout optimizer** — searches for the best 6-core astrogem loadout from your owned gems (custom
-  backtracking solver with upper-bound pruning), and shows the equipped result + a swap guide.
 - **On-screen gem recognition** — reads your astrogem inventory straight from a screenshot via OpenCV
   template matching (runs in a Web Worker; resolution-flexible).
 - **Gem Triage** — scores every owned gem (additive quality model), assigns a tier
@@ -30,7 +29,8 @@ anything in.
 ## Tech stack
 
 - **Frontend:** Svelte 5 (runes) + TypeScript, Vite
-- **Solver:** custom backtracking with upper-bound pruning (TypeScript)
+- **Solver (internal):** custom backtracking with upper-bound pruning (TypeScript); it no longer has
+  its own UI section and instead supplies the evidence behind Gem Triage and the Cutting Plan
 - **Image processing:** OpenCV (template matching) in a Web Worker; the screenshot-upload OCR path
   adds tesseract.js, whose engine + English data are fetched from a CDN (jsdelivr) on first use — the
   only assets not served from the app's own origin
@@ -114,10 +114,9 @@ boundaries are.
 **Out of scope**
 
 - **Recognition is desktop-only** (it needs screen capture + the OpenCV bundle). On mobile the
-  recognition step is hidden and you enter gems by hand; the optimizer, triage, and cutting plan all
-  still work.
+  recognition step is hidden and you enter gems by hand; gem triage and the cutting plan still work.
 - **No accounts or cloud sync** — profiles live only in your browser's local storage.
-- **Not a rotation/DPS simulator** — loadouts are ranked by the in-game combat-power formula, not a
+- **Not a rotation/DPS simulator** — gems are valued by the in-game combat-power formula, not a
   full damage simulation.
 
 **Disclaimer:** an unofficial, fan-made tool, not affiliated with or endorsed by Smilegate or Amazon
