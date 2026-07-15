@@ -116,7 +116,7 @@ boundaries are.
 - **Recognition is desktop-only** (it needs screen capture + the OpenCV bundle). On mobile the
   recognition step is hidden and you enter gems by hand; gem triage and the cutting plan still work.
 - **No accounts or cloud sync** — profiles live only in your browser's local storage.
-- **Not a rotation/DPS simulator** — gems are valued by the in-game combat-power formula, not a
+- **Not a rotation/DPS simulator:** gems are valued by the in-game combat-power formula, not a
   full damage simulation.
 
 **Disclaimer:** an unofficial, fan-made tool, not affiliated with or endorsed by Smilegate or Amazon
