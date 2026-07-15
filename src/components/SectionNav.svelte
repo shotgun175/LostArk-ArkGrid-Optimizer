@@ -9,7 +9,6 @@
     { id: 'sec-profile', label: 'Profile' },
     { id: 'sec-recognition', label: 'Recognition' },
     { id: 'sec-build', label: 'Cores & Gems' },
-    { id: 'sec-optimize', label: 'Optimization' },
     { id: 'sec-triage', label: 'Gem Triage' },
     { id: 'sec-cutplan', label: 'Cutting Plan' },
   ];
