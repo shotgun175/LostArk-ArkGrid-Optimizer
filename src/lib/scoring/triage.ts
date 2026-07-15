@@ -102,7 +102,7 @@ export interface OwnedTriageInput {
  *  - retained by some solve, below base    -> 'keep'    (a maxed grid still uses it as filler)
  *  - used by no solve                      -> 'remove'  (surplus; pure union, tier-independent)
  * When `hasEndgameEvidence` is false we lack the perfect-state data, so nothing is removed — an
- * un-retained spare falls back to 'keep' until the user runs the optimizer.
+ * un-retained spare falls back to 'keep' until the user refreshes the analysis.
  *
  * `retainAssignments` is every solve whose usage should KEEP a gem: the active endgame solve, plus
  * (for hybrids) the other build's current and endgame solves. `activeCurrent` is passed separately
@@ -152,7 +152,7 @@ export function triageOwnedGems(
       return {
         action: 'keep',
         rationale:
-          'Run the optimizer to check whether a maxed grid would use this gem before removing it.',
+          'Use Refresh removal candidates to check whether a maxed grid would use this gem before removing it.',
       };
     }
     return {

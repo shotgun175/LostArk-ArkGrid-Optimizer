@@ -36,8 +36,8 @@
 <details class="assumptions">
   <summary>Assumptions / Tuning</summary>
   <p class="note">
-    The constants the optimizer and Cutting Plan are built on, shown read-only. To change behavior,
-    edit them in source and rebuild.
+    The constants the Gem Triage, Cutting Plan, and their internal solver are built on, shown
+    read-only. To change behavior, edit them in source and rebuild.
   </p>
 
   <div class="group">

@@ -60,7 +60,7 @@ export interface CharacterProfile {
 
 // Result
 
-// Optimization result
+// Solve result
 export type SolveAnswerScoreSet = {
   score: number;
   bestScore: number;
