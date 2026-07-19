@@ -87,7 +87,7 @@
   </div>
   <div class="bl-hint">
     {#if auto === null && !usingOverride}
-      Use Refresh removal candidates in Gem Triage to auto-set this from your equipped loadout, or pick a tier to set it manually.
+      Use Optimize in Gem Triage to auto-set this from your equipped loadout, or pick a tier to set it manually.
     {:else}
       Gems at tier {baselineTier} or better are upgrades; the Cutting Plan targets this tier.
     {/if}

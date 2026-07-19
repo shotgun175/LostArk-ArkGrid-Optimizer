@@ -152,7 +152,7 @@ export function triageOwnedGems(
       return {
         action: 'keep',
         rationale:
-          'Use Refresh removal candidates to check whether a maxed grid would use this gem before removing it.',
+          'Use Optimize to check whether a maxed grid would use this gem before removing it.',
       };
     }
     return {

@@ -83,6 +83,14 @@
     return profile.dualRole && buildStaleFor(otherRole(profile.activeBuild));
   });
 
+  // First-run nudge: gems exist but this build has never been solved, so triage has no evidence
+  // yet and nothing else on screen says the Optimize button is step 1.
+  let neverRun = $derived(
+    profile.gems.orderGems.length + profile.gems.chaosGems.length > 0 &&
+      !build.solveInfo.after &&
+      !build.solveInfo.endgame
+  );
+
   let rows: Row[] = $derived.by(() => {
     const owned = [...profile.gems.orderGems, ...profile.gems.chaosGems];
 
@@ -174,7 +182,7 @@
     if (step) el.scrollBy({ top: dir * step, behavior: 'smooth' });
   }
 
-  // After a solve finishes (Refresh removal candidates runs the full solve), snap the row list
+  // After a solve finishes (Optimize runs the full solve), snap the row list
   // back to the first gem so the freshly-scored list starts at the top instead of wherever it
   // happened to be scrolled before.
   let wasSolving = false;
@@ -272,20 +280,15 @@
         </p>
       </div>
     {/if}
-    <div class="controls">
-      <div class="baseline-slot">
-        <BaselineControl {profile} />
-      </div>
-    </div>
-
     <div class="refresh-slot">
       <button
-        class="refresh-button"
+        class="optimize-cta"
         onclick={() => runSolve(profile)}
         disabled={solveState.isSolving}
       >
-        Refresh removal candidates
+        {solveState.isSolving ? 'Optimizing...' : 'Optimize'}
       </button>
+      <div class="cta-hint">Runs the solver and refreshes all triage verdicts.</div>
       {#if solveState.isSolving}
         <div class="compact-progress">
           <div class="compact-progress-label">
@@ -309,9 +312,20 @@
       {/if}
       {#if solveStale && !solveState.isSolving}
         <div class="stale-badge">
-          ⟳ Inputs changed since the last analysis. Refresh to update the results.
+          ⟳ Inputs changed since the last analysis. Re-run Optimize to update the results.
         </div>
       {/if}
+      {#if neverRun && !solveStale && !solveState.isSolving}
+        <div class="stale-badge">
+          No analysis yet. Optimize to score your gems and find removal candidates.
+        </div>
+      {/if}
+    </div>
+
+    <div class="controls">
+      <div class="baseline-slot">
+        <BaselineControl {profile} />
+      </div>
     </div>
 
     <div class="summary-row">
@@ -347,7 +361,7 @@
         {#if profile.dualRole}
           <span class="note">
             Dual-role: a gem either build still uses (now or at a maxed grid) is never flagged
-            Remove. Use Refresh removal candidates to analyze both builds first.
+            Remove. Use Optimize to analyze both builds first.
           </span>
         {/if}
       </div>
@@ -592,29 +606,37 @@
     align-items: center;
     gap: 0.3rem;
   }
-  .refresh-button {
-    width: auto;
-    min-width: 0;
+  /* Primary CTA: the one solver trigger in the app, sized like the retired Run Optimization
+     button. Filled gold so it can't be mistaken for the outline pills (Glossary, sort). */
+  .optimize-cta {
+    width: 15rem;
+    max-width: 100%;
+    height: 4rem;
+    font-size: 1.5rem;
     font-weight: 700;
-    font-size: 0.85rem;
-    color: #b8860b;
-    border: 1px solid rgba(184, 134, 11, 0.55);
-    background: rgba(184, 134, 11, 0.1);
+    border: none;
+    border-radius: 0.5rem;
+    color: #2a2010;
+    background: linear-gradient(90deg, #b8860b 0%, #f0c040 100%);
   }
-  .refresh-button:hover:not(:disabled) {
-    background: rgba(184, 134, 11, 0.18);
+  /* The global button:hover only swaps background-color, invisible under a gradient image. */
+  @media (hover: hover) and (pointer: fine) {
+    .optimize-cta:hover:not(:disabled) {
+      filter: brightness(1.07);
+    }
   }
-  .refresh-button:disabled {
+  .optimize-cta:active {
+    filter: brightness(1.07);
+  }
+  /* Restate the gradient: the global button:disabled shorthand would replace it with var(--muted). */
+  .optimize-cta:disabled {
     opacity: 0.6;
-    cursor: not-allowed;
+    background: linear-gradient(90deg, #b8860b 0%, #f0c040 100%);
   }
-  :global(.dark-mode) .refresh-button {
-    color: #f0c040;
-    border-color: rgba(240, 192, 64, 0.55);
-    background: rgba(240, 192, 64, 0.12);
-  }
-  :global(.dark-mode) .refresh-button:hover:not(:disabled) {
-    background: rgba(240, 192, 64, 0.2);
+  .cta-hint {
+    font-size: 0.85rem;
+    opacity: 0.75;
+    text-align: center;
   }
   /* Gold "inputs changed" badge under the refresh button. */
   .stale-badge {
