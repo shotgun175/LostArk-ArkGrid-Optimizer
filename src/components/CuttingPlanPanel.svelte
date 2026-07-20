@@ -202,7 +202,7 @@
                 <h4>Actions</h4>
                 <ul class="ch-actions">
                   <li>
-                    <span class="act" data-action="cut-reset">↻ Reset</span> high value (≥ 18k), reset
+                    <span class="act" data-action="cut-reset">↻ Reset</span> high value (≥ 20k), reset
                     if it lands below baseline
                   </li>
                   <li><span class="act" data-action="cut">Cut</span> worth cutting, don't reset</li>
@@ -219,7 +219,7 @@
                 <ul>
                   <li><strong>Total / wk</strong>: above-baseline gems per week (direct cuts + fusion)</li>
                   <li><strong>Weeks</strong>: weeks to fill all 24 slots at this budget</li>
-                  <li><strong>Gold / wk</strong>: gold spent per week to sustain it</li>
+                  <li><strong>Gold value / wk</strong>: gold value of the gems flowing in per week</li>
                 </ul>
               </section>
               <section>

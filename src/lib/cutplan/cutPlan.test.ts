@@ -126,8 +126,11 @@ const data: PipelineData = {
 
 describe('verdictFor / actionFor', () => {
   it('bands a cut value by the baked gold thresholds', () => {
+    // Green is the 20k reset threshold (a code override of the baked legacy meta.verdict.green
+    // of 18000). 18k is NO LONGER green; it now falls in the yellow-hi band.
     expect(verdictFor(20000, verdict)).toBe('green');
-    expect(verdictFor(18000, verdict)).toBe('green');
+    expect(verdictFor(19999, verdict)).toBe('yellow-hi');
+    expect(verdictFor(18000, verdict)).toBe('yellow-hi');
     expect(verdictFor(12000, verdict)).toBe('yellow-hi');
     expect(verdictFor(7000, verdict)).toBe('yellow-mid');
     expect(verdictFor(2000, verdict)).toBe('yellow-lo');
@@ -150,7 +153,7 @@ describe('getCutCell (baseline interpolation)', () => {
     expect(c.pAbove).toBeCloseTo(0.35, 6);
     expect(c.expScore).toBeCloseTo(1.25, 6);
     expect(c.fLeg).toBeCloseTo(0.4, 6);
-    expect(c.verdict).toBe('yellow-hi'); // 15000 is in [10000, 18000)
+    expect(c.verdict).toBe('yellow-hi'); // 15000 is in [10000, 20000)
     expect(c.action).toBe('cut');
     expect(c.resetWorthy).toBe(false);
   });

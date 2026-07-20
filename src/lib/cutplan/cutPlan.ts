@@ -23,6 +23,12 @@ import { GOLD_PER_DAMAGE } from './types';
 
 export { GOLD_PER_DAMAGE };
 
+// Economy constants that OVERRIDE the baked legacy meta (shizukaziye's pipeline.js CONST block does
+// the same: the committed bake still carries his old deployed-page bands, these are the current ones).
+// No re-bake needed. Both equal model/astrogem.js COSTS.reset.
+export const RESET_COST = 20000; // gold to reset a finished gem for a fresh cut
+export const RESET_THRESHOLD = 20000; // green band: a below-baseline finished gem is worth resetting iff cut-EV >= this
+
 /**
  * Map a baseline GRADE to the exact baked % key the DP cells were solved at. Shizukaziye bakes one
  * solve per GRADE_ROWS anchor at baseline = gradeToScore(anchor), stored (same order) in
@@ -65,9 +71,10 @@ function lerp<T>(entries: T[], baseline: number, getB: (e: T) => number, getV: (
   return getV(entries[n - 1]);
 }
 
-/** Verdict band from a cut value, using his baked gold thresholds. */
+/** Verdict band from a cut value. Green uses the 20k reset threshold (a code override of the baked
+ *  legacy meta.verdict.green of 18000); the yellow/red bands still come from the baked meta. */
 export function verdictFor(cut: number, v: PipelineMeta['verdict']): Verdict {
-  if (cut >= v.green) return 'green';
+  if (cut >= RESET_THRESHOLD) return 'green';
   if (cut >= v.yellowHi) return 'yellow-hi';
   if (cut >= v.yellowMid) return 'yellow-mid';
   if (cut >= v.yellowLo) return 'yellow-lo';
