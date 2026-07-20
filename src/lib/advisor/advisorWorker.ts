@@ -23,6 +23,7 @@ import layoutSrc from './vendor/ocr/layout.js?raw';
 import levelRefsSrc from './vendor/ocr/level-refs.js?raw';
 import structuralSrc from './vendor/ocr/structural-engine.js?raw';
 import tessEngineSrc from './vendor/ocr/tesseract-engine.js?raw';
+import { isGreyCharge, type PanelRect } from './chargeDetect';
 
 const globalEval: (src: string) => void = eval; // indirect eval -> global scope
 // astrogem first (Astrogem), then nested + dp (the decision engine reads Astrogem + AstrogemNested),
@@ -168,6 +169,24 @@ function adviseFrom(
   return evaluate(dpState, baseline, gpd, 1, null, { axis: isSupport ? 'support' : 'dps' });
 }
 
+// Grey-Charge rescue (pixel channel): the vendored parser reads the gold "Charge" button but misses the
+// dim all-spent grey one, then constraintSnap defaults the unread reroll count to FULL. Step in ONLY
+// when the parser failed to read the reroll (no pill, no bright Charge) AND we're past turn 1 (a fresh
+// turn-1 gem legitimately has full rerolls) AND the pixel detector confirms the grey Charge -> force the
+// reroll count to 0 so the DP does not offer a free reroll that no longer exists.
+function applyGreyChargeRescue(
+  raster: Raster,
+  raw: Record<string, unknown>,
+  snappedState: Record<string, unknown>
+): void {
+  const panel = raw._srcPanel as PanelRect | undefined;
+  if (!panel) return;
+  const rawState = (raw.state ?? {}) as Record<string, unknown>;
+  if (rawState.rerollsShownFree != null || rawState.rerollsChargeSeen) return;
+  if (((snappedState.currentTurn as number) ?? 1) <= 1) return;
+  if (isGreyCharge(raster, panel)) snappedState.rerollsRemaining = 0;
+}
+
 self.onmessage = async (ev: MessageEvent) => {
   const msg = ev.data || {};
   if (msg.type === 'init') {
@@ -182,6 +201,7 @@ self.onmessage = async (ev: MessageEvent) => {
       const raster = await rasterFromBitmap(msg.bitmap as ImageBitmap);
       const raw = await parseStructural(raster, ocrFn);
       const snapped = constraintSnap(raw) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
+      applyGreyChargeRescue(raster, raw as Record<string, unknown>, snapped.state);
       const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
       self.postMessage({ type: 'parse:done', id: msg.id, result: snapped, advice });
     } catch (e) {
