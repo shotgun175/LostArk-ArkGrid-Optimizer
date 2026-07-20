@@ -67,9 +67,21 @@ export interface PipelineMeta {
 }
 type CellsByGpd = Record<string, PipelineCellEntry[]>;
 type ThruByGpd = Record<string, PipelineThruEntry[]>;
+
+/** Fusion / fodder values (his joint fixed-point solve), baked per baseline anchor. */
+export interface FusionRow {
+  /** Expected gold of a random PROCESSED gem of each fodder tier (keep-or-fuse EV). */
+  tierEV: { leg: number; relic: number; anc: number };
+  /** Per-input value of a below-baseline gem of each tier used as fusion fodder. */
+  fodder: { leg: number; relic: number; anc: number };
+}
+// gpd -> cost -> [per baseline anchor], parallel to the cells' baseline order.
+type FusionByGpd = Record<string, Record<string, FusionRow[]>>;
+
 export interface PipelineAxis {
   cells: Record<Rarity, Record<string, Record<BucketKey, CellsByGpd>>>;
   thru: Record<Rarity, Record<string, ThruByGpd>>;
+  fusion: FusionByGpd;
 }
 export interface PipelineData {
   _provenance: Record<string, unknown>;

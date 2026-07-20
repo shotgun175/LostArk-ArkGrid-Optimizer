@@ -112,6 +112,42 @@ if (dpsT.missing || supportT.missing) {
   throw new Error(`missing cells: dps=${dpsT.missing} support=${supportT.missing}`);
 }
 
+// Fusion / fodder values are LIVE model math on his page (his joint 9-variable fixed point), not in
+// the baked DP cells. We reproduce them EXACTLY by calling his own astrogem.js in Node (it is CJS and
+// runs natively here) at each baked baseline anchor x gpd, so the runtime stays a pure lookup and we
+// never re-implement the oracle-guarded math. tierExpectedValue applies the support x3 gpd internally,
+// so we just pass the axis. Baselines are sorted ascending to stay parallel to the baked cells.
+const Astrogem = require(path.join(SRC_DIR, '..', 'model', 'astrogem.js'));
+function bakeFusion(axis, bakedBaselines, anchorGpd) {
+  const baselines = [...bakedBaselines].sort((a, b) => a - b);
+  const byGpd = {};
+  for (const gpd of anchorGpd) {
+    byGpd[gpd] = {};
+    for (const cost of [8, 9, 10]) {
+      byGpd[gpd][cost] = baselines.map((bl) => {
+        const tev = Astrogem.tierExpectedValue(cost, bl, gpd, axis);
+        return {
+          // Expected gold of a random processed gem of each fodder tier (keep-or-fuse EV).
+          tierEV: {
+            leg: Math.round(tev.legendary),
+            relic: Math.round(tev.relic),
+            anc: Math.round(tev.ancient),
+          },
+          // Per-input value of using a below-baseline gem of each tier as fusion fodder.
+          fodder: {
+            leg: Math.round(Astrogem.fusionValueForTier('legendary', cost, bl, gpd, axis)),
+            relic: Math.round(Astrogem.fusionValueForTier('relic', cost, bl, gpd, axis)),
+            anc: Math.round(Astrogem.fusionValueForTier('ancient', cost, bl, gpd, axis)),
+          },
+        };
+      });
+    }
+  }
+  return byGpd;
+}
+const dpsFusion = bakeFusion('dps', meta.bakedBaselines, meta.anchorGpd);
+const supportFusion = bakeFusion('support', support.json.meta.bakedBaselines, meta.anchorGpd);
+
 // Preserve generated_at when the inputs are unchanged so re-runs stay byte-identical.
 let generatedAt = new Date().toISOString().slice(0, 10);
 if (fs.existsSync(OUT_PATH)) {
@@ -157,8 +193,8 @@ const out = {
     baselines: { dps: dpsT.baselines, support: supportT.baselines },
   },
   axes: {
-    dps: { cells: dpsT.cells, thru: dpsT.thru },
-    support: { cells: supportT.cells, thru: supportT.thru },
+    dps: { cells: dpsT.cells, thru: dpsT.thru, fusion: dpsFusion },
+    support: { cells: supportT.cells, thru: supportT.thru, fusion: supportFusion },
   },
 };
 

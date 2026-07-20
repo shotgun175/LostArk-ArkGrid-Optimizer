@@ -98,6 +98,7 @@ const data: PipelineData = {
           },
         },
       } as unknown as PipelineData['axes']['dps']['thru'],
+      fusion: {},
     },
     // Support cells baked on the support % scale (b=0.1/0.2). The top anchor (0.2) has cut=0,
     // like the real data — so reading it at a DPS-scale baseline (>0.2) clamps to zero (the bug),
@@ -122,6 +123,7 @@ const data: PipelineData = {
         },
       } as unknown as PipelineData['axes']['dps']['cells'],
       thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+      fusion: {},
     },
   },
 };
@@ -258,11 +260,13 @@ describe('cellBreakdown', () => {
             },
           } as unknown as PipelineData['axes']['dps']['cells'],
           thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+          fusion: {},
         },
         // Support unused here.
         support: {
           cells: {} as unknown as PipelineData['axes']['dps']['cells'],
           thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+          fusion: {},
         },
       },
     };
