@@ -296,7 +296,7 @@ describe('labels / bands', () => {
   });
   it('actionLabel / bracketLabel / weeksBand', () => {
     expect(actionLabel('cut-reset')).toBe('Cut + reset');
-    expect(actionLabel('dont-cut')).toBe("Don't cut");
+    expect(actionLabel('dont-cut')).toBe('Dismantle');
     expect(bracketLabel('1_5M')).toBe('1.5M');
     expect(weeksBand(6.8)).toBe('fast');
     expect(weeksBand(20)).toBe('med');

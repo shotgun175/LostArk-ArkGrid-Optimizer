@@ -423,11 +423,23 @@ export function effectPair(meta: PipelineMeta, axis: CutAxis, cost: number, buck
 const ACTION_LABELS: Record<CutAction, string> = {
   'cut-reset': 'Cut + reset',
   cut: 'Cut',
-  'dont-cut': "Don't cut",
+  'dont-cut': 'Dismantle',
   fuse: 'Fuse first',
 };
 export function actionLabel(action: CutAction): string {
   return ACTION_LABELS[action];
+}
+
+/**
+ * The rarity-upgrade fuse recipe for a "fuse first" block (shizukaziye's pipeline.js steerTxt): an
+ * Uncommon block fuses 3 of its own cost; a Rare fuses itself with two Uncommons steered toward the
+ * cost with the best mixed output; Epic never fuses. Returns null when there's no fuse recipe.
+ */
+export function fuseRecipe(ff: FuseFirst | null, rarity: Rarity, cost: number): string | null {
+  if (!ff || rarity === 'epic') return null;
+  if (rarity === 'uncommon') return `3x ${cost}-cost Uncommon`;
+  const steer = ff.steer.rare[cost] ?? cost;
+  return `this + 2x ${steer}-cost Uncommon`;
 }
 
 export function bracketLabel(bracket: GoldBracket): string {

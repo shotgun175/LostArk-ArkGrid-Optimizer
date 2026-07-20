@@ -2,27 +2,62 @@
 // init, and exposes a single-image parse (upload / paste / one screen-share frame). The parser stack
 // lives entirely in the worker; this class is the main-thread message shell with a worker-crash
 // backstop, mirroring CaptureController and SolverController.
+export interface AdvisorConfig {
+  baseCost: number;
+  gemType: string;
+  willpowerLevel: number;
+  orderLevel: number;
+  effect1: string;
+  effect1Level: number;
+  effect2: string;
+  effect2Level: number;
+}
+/** One possible-outcome tile, in the shape his snapOutcome emits. */
+export interface AdvisorOutcome {
+  type: string;
+  target?: string;
+  amount?: number;
+  change?: number; // change_gold_cost (±100) / reroll_increase (+1|+2) live here, NOT amount
+  effectName?: string;
+  currentEffect?: string;
+  description?: string;
+}
 export interface ParsedAdvisorState {
-  config: {
-    baseCost: number;
-    gemType: string;
-    willpowerLevel: number;
-    orderLevel: number;
-    effect1: string;
-    effect1Level: number;
-    effect2: string;
-    effect2Level: number;
-  };
+  config: AdvisorConfig;
   state: {
     currentTurn: number;
     maxTurns: number;
     rerollsRemaining: number;
+    resetsRemaining?: number; // his "Reset (x/1)" counter; undefined = unread (assume unused)
+    processCost?: number;
     processCostMultiplier: number;
+    totalGoldSpent?: number;
     rosterBound: boolean;
   };
-  outcomes: { type: string; target?: string; amount?: number }[];
+  outcomes: AdvisorOutcome[];
+  rarity?: string; // uncommon | rare | epic (constraintSnap emits it)
   confidence?: unknown;
   ocrDegraded?: boolean;
+}
+
+/**
+ * A manually-entered / corrected game state, sent to the worker's `advise` path. The worker runs it
+ * through his constraintSnap (the same normalize the parser uses) before re-ranking, so callers pass
+ * raw human-picked values and let the snap make them legal. `rerollsShownFree` is the FREE-reroll
+ * count the game shows; the snap converts it to model units (free + the paid final reroll).
+ */
+export interface EditedAdvisorState {
+  config: AdvisorConfig;
+  state: {
+    currentTurn: number;
+    maxTurns: number;
+    rerollsShownFree?: number;
+    resetsRemaining?: number;
+    processCostMultiplier: number;
+    rosterBound?: boolean;
+  };
+  outcomes: AdvisorOutcome[];
+  rarity: string;
 }
 
 /** One ranked action from the DP (his topLevelAdvice allActions entry). */
@@ -173,6 +208,19 @@ export class AdvisorController {
     }
   }
 
+  /**
+   * Grab the current shared frame and re-parse it right now, bypassing the change-gate. Lets the user
+   * force a refresh when the auto-detector didn't notice a subtle in-window change (e.g. one process
+   * step barely moved the pixels of a small on-screen window).
+   */
+  async reparseNow(): Promise<void> {
+    if (!this.stream) return;
+    const bitmap = await this.grabFrame();
+    if (!bitmap) return;
+    const res = await this.parseImage(bitmap, this.watchInputs);
+    this.onAdvice?.(res);
+  }
+
   private async grabFrame(): Promise<ImageBitmap | null> {
     if (!this.video || this.video.readyState < 2) return null;
     try {
@@ -182,48 +230,140 @@ export class AdvisorController {
     }
   }
 
-  // A cheap 48x27 signature of the current frame for change detection.
+  // A cheap 96x54 signature of the current frame for change detection.
   private frameSignature(): Uint8ClampedArray | null {
     if (!this.video || this.video.readyState < 2) return null;
-    if (!this.sigCanvas) this.sigCanvas = new OffscreenCanvas(48, 27);
+    if (!this.sigCanvas) this.sigCanvas = new OffscreenCanvas(96, 54);
     const ctx = this.sigCanvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.drawImage(this.video, 0, 0, 48, 27);
-    return ctx.getImageData(0, 0, 48, 27).data;
+    ctx.drawImage(this.video, 0, 0, 96, 54);
+    return ctx.getImageData(0, 0, 96, 54).data;
   }
-  // Mean per-channel absolute difference (0..255) between two RGBA signatures.
-  private static sigDiff(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
-    let s = 0;
+  // Count of pixels whose colour changed "significantly" between two frame signatures. A localized
+  // in-window change (a value flips, the 4 outcomes reroll) lights up a cluster of pixels even though
+  // it's a tiny fraction of a full-screen share; a MEAN difference dilutes that to nothing, a COUNT
+  // does not. The per-pixel threshold ignores compression noise (spread thin, each pixel barely moves).
+  private static changedPixels(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
+    let n = 0;
     for (let i = 0; i < a.length; i += 4) {
-      s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+      if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 45) n++;
     }
-    return s / (a.length * 0.75);
+    return n;
+  }
+
+  // Debug-only: when `advisorWatchDebug` is set, stash the exact frame handed to the OCR (captured
+  // before it's transferred to the worker) as a PNG on `window.__advisorFrames`, and expose
+  // `__dumpAdvisorFrame()` to download the last one. This is how we grab a real misreading live frame
+  // to reproduce and fix the OCR against offline. No effect unless the flag is on.
+  private captureDebugFrame(bitmap: ImageBitmap) {
+    if (
+      typeof localStorage === 'undefined' ||
+      localStorage.getItem('advisorWatchDebug') !== '1' ||
+      typeof document === 'undefined'
+    )
+      return;
+    try {
+      const c = document.createElement('canvas');
+      c.width = bitmap.width;
+      c.height = bitmap.height;
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(bitmap, 0, 0); // read-only draw; does NOT neuter the bitmap before its transfer
+      const w = window as unknown as {
+        __advisorFrames?: { t: number; url: string }[];
+        __dumpAdvisorFrame?: (i?: number) => string;
+      };
+      if (!w.__advisorFrames) {
+        w.__advisorFrames = [];
+        w.__dumpAdvisorFrame = (i?: number) => {
+          const arr = w.__advisorFrames ?? [];
+          const f = arr[i ?? arr.length - 1];
+          if (!f?.url) return 'no frames captured yet';
+          const a = document.createElement('a');
+          a.href = f.url;
+          a.download = `advisor-frame-${f.t}.png`;
+          a.click();
+          return `downloading ${a.download}`;
+        };
+        console.log(
+          '[watch] frame dump armed; run __dumpAdvisorFrame() in the console to save the last parsed frame'
+        );
+      }
+      const arr = w.__advisorFrames;
+      const entry: { t: number; url: string } = { t: Date.now(), url: '' };
+      arr.push(entry);
+      // Blob object URLs (not data URLs) so multi-MB 2K/4K frames download without Chrome silently
+      // dropping them; drop the oldest and revoke its URL so the debug ring never leaks memory.
+      while (arr.length > 5) {
+        const old = arr.shift();
+        if (old?.url) URL.revokeObjectURL(old.url);
+      }
+      c.toBlob((blob) => {
+        if (blob) entry.url = URL.createObjectURL(blob);
+      }, 'image/png');
+    } catch {
+      // debug-only; never disturb the parse
+    }
   }
 
   private async watchLoop() {
-    const POLL_MS = 400;
-    const STABLE_MS = 700; // the frame must hold still this long before we spend a parse
-    const CHANGE = 6; // mean per-channel abs diff that counts as "the screen moved"
+    const POLL_MS = 300;
+    // The in-game process animation flashes in TWO phases (the process flash, then the outcome reveal)
+    // about 700ms apart, dipping to ~38 motion in the lull between. So we wait for no fresh spike for a
+    // good beat AND require this exact frame to be calm before parsing; otherwise we read a mid-
+    // animation state and advise on it, which made the recommendation jump then correct itself on the
+    // next read.
+    const STABLE_MS = 900; // no fresh spike for this long means the whole animation has finished
+    const QUIET = 22; // and this exact frame must be calm, not a still-settling ~38-motion frame
+    // The shared game window animates constantly (the spinning dial, the gem shimmer), moving ~15-35
+    // downscaled pixels every frame even when nothing happened. A real process / reroll always jumps
+    // far past that noise floor. Measured live over ~100 idle frames and 14 real events: ambient tops
+    // out around 35, while a genuine event starts around 41. So we re-read only when a real motion
+    // spike has fired since the last read (SPIKE) AND the settled frame differs from what we last read
+    // by more than the ambient ceiling (CONTENT). Ambient trips neither, so a static screen spends zero
+    // parses; the manual "Re-read now" button covers any atypically small change.
+    const SPIKE = 40; // changed pixels vs the previous frame above this = a real in-window event
+    const CONTENT = 36; // changed pixels vs the last read above this = the gem state actually changed
+    // Flip on in the console (`localStorage.advisorWatchDebug = '1'` then reload) to log the live
+    // change-detection metrics; used to tune the thresholds against a real screen share.
+    const debug =
+      typeof localStorage !== 'undefined' && localStorage.getItem('advisorWatchDebug') === '1';
     let prevSig: Uint8ClampedArray | null = null;
     let parsedSig: Uint8ClampedArray | null = null;
     let stableSince = 0;
+    let spikeSeen = false;
     let busy = false;
     while (this.watching) {
       const sig = this.frameSignature();
       if (sig) {
-        if (prevSig === null || AdvisorController.sigDiff(sig, prevSig) > CHANGE) {
-          stableSince = Date.now(); // moving (or first frame): restart the stability clock
+        const motion = prevSig ? AdvisorController.changedPixels(sig, prevSig) : Infinity;
+        if (motion > SPIKE) {
+          spikeSeen = true; // latch the event; only an actual re-read clears it
+          stableSince = Date.now(); // and restart the settle clock so we parse the settled state
         }
         const stableFor = Date.now() - stableSince;
-        const differsFromParsed = !parsedSig || AdvisorController.sigDiff(sig, parsedSig) > CHANGE;
-        if (!busy && stableFor >= STABLE_MS && differsFromParsed) {
+        const content = parsedSig ? AdvisorController.changedPixels(sig, parsedSig) : Infinity;
+        const firstRead = parsedSig === null;
+        const willParse =
+          !busy &&
+          motion <= QUIET && // parse only a calm frame, never one still settling
+          stableFor >= STABLE_MS &&
+          (firstRead || (spikeSeen && content > CONTENT));
+        if (debug)
+          console.log(
+            `[watch] motion=${motion} content=${content} stableFor=${stableFor} spike=${spikeSeen}${willParse ? ' -> RE-READ' : ''}`
+          );
+        if (willParse) {
           busy = true;
           parsedSig = sig;
+          spikeSeen = false;
+          const t0 = Date.now();
           const bitmap = await this.grabFrame();
           if (bitmap) {
             const res = await this.parseImage(bitmap, this.watchInputs);
             if (this.watching) this.onAdvice?.(res);
           }
+          if (debug) console.log(`[watch] parse+advise took ${Date.now() - t0}ms`);
           busy = false;
         }
         prevSig = sig;
@@ -251,6 +391,7 @@ export class AdvisorController {
       const id = ++this.seq;
       return await new Promise<AdvisorResult | null>((resolve) => {
         this.pending.set(id, resolve);
+        this.captureDebugFrame(bitmap); // debug-only: stash the exact frame the OCR is about to read
         this.worker!.postMessage(
           { type: 'parse', id, bitmap, baselineGrade: inputs.baselineGrade, gpd: inputs.gpd, axis: inputs.axis },
           [bitmap]
@@ -262,6 +403,40 @@ export class AdvisorController {
       } catch {
         // already transferred / closed
       }
+      return null;
+    }
+  }
+
+  /**
+   * Re-rank from a manually-entered / corrected state (the dropdown backup on the Processing window).
+   * No image: the worker runs the edit through his constraintSnap + DP and returns the snapped state
+   * plus fresh advice, exactly as a parse would.
+   */
+  async advise(edited: EditedAdvisorState, inputs: AdviceInputs = {}): Promise<AdvisorResult | null> {
+    try {
+      if (!this.worker) this.worker = this.createWorker();
+      if (!this.initialized) {
+        await new Promise<void>((resolve, reject) => {
+          this.awaitInit = { resolve, reject };
+          this.worker!.postMessage({ type: 'init' });
+        });
+      }
+      const id = ++this.seq;
+      return await new Promise<AdvisorResult | null>((resolve) => {
+        this.pending.set(id, resolve);
+        this.worker!.postMessage({
+          type: 'advise',
+          id,
+          config: edited.config,
+          state: edited.state,
+          outcomes: edited.outcomes,
+          rarity: edited.rarity,
+          baselineGrade: inputs.baselineGrade,
+          gpd: inputs.gpd,
+          axis: inputs.axis,
+        });
+      });
+    } catch {
       return null;
     }
   }

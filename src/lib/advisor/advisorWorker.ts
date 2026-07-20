@@ -116,7 +116,7 @@ async function ocrFn(raster: Raster, opts: OcrOpts): Promise<{ text: string; con
     // image" in the worker. Render the injected raster onto an OffscreenCanvas first (same as the CV
     // OCR path in captureWorker's BrowserOcrRunner).
     const canvas = new OffscreenCanvas(raster.width, raster.height);
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     ctx.putImageData(new ImageData(new Uint8ClampedArray(raster.data), raster.width, raster.height), 0, 0);
     const res = await w.recognize(canvas);
     return { text: res?.data?.text ?? '', conf: (res?.data?.confidence ?? 40) / 100 };
@@ -128,12 +128,23 @@ async function ocrFn(raster: Raster, opts: OcrOpts): Promise<{ text: string; con
   }
 }
 
+// Reuse one CPU-backed canvas across parses. The shared frame is the same size every parse, so this
+// avoids reallocating a full-frame canvas each time, and willReadFrequently keeps the canvas in CPU
+// memory so the getImageData readback (~15MB on a 1440p frame) skips the slow GPU->CPU round-trip that
+// otherwise dominates parse time.
+let _rasterCanvas: OffscreenCanvas | null = null;
+let _rasterCtx: OffscreenCanvasRenderingContext2D | null = null;
 async function rasterFromBitmap(bitmap: ImageBitmap): Promise<Raster> {
-  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const ctx = canvas.getContext('2d')!;
+  const w = bitmap.width;
+  const h = bitmap.height;
+  if (!_rasterCanvas || _rasterCanvas.width !== w || _rasterCanvas.height !== h) {
+    _rasterCanvas = new OffscreenCanvas(w, h);
+    _rasterCtx = _rasterCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  const ctx = _rasterCtx!;
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close?.();
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const img = ctx.getImageData(0, 0, w, h);
   return { width: img.width, height: img.height, data: img.data };
 }
 
@@ -177,5 +188,26 @@ self.onmessage = async (ev: MessageEvent) => {
       console.error('[advisor] parse failed:', (e as Error)?.stack ?? e);
       self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });
     }
+    return;
+  }
+  // Manual-edit path: no image, just a human-corrected state run through the same constraintSnap +
+  // DP the parser uses. Responds on the SAME parse:done channel the controller already awaits.
+  if (msg.type === 'advise') {
+    try {
+      const constraintSnap = getConstraintSnap();
+      if (!constraintSnap) throw new Error('parser stack not wired');
+      const snapped = constraintSnap({
+        config: msg.config,
+        state: msg.state,
+        outcomes: msg.outcomes,
+        rarity: msg.rarity,
+      }) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
+      const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
+      self.postMessage({ type: 'parse:done', id: msg.id, result: snapped, advice });
+    } catch (e) {
+      console.error('[advisor] advise failed:', (e as Error)?.stack ?? e);
+      self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });
+    }
+    return;
   }
 };

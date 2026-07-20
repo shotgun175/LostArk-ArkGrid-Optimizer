@@ -4,6 +4,7 @@
     bracketLabel,
     cellBreakdown,
     effectPair,
+    fuseRecipe,
     getCutCell,
     getEconomy,
     getFusion,
@@ -221,7 +222,7 @@
                   </li>
                   <li><span class="act" data-action="cut">Cut</span> worth cutting, don't reset</li>
                   <li>
-                    <span class="act" data-action="dont-cut">Don't cut</span> not worth cutting at this
+                    <span class="act" data-action="dont-cut">Dismantle</span> not worth cutting at this
                     baseline
                   </li>
                   <li>
@@ -296,7 +297,7 @@
       <div class="legend">
         <span class="act" data-action="cut-reset">↻ Reset</span>
         <span class="act" data-action="cut">Cut</span>
-        <span class="act" data-action="dont-cut">Don't cut</span>
+        <span class="act" data-action="dont-cut">Dismantle</span>
         <span class="act" data-action="fuse">⚜ Fuse first</span>
       </div>
 
@@ -323,6 +324,14 @@
                 <span class="gem-title">{arch.label}</span>
                 <span class="gem-ev">Best: {fmtGold(best)}</span>
               </div>
+            {/if}
+            {#if blockFuse}
+              {@const recipe = fuseRecipe(fuseFirst, arch.rarity, arch.cost)}
+              {#if recipe}
+                <div class="fuse-recipe" title="What to fuse this block with for a rarity upgrade">
+                  ⚜ Fuse: {recipe}
+                </div>
+              {/if}
             {/if}
             <div class="gem-buckets">
               {#each data.meta.buckets as bkt}
@@ -724,6 +733,17 @@
     font-size: 0.8rem;
     opacity: 0.85;
     font-variant-numeric: tabular-nums;
+  }
+  /* Recipe line shown on a fuse-first (purple) card: how to fuse this block for a rarity upgrade. */
+  .fuse-recipe {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    color: #7e5cc0;
+    background: rgba(126, 92, 192, 0.1);
+    border-bottom: 1px solid var(--border);
+  }
+  :global(.dark-mode) .fuse-recipe {
+    color: #c3a6f0;
   }
   .gem-buckets {
     display: flex;
