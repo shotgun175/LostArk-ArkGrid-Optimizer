@@ -15,6 +15,8 @@
 // load-bearing: astrogem (Astrogem) first, then engine / layout / tesseract-engine / glyphs /
 // level-refs, then structural-engine which reads all of them off `self`.
 import astrogemSrc from './vendor/model/astrogem.js?raw';
+import dpSrc from './vendor/model/dp.js?raw';
+import nestedSrc from './vendor/model/nested.js?raw';
 import engineSrc from './vendor/ocr/engine.js?raw';
 import glyphsSrc from './vendor/ocr/glyphs.js?raw';
 import layoutSrc from './vendor/ocr/layout.js?raw';
@@ -23,8 +25,12 @@ import structuralSrc from './vendor/ocr/structural-engine.js?raw';
 import tessEngineSrc from './vendor/ocr/tesseract-engine.js?raw';
 
 const globalEval: (src: string) => void = eval; // indirect eval -> global scope
+// astrogem first (Astrogem), then nested + dp (the decision engine reads Astrogem + AstrogemNested),
+// then the ocr stack (engine reads Astrogem; structural-engine reads all the others off self).
 for (const src of [
   astrogemSrc,
+  nestedSrc,
+  dpSrc,
   engineSrc,
   layoutSrc,
   tessEngineSrc,
@@ -46,9 +52,37 @@ interface OcrOpts {
 }
 type ParsedState = Record<string, unknown>;
 
+interface DpAction {
+  name: string;
+  value: number;
+  expectedScore: number;
+  expectedCost: number;
+  aboveBaselineOdds: number;
+  description: string;
+}
+interface DpAdvice {
+  bestAction: string;
+  allActions: DpAction[];
+  currentValue: number;
+  resetCost: number | null;
+}
 const g = self as unknown as {
   OcrStructuralEngine?: { parseStructural: (r: Raster, f: unknown) => Promise<ParsedState> };
   OcrEngineAPI?: { constraintSnap: (raw: ParsedState) => ParsedState };
+  AstrogemDP?: {
+    evaluateActionsDP: (
+      state: unknown,
+      baseline: number,
+      gpd: number,
+      numRuns: number,
+      onProgress: unknown,
+      opts: { axis: string }
+    ) => DpAdvice;
+  };
+  Astrogem?: {
+    gradeToScore: (grade: number, baseCost?: number) => number;
+    supportGradeToScore: (grade: number) => number;
+  };
 };
 // Resolved lazily (on first use) so it never matters whether the side-effect imports finished
 // attaching to `self` before this module's top-level ran.
@@ -103,6 +137,26 @@ async function rasterFromBitmap(bitmap: ImageBitmap): Promise<Raster> {
   return { width: img.width, height: img.height, data: img.data };
 }
 
+// Rank the four actions for a parsed gem. constraintSnap returns { config, state, outcomes }; the DP
+// wants that flattened (config + turn state + outcomes on one object). The baseline arrives as a 0-100
+// GRADE and is converted to the DP's gemValue-scale threshold here via the vendored gradeToScore
+// (single source of truth). Returns null when no baseline grade / gpd was supplied or the engine
+// isn't wired.
+function adviseFrom(
+  snapped: { config: unknown; state: Record<string, unknown>; outcomes: unknown },
+  baselineGrade: number | undefined,
+  gpd: number | undefined,
+  axis: string | undefined
+): DpAdvice | null {
+  const evaluate = g.AstrogemDP?.evaluateActionsDP;
+  const A = g.Astrogem;
+  if (!evaluate || !A || baselineGrade == null || gpd == null) return null;
+  const isSupport = axis === 'support';
+  const baseline = isSupport ? A.supportGradeToScore(baselineGrade) : A.gradeToScore(baselineGrade);
+  const dpState = { config: snapped.config, ...snapped.state, outcomes: snapped.outcomes };
+  return evaluate(dpState, baseline, gpd, 1, null, { axis: isSupport ? 'support' : 'dps' });
+}
+
 self.onmessage = async (ev: MessageEvent) => {
   const msg = ev.data || {};
   if (msg.type === 'init') {
@@ -116,8 +170,9 @@ self.onmessage = async (ev: MessageEvent) => {
       if (!parseStructural || !constraintSnap) throw new Error('parser stack not wired');
       const raster = await rasterFromBitmap(msg.bitmap as ImageBitmap);
       const raw = await parseStructural(raster, ocrFn);
-      const snapped = constraintSnap(raw);
-      self.postMessage({ type: 'parse:done', id: msg.id, result: snapped });
+      const snapped = constraintSnap(raw) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
+      const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
+      self.postMessage({ type: 'parse:done', id: msg.id, result: snapped, advice });
     } catch (e) {
       console.error('[advisor] parse failed:', (e as Error)?.stack ?? e);
       self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });

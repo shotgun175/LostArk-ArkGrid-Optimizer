@@ -25,10 +25,35 @@ export interface ParsedAdvisorState {
   ocrDegraded?: boolean;
 }
 
+/** One ranked action from the DP (his topLevelAdvice allActions entry). */
+export interface AdvisorAction {
+  name: string; // Process | Reroll | Complete | Reset
+  value: number; // net expected gold value
+  expectedScore: number; // expected % damage of the resulting gem
+  expectedCost: number; // expected gold spent from here
+  aboveBaselineOdds: number; // P(the result clears your baseline)
+  description: string;
+}
+export interface AdvisorAdvice {
+  bestAction: string; // lowercased winning action
+  allActions: AdvisorAction[];
+  currentValue: number;
+  resetCost: number | null;
+}
+export interface AdvisorResult {
+  parsed: ParsedAdvisorState;
+  advice: AdvisorAdvice | null; // null when no baseline/gpd was supplied
+}
+export interface AdviceInputs {
+  baselineGrade?: number; // 0-100 grade; the worker converts to the DP's gemValue threshold
+  gpd?: number; // gold per 1% damage
+  axis?: 'dps' | 'support';
+}
+
 export class AdvisorController {
   private worker: Worker | null = null;
   private seq = 0;
-  private pending = new Map<number, (r: ParsedAdvisorState | null) => void>();
+  private pending = new Map<number, (r: AdvisorResult | null) => void>();
   private initialized = false;
   private awaitInit: { resolve: () => void; reject: (e: unknown) => void } | null = null;
 
@@ -51,7 +76,11 @@ export class AdvisorController {
       const cb = this.pending.get(d.id);
       if (cb) {
         this.pending.delete(d.id);
-        cb(d.error ? null : (d.result as ParsedAdvisorState));
+        cb(
+          d.error
+            ? null
+            : { parsed: d.result as ParsedAdvisorState, advice: (d.advice ?? null) as AdvisorAdvice | null }
+        );
       }
     }
   }
@@ -75,8 +104,11 @@ export class AdvisorController {
     }
   }
 
-  /** Parse one decoded screenshot into a legal game state, or null on failure. */
-  async parseImage(bitmap: ImageBitmap): Promise<ParsedAdvisorState | null> {
+  /**
+   * Parse one decoded screenshot into a legal game state plus (if baseline/gpd given) the ranked
+   * DP advice, or null on failure.
+   */
+  async parseImage(bitmap: ImageBitmap, inputs: AdviceInputs = {}): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
       if (!this.initialized) {
@@ -86,9 +118,12 @@ export class AdvisorController {
         });
       }
       const id = ++this.seq;
-      return await new Promise<ParsedAdvisorState | null>((resolve) => {
+      return await new Promise<AdvisorResult | null>((resolve) => {
         this.pending.set(id, resolve);
-        this.worker!.postMessage({ type: 'parse', id, bitmap }, [bitmap]);
+        this.worker!.postMessage(
+          { type: 'parse', id, bitmap, baselineGrade: inputs.baselineGrade, gpd: inputs.gpd, axis: inputs.axis },
+          [bitmap]
+        );
       });
     } catch {
       try {
