@@ -15,8 +15,8 @@ import { type GemRole, computeGemScore } from '../scoring/gemScore';
 import { DP_FIXTURES } from './advisorDp.fixtures';
 
 const require = createRequire(import.meta.url);
-const A = require('./vendor/astrogem.js');
-const DP = require('./vendor/dp.js');
+const A = require('./vendor/model/astrogem.js');
+const DP = require('./vendor/model/dp.js');
 
 // His effect names <-> our option-type keys.
 const NAME_TO_KEY: Record<string, ArkGridGemOptionName> = {
