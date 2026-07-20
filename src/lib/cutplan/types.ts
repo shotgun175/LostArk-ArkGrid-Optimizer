@@ -78,10 +78,27 @@ export interface FusionRow {
 // gpd -> cost -> [per baseline anchor], parallel to the cells' baseline order.
 type FusionByGpd = Record<string, Record<string, FusionRow[]>>;
 
+/** The whole-economy weekly model (his pipeline.js computePipeline), baked per baseline anchor. */
+export interface EconomyRow {
+  boxEV: number; // EV/box-gem this week; drives the buy flags
+  buyVendor: boolean;
+  buyMat: boolean;
+  buyEpic: boolean;
+  directPerWk: number; // above-baseline gems/week from cutting
+  fusePerWk: number; // above-baseline gems/week from the fusion chain
+  totalPerWk: number; // direct + fuse
+  weeks: number | null; // 24 / total; null when nothing clears the baseline
+  goldPerWk: number; // gold SPENT per week (boxes + cutting + 20k resets + fusion fees)
+  goldTotal: number | null; // gold to fill all 24 slots
+  cpPct: number; // combat-power % gain of the produced loadout (his COND_SCORE fallback)
+}
+type EconomyByGpd = Record<string, EconomyRow[]>;
+
 export interface PipelineAxis {
   cells: Record<Rarity, Record<string, Record<BucketKey, CellsByGpd>>>;
   thru: Record<Rarity, Record<string, ThruByGpd>>;
   fusion: FusionByGpd;
+  economy: EconomyByGpd;
 }
 export interface PipelineData {
   _provenance: Record<string, unknown>;

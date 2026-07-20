@@ -148,6 +148,13 @@ function bakeFusion(axis, bakedBaselines, anchorGpd) {
 const dpsFusion = bakeFusion('dps', meta.bakedBaselines, meta.anchorGpd);
 const supportFusion = bakeFusion('support', support.json.meta.bakedBaselines, meta.anchorGpd);
 
+// Weekly-economy model (his pipeline.js computePipeline, ported to Node in bake-economy.cjs). It reads
+// his source cells + CONST + his astrogem.js and produces one whole-economy result per (axis, gpd,
+// baseline). We bake it so the runtime is a pure lookup; validated exact against his live Pipeline tab.
+const { bakeEconomy } = require('./bake-economy.cjs');
+const dpsEconomy = bakeEconomy(Astrogem, 'dps', dps.json.cells, meta.bakedBaselines, meta.anchorGpd);
+const supportEconomy = bakeEconomy(Astrogem, 'support', support.json.cells, support.json.meta.bakedBaselines, meta.anchorGpd);
+
 // Preserve generated_at when the inputs are unchanged so re-runs stay byte-identical.
 let generatedAt = new Date().toISOString().slice(0, 10);
 if (fs.existsSync(OUT_PATH)) {
@@ -193,8 +200,8 @@ const out = {
     baselines: { dps: dpsT.baselines, support: supportT.baselines },
   },
   axes: {
-    dps: { cells: dpsT.cells, thru: dpsT.thru, fusion: dpsFusion },
-    support: { cells: supportT.cells, thru: supportT.thru, fusion: supportFusion },
+    dps: { cells: dpsT.cells, thru: dpsT.thru, fusion: dpsFusion, economy: dpsEconomy },
+    support: { cells: supportT.cells, thru: supportT.thru, fusion: supportFusion, economy: supportEconomy },
   },
 };
 
