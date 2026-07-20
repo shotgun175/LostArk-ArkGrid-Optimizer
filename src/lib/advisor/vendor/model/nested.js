@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (model/nested.js), 2026-07-19.
+ * VENDORED from shizukaziye/astrogem-calculator (model/nested.js), re-synced 2026-07-20.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
  * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream and re-running
  * the drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require()
@@ -197,7 +197,7 @@
     st.totalGoldSpent += (st.rosterBound ? 0 : st.processCost);
     if (outcome.type === "change_gold_cost" && !st.rosterBound) {
       st.processCostMultiplier = Math.max(-100, Math.min(100, st.processCostMultiplier + outcome.change));
-      st.processCost = Math.max(100, Math.round(A.COSTS.processBase * (1 + st.processCostMultiplier / 100)));
+      st.processCost = Math.max(0, Math.round(A.COSTS.processBase * (1 + st.processCostMultiplier / 100)));
     }
     if (outcome.type === "reroll_increase") {
       st.rerollsRemaining += outcome.change || 1;

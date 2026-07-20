@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (model/dp.js), 2026-07-19.
+ * VENDORED from shizukaziye/astrogem-calculator (model/dp.js), re-synced 2026-07-20.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
  * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream and re-running
  * the drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require()
@@ -80,7 +80,9 @@
   // procCost(cm) = 900 * (1 + cm/100), floored at 100 and rounded (mirrors
   // nested.js _applyProcessStep, which rounds and clamps the process cost).
   function procCost(cm) {
-    return Math.max(100, Math.round(A.COSTS.processBase * (1 + (cm || 0) / 100)));
+    // cm = -100 is REAL: the game's "-100% Processing Cost" outcome shows a
+    // literal "Processing Cost 0" (live 2026-07-19) — no phantom 100g floor
+    return Math.max(0, Math.round(A.COSTS.processBase * (1 + (cm || 0) / 100)));
   }
   // rerollCost: free unless it is the LAST reroll (r===1 -> 3800), per nested.js.
   function rerollCost(r) {
@@ -697,13 +699,23 @@
       rerollCost_ = rc + rch.expSpend;
     }
 
-    // ---- RESET (last turn only, per Shizu's rule) ----
-    // Reset (1/1) returns the gem to a fresh unprocessed state (all levels 1, full
-    // turns + rerolls, cost multiplier cleared) for COSTS.reset gold. Ranked only on
-    // the final turn: that's when "both Process and Complete are worse than starting
-    // over" is the live question. It wins the argmax exactly when it beats them.
+    // ---- RESET (ranked whenever COMPLETE would win, or on the last turn) ----
+    // Shizu 2026-07-19: "calculate reset on every turn that you recommend
+    // complete, not just the last turn" — if stopping is the right call, paying
+    // COSTS.reset to start the cut over is ALWAYS the live alternative, whatever
+    // the turn. Reset (1/1) returns the gem to a fresh unprocessed state (all
+    // levels 1, full turns + rerolls, cost multiplier cleared).
+    // resetsRemaining now comes from the parsed Reset (x/1) counter (structural
+    // engine, ocr/structural-engine.js resetPill read) or manual entry; when it
+    // reads 0 the reset has already been spent and MUST NOT be recommended, even
+    // though the button's greyed-out state alone can't be read from the DP side.
+    // undefined/null (unparsed) still defaults to "assume unused" for backward
+    // compatibility with callers that don't pass this field at all.
+    var completeWouldWin = !excludeComplete &&
+      completeNet >= processNet && completeNet >= rerollNet;
+    var resetUsed = state.resetsRemaining === 0;
     var resetNet = -Infinity, resetScore = NaN, resetAbove = 0, resetCost_ = 0;
-    if (t === 1 && A.COSTS && A.COSTS.reset != null) {
+    if ((t === 1 || completeWouldWin) && A.COSTS && A.COSTS.reset != null && !resetUsed) {
       var freshCfg = {
         baseCost: config.baseCost, gemType: config.gemType,
         willpowerLevel: 1, orderLevel: 1,
@@ -734,8 +746,8 @@
     // side-effect pair the reset could land on, so the user can compare before
     // pressing the in-game button. The class-keyed memo makes same-class pairs free.
     var resetCombos = null;
-    if (A.COSTS && A.COSTS.reset != null &&
-        (t === 1 || (actions[0] && actions[0].name === "Complete"))) {
+    if (A.COSTS && A.COSTS.reset != null && !resetUsed &&
+        (t === 1 || completeWouldWin || (actions[0] && actions[0].name === "Complete"))) {
       var poolR = A.EFFECT_POOLS[config.baseCost] || [];
       var freshRr = freshRerollsFor(solver.maxTurns);
       resetCombos = [];

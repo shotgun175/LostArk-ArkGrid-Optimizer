@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (ocr/engine.js), 2026-07-19.
+ * VENDORED from shizukaziye/astrogem-calculator (ocr/engine.js), re-synced 2026-07-20.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
  * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
@@ -323,7 +323,9 @@
     if (sIn.processCostMultiplier != null) {
       mult = clampInt(sIn.processCostMultiplier, -100, 100, 0);
     } else if (sIn.processCost != null) {
-      mult = Math.round((clampInt(sIn.processCost, 1, 99999, COSTS.processBase) / COSTS.processBase - 1) * 100);
+      // 0 is a REAL reading ("Processing Cost 0" after the -100% outcome) — the
+      // old lower clamp of 1 quietly destroyed it
+      mult = Math.round((clampInt(sIn.processCost, 0, 99999, COSTS.processBase) / COSTS.processBase - 1) * 100);
       mult = Math.max(-100, Math.min(100, mult));
     } else {
       mult = 0;
@@ -331,12 +333,20 @@
     // Snap to the discrete steps the game actually uses (…,-100,0,100). The only
     // reachable multipliers are -100, 0, +100 (each cost outcome is ±100%).
     mult = mult <= -50 ? -100 : (mult >= 50 ? 100 : 0);
-    var processCost = Math.max(1, Math.round(COSTS.processBase * (1 + mult / 100)));
+    var processCost = Math.max(0, Math.round(COSTS.processBase * (1 + mult / 100)));
+
+    // ---- resets remaining (the "Reset (x/1)" counter, x ∈ {0,1}) ----
+    // Unparsed stays undefined: dp.js treats that as "assume unused" (the
+    // historical default, so callers that never read this field are unaffected).
+    // Only a confident 0 (the button read as spent) disables the Reset action.
+    var resetsRemaining = (sIn.resetsRemaining === 0 || sIn.resetsRemaining === 1)
+      ? sIn.resetsRemaining : undefined;
 
     var state = {
       currentTurn: currentTurn,
       maxTurns: maxTurns,
       rerollsRemaining: rerollsRemaining,
+      resetsRemaining: resetsRemaining,
       processCost: processCost,
       processCostMultiplier: mult,
       totalGoldSpent: Math.max(0, parseInt(sIn.totalGoldSpent, 10) || 0),
@@ -381,6 +391,9 @@
             sIn.rerollsChargeSeen || sIn.rerollsChargeSpent || currentTurn === 1, false);
           return rerollAmbiguous ? Math.min(base, 0.4) : base;
         })(),
+        // absent when unread (fieldConf's !inputPresent -> 0 would phantom-flag a
+        // field that has no UI control; the window's null-guard skips undefined)
+        resetsRemaining: sIn.resetsRemaining != null ? fieldConf(sconf.resetsRemaining, true, false) : undefined,
         processCostMultiplier: fieldConf(sconf.processCostMultiplier,
           sIn.processCostMultiplier != null || sIn.processCost != null, false)
       },

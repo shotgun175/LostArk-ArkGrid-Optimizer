@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (ocr/structural-engine.js), 2026-07-19.
+ * VENDORED from shizukaziye/astrogem-calculator (ocr/structural-engine.js), re-synced 2026-07-20.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
  * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
@@ -526,6 +526,22 @@
               var cv2 = parseInt(digs2, 10);
               if (cv2 === 450 || cv2 === 900 || cv2 === 1800) { cval = cv2; costConf = 0.85; }
             }
+          } else if (runStart2 > 0 && run2.length === 1) {
+            // ZERO rung — "Processing Cost 0" is REAL (the -100% outcome landed;
+            // two live frames 2026-07-19, iou 0.96 on both). A lone trailing
+            // glyph after the wide gap IS the right-aligned value, and 0 is the
+            // only 1-digit cost, so demand a STRONG '0' on a round-ish box.
+            // (A mask-eaten "900" leaving only its last digit would need the two
+            // left digits — same font, same brightness, adjacent — to vanish
+            // alone; not a real failure mode outside occlusion, which kills the
+            // label boxes this branch requires via runStart2 > 0.)
+            var zb = run2[0].box;
+            var zd = iouDigit(tgC2.mask, zb);
+            if (out._debug) out._debug.costZero = zd ? zd.ch + ":" + zd.score.toFixed(2) : "null";
+            if (zd && zd.ch === "0" && zd.score >= 0.7 &&
+                zb.h >= cmedH2 * 0.6 && zb.w >= zb.h * 0.45 && zb.w <= zb.h * 1.15) {
+              cval = 0; costConf = 0.85;
+            }
           }
         }
       }
@@ -544,6 +560,14 @@
         if (tokM) cval = parseInt(tokM[2].replace(/[.,\s]/g, ""), 10);
       }
       if (cval == null) costTemplateRead();
+      if (cval == null) {
+        // psm6 text zero: the LABEL survives OCR only fuzzily ("Pools nog Jost 0"
+        // — live), so anchor on the 'ost' stem then a LONE 0. The non-digit gap
+        // cannot skip a leading digit, so 450/900/1,800 (and caption "+100%")
+        // can never satisfy this.
+        var zM = footText.match(/ost[^\d\n]{0,8}0(?!\d)/i);
+        if (zM) { cval = 0; costConf = 0.75; }
+      }
     }
     if (cval != null) { out.state.processCost = cval; confidence.state.processCostMultiplier = costConf; }
     if (out.state.processCost == null) confidence.state.processCostMultiplier = 0.3;
@@ -570,11 +594,30 @@
     {
       var tgR = templateGlyphs(pillRect, dimBtnWhite);
       if (tgR) {
-        var digsR = tgR.filter(function (t) { return t.ch && /^[\d\/]$/.test(t.ch) && t.score >= 0.75; });
-        if (digsR.length === 3 && digsR[1].ch === "/" && /^\d$/.test(digsR[0].ch) && /^\d$/.test(digsR[2].ch)) {
-          var rn = digsR[0].box.w / Math.max(1, digsR[0].box.h) < 0.45 ? 1 : parseInt(digsR[0].ch, 10);
-          var rd = digsR[2].box.w / Math.max(1, digsR[2].box.h) < 0.45 ? 1 : parseInt(digsR[2].ch, 10);
-          if (rn <= 9 && (rd === 1 || rd === 2)) tPair = { n: rn, d: rd };   // stacked counters (3/2…) legal
+        // Anchor on the SLASH and take the POSITIONALLY adjacent boxes. The old
+        // rule ("exactly 3 score≥0.75 digit/slash glyphs") had a poisoning hole:
+        // the ⟳ icon can template-match a digit (live 5d800868: icon→'3'@0.75+)
+        // while the true serif-'1' scores UNDER the filter — the survivors
+        // [icon,'/', '2'] then satisfied exactly-3 and "3/2" outvoted a correct
+        // OCR "1/2" in arbitration. Adjacency is structural: the numerator is
+        // the box immediately left of the '/', and the icon sits a full icon-
+        // width further out, so it can never be picked — however it classifies.
+        var slashI = -1;
+        for (var gi = 0; gi < tgR.length; gi++) if (tgR[gi].ch === "/" && tgR[gi].score >= 0.7) slashI = gi;
+        if (slashI > 0 && slashI < tgR.length - 1) {
+          var nb = tgR[slashI - 1], db2 = tgR[slashI + 1];
+          var gapL = tgR[slashI].box.x - (nb.box.x + nb.box.w);
+          var gapR = db2.box.x - (tgR[slashI].box.x + tgR[slashI].box.w);
+          var hRef = Math.max(nb.box.h, db2.box.h, tgR[slashI].box.h);
+          if (gapL <= hRef * 1.2 && gapR <= hRef * 1.2) {
+            // aspect rule FIRST and score-free: '1' is the only narrow digit and
+            // its serif flag both misclassifies and UNDER-SCORES at dim tiers
+            var rn = nb.box.w / Math.max(1, nb.box.h) < 0.45 ? 1
+              : (/^\d$/.test(nb.ch || "") && nb.score >= 0.7 ? parseInt(nb.ch, 10) : null);
+            var rd = db2.box.w / Math.max(1, db2.box.h) < 0.45 ? 1
+              : (/^\d$/.test(db2.ch || "") && db2.score >= 0.7 ? parseInt(db2.ch, 10) : null);
+            if (rn != null && rd != null && rn <= 9 && (rd === 1 || rd === 2)) tPair = { n: rn, d: rd };   // stacked counters (3/2…) legal
+          }
         }
       }
     }
@@ -715,6 +758,46 @@
     }
 
     tmark("pill");
+    // ---- reset pill ("Reset (x/1)": x ∈ {0,1}) ----
+    // Plain grey text on a dim button, not the reroll pill's colored-diamond icon,
+    // so it needs none of that pill's Charge/dim-state machinery: one masked read
+    // plus a dilated rescue for low-contrast captures is enough. x is the ONLY
+    // free variable (denominator is always 1), so false reads are cheap to reject
+    // with a tight regex. Feeds dp.js's Reset gating (model/dp.js topLevelAdvice):
+    // resetsRemaining===0 means the reset was already spent and must not be
+    // recommended; unparsed (undefined) keeps the historical "assume unused"
+    // default so callers that don't read this field are unaffected.
+    // Measured 2026-07-20 on both real "already used" samples: the button's grey
+    // text tops out at v≈0.5-0.6, under dimBtnWhite's v>0.6 floor, so the plain
+    // read misses it on both — same shape as the reroll pill's dim states. Try the
+    // tight/bright predicate first anyway (cheap, and may catch a brighter
+    // available "(1/1)" state no sample has shown yet), then fall back to a wider
+    // dim predicate through the dilated rescue. The ROI itself was tightened to
+    // exclude the ornate border glow directly above the button — at the original
+    // (taller) crop that glow's highlight streaks passed the dim predicate as
+    // false-positive glyphs and broke PSM-7's single-line read entirely.
+    var resetRect = geo && geo.resetPill
+      ? rectAround(geo.resetPill, gap * 0.85, gap * 0.11)
+      : L.roiRect(panel, "resetPill");
+    var resetRead = await maskedOcr(resetRect, dimBtnWhite, { whitelist: "Reset()01/ ", psm: 7 });
+    var resetM = normText(resetRead.text).match(/reset\D{0,4}([01])\s*[:\/l|.]\s*1\b/i);
+    if (!resetM) {
+      var resetDimPred = function (r, g, b) { var c = L.hsv(r, g, b); return c.s < 0.4 && c.v > 0.30; };
+      var resetSub = L.crop(raster, resetRect);
+      var resetR2 = await dilatedOcr(resetSub, resetDimPred, { scale: 3, whitelist: "Reset()01/ ", psm: 7 });
+      resetM = normText(resetR2.text).match(/reset\D{0,4}([01])\s*[:\/l|.]\s*1\b/i);
+    }
+    if (resetM) {
+      out.state.resetsRemaining = parseInt(resetM[1], 10);
+      confidence.state.resetsRemaining = 0.85;
+    }
+    // UNREAD stays ABSENT — no low-confidence entry. The advisor window ingests
+    // confidence.state keys GENERICALLY into its unconfirmed set, and this field
+    // has no rendered control: a 0.2 here made every miss inflate "N fields to
+    // double-check" with an entry the user could never see, click, or clear
+    // (caught reviewing the PR merge). Absent = the pre-PR contract: dp assumes
+    // the reset unused, nothing flags.
+    tmark("resetPill");
     // ---- gem name → gemType + baseCost (suffix table) ----
     // Fixed band primary (best measured); if it produces neither the type keyword nor
     // a suffix, retry on a LOCATED line — the name is the only long SATURATED text
@@ -1169,6 +1252,38 @@
         }
         if (lvDet) (out._debug.lvDetail = out._debug.lvDetail || []).push(
           { line: { x: Math.round(lineX.x), y: Math.round(lineX.y), w: Math.round(lineX.w), h: Math.round(lineX.h) }, boxes: lvDet.join(" ") });
+        // NARROW-FRAGMENT re-mask (the absorber shape): at the windowed tiers the
+        // digit's antialiased strokes BLEND with the face tint (gold-over-green
+        // shifts hue to ~80) and isGoldText erodes the glyph to a sliver that
+        // classifies '1' (live 2aa9a4b2: green "Lv. 3" → a 6x16 fragment →
+        // '1'@0.82, SILENT). Re-mask with a blend-tolerant pred (h up to <100 —
+        // true face greens stay out; ≥22 — face reds stay out) and re-take the
+        // SAME glyph, matched by its right edge. Adoption needs a now-WIDE box
+        // classifying at the full commit bars — and a wide box is IoU-vetoable
+        // downstream, which the sliver never was. A true '1' stays narrow under
+        // the relaxed mask too, so this cannot rewrite genuine ones; clean
+        // frames produce full-width digits and never enter this branch.
+        if (!isGoldFace && db && db.isDigit && dbBox && dbBox.w / Math.max(1, dbBox.h) < 0.45) {
+          var lvPredRelaxed = function (r2, g2, b2) {
+            var c2 = L.hsv(r2, g2, b2);
+            return c2.h >= 22 && c2.h < 100 && c2.s > 0.35 && c2.v > 0.5;
+          };
+          var maskR = L.chromaMask(L.crop(raster, lineX), lvPredRelaxed);
+          var boxesR = segmentDigitBoxes(maskR);
+          var re = null, reBox = null;
+          for (var rj = 0; rj < boxesR.length; rj++) {
+            var bR = boxesR[rj];
+            if (Math.abs((bR.x + bR.w) - (dbBox.x + dbBox.w)) > 4) continue;   // same glyph only
+            if (bR.w / Math.max(1, bR.h) < 0.45) continue;                     // still a sliver — no gain
+            var svR = digitScoreVec(maskR, bR);
+            if (svR.isDigit) { re = svR; reBox = bR; }
+          }
+          if (re) {
+            db = re; dbBox = reBox; mask = maskR;
+            if (out._debug) (out._debug.lvRelax = out._debug.lvRelax || {})[nodeKind] =
+              Math.round(reBox.w) + "x" + Math.round(reBox.h) + "=" + re.full.ch + ":" + re.full.score.toFixed(2);
+          }
+        }
         if (db) {
           vec = db.vec;
           var b1 = -1, b1v = null, b2 = -1;
@@ -1194,7 +1309,14 @@
         // tiers a noise blob can template-match a digit (t6: a junk '1' returned
         // here and blocked every later rung); a strong synth disagreement wins,
         // agreement or a refused gate keeps the template read.
-        if (isGoldFace && LREFS && nodeKind) {
+        // NARROW boxes get the same cross-check on EVERY node: w/h < 0.45 is
+        // exactly the shape the ink-IoU veto above must skip, and it is the
+        // doppelgänger-absorber shape — a mask fragment of a wider digit
+        // template-matches '1' (live 2aa9a4b2: green "Lv. 3" lost its left
+        // half, the 6x16 sliver committed '1'@0.82 SILENTLY and the checksum
+        // pushed the error into a synth-refuted S). Wide boxes → IoU veto;
+        // narrow boxes → synthesis veto. No commit escapes both.
+        if (LREFS && nodeKind && (isGoldFace || (dbBox && dbBox.w / Math.max(1, dbBox.h) < 0.45))) {
           var srT = synthLevelRescue(nodeKind, p);
           // OVERRIDE bar: replacing a committed template read needs gm ≥ 0.03
           // (a clean capture's correct '3' was once overridden by an
@@ -1505,6 +1627,32 @@
             // "18" on a 15-point board and arithmetic wrote S=4 over a correct
             // hint of 1), while the hint channel is gated evidence
             if (ptsSoft && sHint !== remaining) { levels[3] = sHint; conf4[3] = 0.5; }
+            else if (sHint !== remaining) {
+              // FIRM pts disagreeing with the hint: the arithmetic blames S, but
+              // the hint is gated evidence — the likelier culprit is a '1'-valued
+              // W/E sibling (the ABSORBER class: eroded L→1, mask-fragment→1;
+              // live 2aa9a4b2: a green "Lv. 3" fragment committed '1'@0.82 and
+              // the checksum wrote S=3 over a gm-0.113 synth S=1). Test each such
+              // sibling: does the SYNTHESIS prefer the value implied by S=hint?
+              // Flip on the standard override bar; otherwise demote the sibling
+              // below the flag line — the mismatch proves something here is
+              // wrong, and a confident sibling is the one silent shape left.
+              var flipped = false;
+              for (var si = 1; si <= 2; si++) {
+                if (flipped || !pinned[si] || levels[si] !== 1) continue;
+                var vImp = remaining + 1 - sHint;   // sibling value if S = hint
+                if (vImp >= 2 && vImp <= 5 && LREFS) {
+                  var srF = synthLevelRescue(si === 1 ? "W" : "E", si === 1 ? nodes.nodeW : nodes.nodeE);
+                  if (srF && srF.value === vImp && srF.gm >= 0.03) {
+                    levels[si] = vImp; conf4[si] = 0.75;
+                    levels[3] = sHint; conf4[3] = 0.85;
+                    flipped = true;
+                    continue;
+                  }
+                }
+                conf4[si] = Math.min(conf4[si], 0.75);   // zero-silent guarantee
+              }
+            }
           }
         } else { levels[fi] = indep[fi].v != null ? indep[fi].v : 1; conf4[fi] = 0.3; }
       } else {
