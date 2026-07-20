@@ -10,6 +10,7 @@
   import { sectionUI, toggleSection } from '../../lib/state/appConfig.state.svelte';
   import { type CharacterProfile, activeBuildState } from '../../lib/state/profile.state.svelte';
   import type { ArkGridGem } from '../../lib/models/arkGridGems';
+  import ProcessingWindow from './ProcessingWindow.svelte';
 
   interface Props {
     profile: CharacterProfile;
@@ -47,7 +48,6 @@
     };
     controller.onShareEnded = () => {
       watching = false;
-      stream = null;
     };
     return controller;
   }
@@ -57,17 +57,7 @@
   let error = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
   let watching = $state(false);
-  let showDisplay = $state(true);
-  let stream = $state<MediaStream | null>(null);
-  let previewVideo: HTMLVideoElement | undefined = $state();
 
-  // Feed the live preview video whenever it is mounted and a stream is active.
-  $effect(() => {
-    if (previewVideo && stream) {
-      previewVideo.srcObject = stream;
-      void previewVideo.play().catch(() => {});
-    }
-  });
   // Keep the running watch loop's advice inputs in sync with the active build.
   $effect(() => {
     if (watching) controller?.updateInputs(inputs);
@@ -86,7 +76,7 @@
     if (!captureSupported) return;
     error = null;
     try {
-      stream = await getController().startWatching(inputs);
+      await getController().startWatching(inputs);
       watching = true;
     } catch (e) {
       const name = (e as DOMException)?.name;
@@ -98,7 +88,6 @@
   function stopWatch() {
     getController().stopWatching();
     watching = false;
-    stream = null;
   }
   function warm() {
     if (captureSupported) getController().warmup();
@@ -163,24 +152,12 @@
           </button>
         {:else}
           <button class="primary active" onclick={stopWatch}>⏹ Stop watching</button>
-          <button
-            class:active={showDisplay}
-            aria-pressed={showDisplay}
-            onclick={() => (showDisplay = !showDisplay)}
-          >
-            🔨 {showDisplay ? 'Hide display' : 'Show display'}
-          </button>
-          <span class="watch-status">Watching…</span>
+          <span class="watch-status">Watching… the window below confirms what's being read</span>
         {/if}
       {/if}
       <button onclick={() => fileInput?.click()}>📷 Upload screenshot</button>
       <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onPick} />
     </div>
-
-    {#if watching && showDisplay}
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={previewVideo} class="preview" autoplay muted playsinline></video>
-    {/if}
 
     {#if !watching}
       <div
@@ -201,26 +178,11 @@
     {/if}
 
     {#if result}
-      <div class="parsed" data-testid="advisor-parsed">
-        <div class="parsed-line">
-          <strong>Gem</strong>: cost {result.parsed.config.baseCost} · {result.parsed.config.gemType}
-          · willpower {result.parsed.config.willpowerLevel} · order {result.parsed.config.orderLevel}
-        </div>
-        <div class="parsed-line">
-          <strong>Effects</strong>: {result.parsed.config.effect1}
-          {result.parsed.config.effect1Level} · {result.parsed.config.effect2}
-          {result.parsed.config.effect2Level}
-        </div>
-        <div class="parsed-line">
-          <strong>Turn</strong>: {result.parsed.state.currentTurn}/{result.parsed.state.maxTurns} ·
-          rerolls {result.parsed.state.rerollsRemaining}{result.parsed.ocrDegraded
-            ? ' · (low confidence, please verify)'
-            : ''}
-        </div>
-      </div>
+      <div class="advisor-layout">
+        <ProcessingWindow parsed={result.parsed} />
 
-      {#if rankedActions.length}
-        <div class="advice" data-testid="advisor-advice">
+        {#if rankedActions.length}
+          <div class="advice" data-testid="advisor-advice">
           <div class="advice-best">
             Best move:
             <strong>{ACTION_LABEL[result.advice!.bestAction] ?? result.advice!.bestAction}</strong>
@@ -240,8 +202,9 @@
               {/each}
             </tbody>
           </table>
-        </div>
-      {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
   {/if}
 </div>
@@ -275,14 +238,16 @@
   :global(.dark-mode) .watch-status {
     color: #4ade80;
   }
-  .preview {
-    width: 100%;
-    max-height: 320px;
-    object-fit: contain;
-    border: 1px solid var(--border);
-    border-radius: 0.4rem;
-    background: #000;
-    margin-bottom: 0.5rem;
+  .advisor-layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-top: 0.75rem;
+  }
+  .advisor-layout .advice {
+    flex: 1 1 260px;
+    min-width: 240px;
   }
   .drop {
     border: 2px dashed var(--border);
@@ -300,16 +265,6 @@
   }
   :global(.dark-mode) .advisor-error {
     color: #ef8a8a;
-  }
-  .parsed {
-    margin-top: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    font-size: 0.9rem;
-  }
-  .advice {
-    margin-top: 0.75rem;
   }
   .advice-best {
     font-size: 1.05rem;
