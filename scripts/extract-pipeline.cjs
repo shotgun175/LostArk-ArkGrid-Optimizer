@@ -56,6 +56,9 @@ function transform(src, meta) {
               b: round(b, 6),
               nrb: {
                 cut: Math.round(c.nrb.cut),
+                // The DP's chosen root action for a fresh cut: 'process' | 'complete' | 'reroll'.
+                // The weekly-economy model needs it: a 'complete' cell produces no fodder.
+                act: c.nrb.act,
                 pAbove: round(c.nrb.pAbove, 4),
                 expScore: round(c.nrb.expScore, 4),
                 expSpend: Math.round(c.nrb.expSpend || 0),
@@ -65,6 +68,7 @@ function transform(src, meta) {
               },
               rb: {
                 cut: Math.round(c.rb.cut),
+                act: c.rb.act,
                 pAbove: round(c.rb.pAbove, 4),
                 expScore: round(c.rb.expScore, 4),
                 expSpend: Math.round(c.rb.expSpend || 0),

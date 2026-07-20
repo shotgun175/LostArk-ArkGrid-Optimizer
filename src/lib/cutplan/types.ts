@@ -12,8 +12,10 @@ export type BucketKey = '2_damage' | 'optimal_damage' | 'suboptimal_damage' | 'n
 export type Verdict = 'green' | 'yellow-hi' | 'yellow-mid' | 'yellow-lo' | 'yellow-dim' | 'red' | 'purple';
 
 // ---- Baked data shape (output of scripts/extract-pipeline.cjs) ----
+export type CutRootAction = 'process' | 'complete' | 'reroll';
 export interface CellNrb {
   cut: number; // exact Bellman gold value of cutting a fresh gem of this archetype
+  act: CutRootAction; // the DP's chosen root action; a 'complete' cell yields no fodder
   pAbove: number; // P(the optimal cut ends at/above baseline)
   expScore: number; // expected % damage of the cut
   expSpend: number; // expected gold spent per cut attempt of this archetype
@@ -23,6 +25,7 @@ export interface CellNrb {
 }
 export interface CellRb {
   cut: number;
+  act: CutRootAction;
   pAbove: number;
   expScore: number;
   expSpend: number; // 0 in the source (rb is free to cut); shown as "—"
