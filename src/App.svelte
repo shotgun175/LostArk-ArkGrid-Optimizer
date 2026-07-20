@@ -76,10 +76,10 @@
       <div class="profile-row" id="sec-profile"><ProfileEditor></ProfileEditor></div>
       <div class="sections">
         <div id="sec-recognition"><GemRecognitionPanel></GemRecognitionPanel></div>
-        <div id="sec-advisor"><CutAdvisorPanel profile={currentProfile} /></div>
         <BuildSection bind:profile={currentProfile}></BuildSection>
         <div id="sec-triage"><GemTriagePanel profile={currentProfile} /></div>
         <div id="sec-cutplan"><CuttingPlanPanel profile={currentProfile} /></div>
+        <div id="sec-advisor"><CutAdvisorPanel profile={currentProfile} /></div>
       </div>
     </div>
   </div>

@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { AdvisorController, type AdvisorResult } from '../../lib/advisor/advisorController';
+  import {
+    AdvisorController,
+    type AdviceInputs,
+    type AdvisorResult,
+  } from '../../lib/advisor/advisorController';
   import { GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
   import { type GemRole } from '../../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../../lib/state/appConfig.state.svelte';
-  import {
-    type CharacterProfile,
-    activeBuildState,
-  } from '../../lib/state/profile.state.svelte';
+  import { type CharacterProfile, activeBuildState } from '../../lib/state/profile.state.svelte';
   import type { ArkGridGem } from '../../lib/models/arkGridGems';
 
   interface Props {
@@ -15,8 +16,7 @@
   }
   let { profile }: Props = $props();
 
-  // Advice inputs, derived from the active build exactly like the Cutting Plan: the DP ranks against
-  // your role (axis), your gold-per-1%-damage bracket, and your equipped-loadout baseline tier.
+  // Advice inputs, derived from the active build exactly like the Cutting Plan.
   let build = $derived(activeBuildState(profile));
   let role: GemRole = $derived(profile.activeBuild);
   let equipped: ArkGridGem[] = $derived(
@@ -27,10 +27,28 @@
   );
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
+  let inputs: AdviceInputs = $derived({ baselineGrade, gpd: goldPerDamage, axis: role });
+
+  // Live screen watching needs getDisplayMedia (desktop Chromium); mobile / Safari use Upload.
+  const captureSupported =
+    typeof navigator !== 'undefined' &&
+    typeof navigator.mediaDevices?.getDisplayMedia === 'function';
 
   let controller: AdvisorController | null = null;
   function getController() {
-    if (!controller) controller = new AdvisorController();
+    if (controller) return controller;
+    controller = new AdvisorController();
+    controller.onAdvice = (res) => {
+      // Keep the last good advice if a frame briefly can't be read (window off-screen mid-animation).
+      if (res) {
+        result = res;
+        error = null;
+      }
+    };
+    controller.onShareEnded = () => {
+      watching = false;
+      stream = null;
+    };
     return controller;
   }
 
@@ -38,6 +56,22 @@
   let result = $state<AdvisorResult | null>(null);
   let error = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
+  let watching = $state(false);
+  let showDisplay = $state(true);
+  let stream = $state<MediaStream | null>(null);
+  let previewVideo: HTMLVideoElement | undefined = $state();
+
+  // Feed the live preview video whenever it is mounted and a stream is active.
+  $effect(() => {
+    if (previewVideo && stream) {
+      previewVideo.srcObject = stream;
+      void previewVideo.play().catch(() => {});
+    }
+  });
+  // Keep the running watch loop's advice inputs in sync with the active build.
+  $effect(() => {
+    if (watching) controller?.updateInputs(inputs);
+  });
 
   const fmtGold = (g: number) =>
     !isFinite(g) ? '-' : Math.abs(g) >= 1000 ? `${(g / 1000).toFixed(1)}k` : String(Math.round(g));
@@ -48,30 +82,43 @@
     reset: 'Reset',
   };
 
+  async function startWatch() {
+    if (!captureSupported) return;
+    error = null;
+    try {
+      stream = await getController().startWatching(inputs);
+      watching = true;
+    } catch (e) {
+      const name = (e as DOMException)?.name;
+      error =
+        name === 'NotAllowedError' ? 'Screen sharing was denied.' : String((e as Error)?.message ?? e);
+      watching = false;
+    }
+  }
+  function stopWatch() {
+    getController().stopWatching();
+    watching = false;
+    stream = null;
+  }
+  function warm() {
+    if (captureSupported) getController().warmup();
+  }
+
   async function parseFile(file: File) {
     if (parsing) return;
     parsing = true;
     error = null;
-    result = null;
     try {
       const bitmap = await createImageBitmap(file);
-      const res = await getController().parseImage(bitmap, {
-        baselineGrade,
-        gpd: goldPerDamage,
-        axis: role,
-      });
-      if (!res) {
-        error = 'Could not read a Processing window from that image.';
-      } else {
-        result = res;
-      }
+      const res = await getController().parseImage(bitmap, inputs);
+      if (!res) error = 'Could not read a Processing window from that image.';
+      else result = res;
     } catch (e) {
       error = String((e as Error)?.message ?? e);
     } finally {
       parsing = false;
     }
   }
-
   function onPick(e: Event) {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) void parseFile(f);
@@ -82,12 +129,9 @@
     if (f) void parseFile(f);
   }
 
-  // The winning action first, then the rest by value.
   let rankedActions = $derived(
     result?.advice
-      ? [...result.advice.allActions]
-          .filter((a) => isFinite(a.value))
-          .sort((a, b) => b.value - a.value)
+      ? [...result.advice.allActions].filter((a) => isFinite(a.value)).sort((a, b) => b.value - a.value)
       : []
   );
 </script>
@@ -106,23 +150,51 @@
 
   {#if sectionUI.showAdvisor}
     <p class="advisor-intro">
-      Drop a screenshot of the in-game gem Processing window and the advisor reads the state, then
-      ranks Process / Reroll / Complete / Reset for your {role === 'support' ? 'support' : 'DPS'}
-      build. English game client, desktop only.
+      Share your game screen and the advisor watches the Processing window live, re-ranking Process /
+      Reroll / Complete / Reset for your {role === 'support' ? 'support' : 'DPS'} build every time the screen
+      changes. English game client, desktop only. No screen share? Drop a screenshot instead.
     </p>
 
-    <div
-      class="drop"
-      role="button"
-      tabindex="0"
-      ondragover={(e) => e.preventDefault()}
-      ondrop={onDrop}
-      onclick={() => fileInput?.click()}
-      onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInput?.click()}
-    >
-      {parsing ? 'Reading…' : 'Drop a Processing-window screenshot, or click to choose one.'}
+    <div class="advisor-buttons">
+      {#if captureSupported}
+        {#if !watching}
+          <button class="primary" onclick={startWatch} onpointerenter={warm} onfocus={warm}>
+            🖥️ Start watching
+          </button>
+        {:else}
+          <button class="primary active" onclick={stopWatch}>⏹ Stop watching</button>
+          <button
+            class:active={showDisplay}
+            aria-pressed={showDisplay}
+            onclick={() => (showDisplay = !showDisplay)}
+          >
+            🔨 {showDisplay ? 'Hide display' : 'Show display'}
+          </button>
+          <span class="watch-status">Watching…</span>
+        {/if}
+      {/if}
+      <button onclick={() => fileInput?.click()}>📷 Upload screenshot</button>
       <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onPick} />
     </div>
+
+    {#if watching && showDisplay}
+      <!-- svelte-ignore a11y_media_has_caption -->
+      <video bind:this={previewVideo} class="preview" autoplay muted playsinline></video>
+    {/if}
+
+    {#if !watching}
+      <div
+        class="drop"
+        role="button"
+        tabindex="0"
+        ondragover={(e) => e.preventDefault()}
+        ondrop={onDrop}
+        onclick={() => fileInput?.click()}
+        onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInput?.click()}
+      >
+        {parsing ? 'Reading…' : 'Or drop a Processing-window screenshot here.'}
+      </div>
+    {/if}
 
     {#if error}
       <p class="advisor-error">{error}</p>
@@ -150,7 +222,8 @@
       {#if rankedActions.length}
         <div class="advice" data-testid="advisor-advice">
           <div class="advice-best">
-            Best move: <strong>{ACTION_LABEL[result.advice!.bestAction] ?? result.advice!.bestAction}</strong>
+            Best move:
+            <strong>{ACTION_LABEL[result.advice!.bestAction] ?? result.advice!.bestAction}</strong>
           </div>
           <table class="advice-table">
             <thead>
@@ -178,10 +251,43 @@
     opacity: 0.85;
     font-size: 0.9rem;
   }
+  .advisor-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .advisor-buttons button {
+    padding: 0.4rem 0.8rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+  }
+  .advisor-buttons button.primary.active {
+    background: #8a3a3a;
+    color: #fff;
+  }
+  .watch-status {
+    color: #2e7d32;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  :global(.dark-mode) .watch-status {
+    color: #4ade80;
+  }
+  .preview {
+    width: 100%;
+    max-height: 320px;
+    object-fit: contain;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: #000;
+    margin-bottom: 0.5rem;
+  }
   .drop {
     border: 2px dashed var(--border);
     border-radius: 0.5rem;
-    padding: 1.5rem;
+    padding: 1.25rem;
     text-align: center;
     cursor: pointer;
     background: var(--card);

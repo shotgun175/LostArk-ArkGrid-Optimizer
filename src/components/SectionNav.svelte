@@ -8,10 +8,10 @@
   const sections = [
     { id: 'sec-profile', label: 'Profile' },
     { id: 'sec-recognition', label: 'Recognition' },
-    { id: 'sec-advisor', label: 'Cut Advisor' },
     { id: 'sec-build', label: 'Cores & Gems' },
     { id: 'sec-triage', label: 'Gem Triage' },
     { id: 'sec-cutplan', label: 'Cutting Plan' },
+    { id: 'sec-advisor', label: 'Cut Advisor' },
   ];
 
   let active = $state<string>(sections[0].id);
