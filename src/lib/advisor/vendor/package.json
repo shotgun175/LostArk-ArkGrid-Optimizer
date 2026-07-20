@@ -1,0 +1,4 @@
+{
+  "type": "commonjs",
+  "//": "The root package.json is type:module, but these vendored files are CommonJS UMD (module.exports + relative require between dp/nested/astrogem). This nested manifest makes Node treat this directory as CommonJS so a plain require() self-wires all three without editing the frozen files."
+}
