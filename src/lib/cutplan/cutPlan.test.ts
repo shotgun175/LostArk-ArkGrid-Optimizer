@@ -10,7 +10,9 @@ import {
   getCutCell,
   getThru,
   headerCut,
+  isBlockFuse,
   pipelineBaselineForGrade,
+  unopenedFusion,
   verdictFor,
   weeksBand,
 } from './cutPlan';
@@ -368,5 +370,56 @@ describe('committed pipeline.json shape (locks types <-> data)', () => {
     expect(typeof c.nrb.expSpend).toBe('number');
     expect(c.nrb.expSpend).toBeGreaterThan(0);
     expect(c.rb.expSpend).toBe(0);
+  });
+});
+
+describe('fuse-first (purple)', () => {
+  const real = realPipeline as unknown as PipelineData;
+  // grade -> the baked % baseline the DPS cells were solved at (GRADE_ROWS index).
+  const at = (grade: number) => pipelineBaselineForGrade(grade, real.meta.baselines.dps);
+  const GPD = 1_500_000; // his default Pipeline gpd tier
+
+  it('unopenedFusion returns finite uncommon/rare fuse values and a null epic', () => {
+    const ff = unopenedFusion(real, 'dps', GPD, at(40));
+    expect(ff).not.toBeNull();
+    expect(Number.isFinite(ff!.fuse.uncommon[8]!)).toBe(true);
+    expect(Number.isFinite(ff!.fuse.rare[10]!)).toBe(true);
+    expect(ff!.fuse.epic[8]).toBeNull();
+    expect([8, 9, 10]).toContain(ff!.steer.rare[8]);
+  });
+
+  it('isBlockFuse is false for roster-bound, epic, and null fuse data', () => {
+    const ff = unopenedFusion(real, 'dps', GPD, at(40));
+    // roster-bound gems are free to cut -> never fuse-first
+    expect(isBlockFuse(real, 'dps', 'rare', 10, 'rb', GPD, at(40), ff)).toBe(false);
+    // epic never fuses
+    expect(isBlockFuse(real, 'dps', 'epic', 10, 'nrb', GPD, at(40), ff)).toBe(false);
+    // no fuse data -> false
+    expect(isBlockFuse(real, 'dps', 'rare', 10, 'nrb', GPD, at(40), null)).toBe(false);
+  });
+
+  it('getCutCell honors the blockFuse override', () => {
+    const cell = getCutCell(real, 'dps', 'rare', 10, '2_damage', 'nrb', GPD, at(40), true)!;
+    expect(cell.verdict).toBe('purple');
+    expect(cell.action).toBe('fuse');
+    expect(cell.resetWorthy).toBe(false);
+  });
+
+  // Golden: verdicts read off his live page (DPS / Global / 1.5M / Non-Roster-Bound) on 2026-07-19.
+  // At grade 40 ONLY rare/10 is purple; at grade 80 rare/8 is purple while rare/10 is not. These
+  // cross-checks prove the port tracks BOTH the rarity/cost and the baseline dimensions.
+  it('matches his live-page purple grid at DPS / 1.5M / NRB', () => {
+    const bf = (rarity: 'uncommon' | 'rare' | 'epic', cost: number, grade: number) => {
+      const ff = unopenedFusion(real, 'dps', GPD, at(grade));
+      return isBlockFuse(real, 'dps', rarity, cost, 'nrb', GPD, at(grade), ff);
+    };
+    // grade 40: only rare/10 fuses
+    expect(bf('rare', 10, 40)).toBe(true);
+    expect(bf('rare', 8, 40)).toBe(false);
+    expect(bf('epic', 10, 40)).toBe(false);
+    expect(bf('uncommon', 8, 40)).toBe(false);
+    // grade 80: the pattern shifts to the cheaper rare costs; rare/10 is no longer fuse-first
+    expect(bf('rare', 8, 80)).toBe(true);
+    expect(bf('rare', 10, 80)).toBe(false);
   });
 });

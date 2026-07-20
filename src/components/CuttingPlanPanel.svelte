@@ -7,7 +7,9 @@
     getCutCell,
     getThru,
     headerCut,
+    isBlockFuse,
     pipelineBaselineForGrade,
+    unopenedFusion,
     weeksBand,
   } from '../lib/cutplan/cutPlan';
   import {
@@ -90,6 +92,12 @@
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');
+
+  // Fuse-first (purple) values, computed once per axis/gpd/baseline; only the NRB view fuses
+  // (roster-bound gems are always free to cut).
+  let fuseFirst = $derived(
+    data && binding === 'nrb' ? unopenedFusion(data, axis, goldPerDamage, baselinePct) : null
+  );
 
   // CP% headroom = how much CP the active build can still gain (from the solve's scoreSet).
   let scoreSet = $derived(build.solveInfo.after?.scoreSet);
@@ -210,6 +218,10 @@
                     <span class="act" data-action="dont-cut">Don't cut</span> not worth cutting at this
                     baseline
                   </li>
+                  <li>
+                    <span class="act" data-action="fuse">⚜ Fuse first</span> 3-into-1 rarity-upgrade
+                    fusion beats opening these gems individually
+                  </li>
                 </ul>
               </section>
             </div>
@@ -242,7 +254,7 @@
           </div>
           <p class="ch-note">
             Values are shizukaziye's exact Bellman-DP pipeline (real % damage), interpolated at your
-            baseline. The "fuse-first" refinement is not reproduced.
+            baseline.
           </p>
         </div>
       {/if}
@@ -271,6 +283,7 @@
         <span class="act" data-action="cut-reset">↻ Reset</span>
         <span class="act" data-action="cut">Cut</span>
         <span class="act" data-action="dont-cut">Don't cut</span>
+        <span class="act" data-action="fuse">⚜ Fuse first</span>
       </div>
 
       <div class="gems-grid">
@@ -278,6 +291,7 @@
           {@const best = headerCut(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
           {@const thru = binding === 'nrb' ? getThru(data, axis, arch.rarity, arch.cost, goldPerDamage, baselinePct) : null}
           {@const bd = cellBreakdown(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
+          {@const blockFuse = isBlockFuse(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct, fuseFirst)}
           <div class="gem-card" data-rarity={arch.rarity}>
             {#if bd}
               <Popover label={`${arch.label} breakdown`}>
@@ -299,14 +313,18 @@
             {/if}
             <div class="gem-buckets">
               {#each data.meta.buckets as bkt}
-                {@const cell = getCutCell(data, axis, arch.rarity, arch.cost, bkt, binding, goldPerDamage, baselinePct)}
+                {@const cell = getCutCell(data, axis, arch.rarity, arch.cost, bkt, binding, goldPerDamage, baselinePct, blockFuse)}
                 {#if cell}
                   <div class="bucket-row" data-action={cell.action} title={cellTitle(arch.cost, bkt, cell)}>
                     <span class="bucket-label">{bucketLabelOf(bkt)}</span>
                     <span class="bucket-cut" data-verdict={cell.verdict}>{fmtGold(cell.cut)}</span>
                     <span class="bucket-pct">{pctOf(cell.pAbove)}</span>
                     <span class="bucket-action" data-action={cell.action}>
-                      {cell.action === 'cut-reset' ? '↻ Reset' : actionLabel(cell.action)}
+                      {cell.action === 'cut-reset'
+                        ? '↻ Reset'
+                        : cell.action === 'fuse'
+                          ? '⚜ Fuse first'
+                          : actionLabel(cell.action)}
                     </span>
                   </div>
                 {/if}
@@ -564,6 +582,9 @@
   .act[data-action='dont-cut'] {
     background: #8a3a3a;
   }
+  .act[data-action='fuse'] {
+    background: #7e5cc0;
+  }
 
   .gems-grid {
     display: grid;
@@ -664,6 +685,10 @@
     background: rgba(138, 58, 58, 0.14);
     opacity: 0.7;
   }
+  .bucket-row[data-action='fuse'] {
+    border-left-color: #7e5cc0;
+    background: rgba(126, 92, 192, 0.14);
+  }
   .bucket-label {
     font-weight: 700;
     width: 2.2rem;
@@ -693,6 +718,9 @@
   .bucket-cut[data-verdict='red'] {
     color: #8a3a3a;
   }
+  .bucket-cut[data-verdict='purple'] {
+    color: #6d4bbf;
+  }
   :global(.dark-mode) .bucket-cut[data-verdict='green'] {
     color: #4ade80;
   }
@@ -701,6 +729,9 @@
   }
   :global(.dark-mode) .bucket-cut[data-verdict='red'] {
     color: #ef8a8a;
+  }
+  :global(.dark-mode) .bucket-cut[data-verdict='purple'] {
+    color: #b79ce6;
   }
   .bucket-pct {
     margin-left: auto;
@@ -723,6 +754,9 @@
   }
   .bucket-action[data-action='dont-cut'] {
     background: #8a3a3a;
+  }
+  .bucket-action[data-action='fuse'] {
+    background: #7e5cc0;
   }
   .gem-thru {
     display: flex;

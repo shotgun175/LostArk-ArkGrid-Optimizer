@@ -5,11 +5,11 @@
 export type GoldBracket = '500k' | '1M' | '1_5M' | '2_5M' | '3_5M' | '5M' | '7_5M' | '10M';
 export type BindingMode = 'nrb' | 'rb';
 export type CutAxis = 'dps' | 'support';
-export type CutAction = 'cut-reset' | 'cut' | 'dont-cut';
+export type CutAction = 'cut-reset' | 'cut' | 'dont-cut' | 'fuse';
 export type Rarity = 'uncommon' | 'rare' | 'epic';
 export type BucketKey = '2_damage' | 'optimal_damage' | 'suboptimal_damage' | 'no_damage';
-/** Verdict band from the cut value (his meta.verdict gold thresholds). */
-export type Verdict = 'green' | 'yellow-hi' | 'yellow-mid' | 'yellow-lo' | 'yellow-dim' | 'red';
+/** Verdict band from the cut value (his meta.verdict gold thresholds); 'purple' = block fuse-first. */
+export type Verdict = 'green' | 'yellow-hi' | 'yellow-mid' | 'yellow-lo' | 'yellow-dim' | 'red' | 'purple';
 
 // ---- Baked data shape (output of scripts/extract-pipeline.cjs) ----
 export interface CellNrb {

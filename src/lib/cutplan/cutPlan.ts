@@ -19,7 +19,7 @@ import type {
   Verdict,
 } from './types';
 import { GRADE_ROWS } from '../scoring/gemScore';
-import { GOLD_PER_DAMAGE } from './types';
+import { COSTS, GOLD_PER_DAMAGE, RARITIES } from './types';
 
 export { GOLD_PER_DAMAGE };
 
@@ -97,13 +97,15 @@ export function getCutCell(
   bucket: BucketKey,
   binding: BindingMode,
   gpd: number,
-  baseline: number
+  baseline: number,
+  blockFuse = false
 ): CutCell | null {
   const entries = data.axes[axis]?.cells?.[rarity]?.[String(cost)]?.[bucket]?.[String(gpd)];
   if (!entries || entries.length === 0) return null;
   const field = (pick: (e: PipelineCellEntry) => number) => lerp(entries, baseline, (e) => e.b, pick);
   const cut = field((e) => e[binding].cut);
-  const verdict = verdictFor(cut, data.meta.verdict);
+  // A fuse-first block paints every bucket purple; the reset glyph is suppressed (purple is not green).
+  const verdict = blockFuse ? 'purple' : verdictFor(cut, data.meta.verdict);
   return {
     cut,
     pAbove: field((e) => e[binding].pAbove),
@@ -114,7 +116,7 @@ export function getCutCell(
     fRelic: binding === 'nrb' ? field((e) => e.nrb.fRelic) : 0,
     fAnc: binding === 'nrb' ? field((e) => e.nrb.fAnc) : 0,
     verdict,
-    action: actionFor(verdict),
+    action: blockFuse ? 'fuse' : actionFor(verdict),
     resetWorthy: verdict === 'green',
   };
 }
@@ -181,6 +183,129 @@ export function cellBreakdown(
   return { buckets, averageCut: accWeight > 0 ? accWeighted / accWeight : 0 };
 }
 
+// ---- Pre-cut rarity-upgrade fusion (his pipeline.js CONST + unopenedFusion, Global region only) ----
+const FUSION_COST = 500; // gold per 3-into-1 fuse
+const UC_FUSE = { uncommon: 0.85, rare: 0.135, epic: 0.015 }; // 3 UC same cost -> same cost out
+const RARE_FUSE = { uncommon: 0.52, rare: 0.44, epic: 0.04 }; // 1R + 2UC -> cost from inputs
+
+export interface FuseFirst {
+  /** Per (rarity, cost) NRB fuse-EV per block; null for epic (never fuses). */
+  fuse: Record<Rarity, Record<number, number | null>>;
+  /** Cost a Rare steers its two partners toward (argmax mixed output); UC keeps its own; epic null. */
+  steer: Record<Rarity, Record<number, number | null>>;
+}
+
+/**
+ * Fuse-first fixed point over the baked cells (shizukaziye's pipeline.js unopenedFusion, Global
+ * branch only — KR excluded). Returns each block's rarity-upgrade fuse-EV and its steer cost, or
+ * null if any required open value is missing. A block's open value is the (1:2:2:1)/6 mean of its
+ * four bucket cut-EVs; the fuse value couples the three rarities across the three costs by plain
+ * iteration (a contraction, so it converges to ~1e-9 in well under 200 steps).
+ */
+export function unopenedFusion(
+  data: PipelineData,
+  axis: CutAxis,
+  gpd: number,
+  baseline: number
+): FuseFirst | null {
+  const getCut = (roster: BindingMode, rarity: Rarity, cost: number, bucket: BucketKey): number | null => {
+    const cell = getCutCell(data, axis, rarity, cost, bucket, roster, gpd, baseline);
+    return cell ? cell.cut : null;
+  };
+  const openValue = (roster: BindingMode, rarity: Rarity, cost: number): number | null => {
+    let acc = 0;
+    let wsum = 0;
+    for (const b of data.meta.buckets) {
+      const cut = getCut(roster, rarity, cost, b);
+      if (cut == null) return null;
+      acc += BUCKET_AVG_WEIGHT[b] * cut;
+      wsum += BUCKET_AVG_WEIGHT[b];
+    }
+    return wsum > 0 ? acc / wsum : null;
+  };
+
+  const OV: Record<BindingMode, Record<Rarity, Record<number, number>>> = {
+    nrb: { uncommon: {}, rare: {}, epic: {} },
+    rb: { uncommon: {}, rare: {}, epic: {} },
+  };
+  for (const roster of ['nrb', 'rb'] as BindingMode[])
+    for (const rar of RARITIES)
+      for (const cost of COSTS) {
+        const ov = openValue(roster, rar, cost);
+        if (ov == null) return null;
+        OV[roster][rar][cost] = ov;
+      }
+
+  const U: Record<Rarity, Record<number, number>> = { uncommon: {}, rare: {}, epic: {} };
+  for (const rar of RARITIES) for (const cost of COSTS) U[rar][cost] = OV.nrb[rar][cost];
+
+  // Global: half of a fusion output is roster-bound (free to cut), so its "other half" is the RB
+  // open value; the other half is the current NRB fixed-point estimate.
+  const E = (rar: Rarity, cost: number) => 0.5 * OV.rb[rar][cost] + 0.5 * U[rar][cost];
+
+  let fuse: Record<Rarity, Record<number, number | null>> = { uncommon: {}, rare: {}, epic: {} };
+  let bestCost: number = COSTS[0];
+  for (let iter = 0; iter < 200; iter++) {
+    const Out: Record<number, number> = {};
+    let maxOut = -Infinity;
+    bestCost = COSTS[0];
+    for (const c of COSTS) {
+      Out[c] = RARE_FUSE.uncommon * E('uncommon', c) + RARE_FUSE.rare * E('rare', c) + RARE_FUSE.epic * E('epic', c);
+      if (Out[c] > maxOut) {
+        maxOut = Out[c];
+        bestCost = c;
+      }
+    }
+    const fA: Record<Rarity, Record<number, number | null>> = { uncommon: {}, rare: {}, epic: {} };
+    for (const c of COSTS) {
+      fA.uncommon[c] =
+        (UC_FUSE.uncommon * E('uncommon', c) + UC_FUSE.rare * E('rare', c) + UC_FUSE.epic * E('epic', c) - FUSION_COST) / 3;
+      fA.rare[c] = (1 / 3) * Out[c] + (2 / 3) * maxOut - FUSION_COST;
+      fA.epic[c] = null;
+    }
+    let maxChange = 0;
+    for (const rar of RARITIES)
+      for (const c of COSTS) {
+        const fv = fA[rar][c];
+        const nv = fv == null ? OV.nrb[rar][c] : Math.max(OV.nrb[rar][c], fv);
+        maxChange = Math.max(maxChange, Math.abs(nv - U[rar][c]));
+        U[rar][c] = nv;
+      }
+    fuse = fA;
+    if (maxChange < 1e-9) break;
+  }
+
+  const steer: Record<Rarity, Record<number, number | null>> = { uncommon: {}, rare: {}, epic: {} };
+  for (const c of COSTS) {
+    steer.uncommon[c] = c;
+    steer.rare[c] = bestCost;
+    steer.epic[c] = null;
+  }
+  return { fuse, steer };
+}
+
+/**
+ * Whether a (rarity, cost) block is "fuse first" (purple): NRB only, its fuse-EV beats the raw
+ * (1:2:2:1)/6 open value of its four buckets. Mirrors pipeline.js gemCell's blockFuse test.
+ */
+export function isBlockFuse(
+  data: PipelineData,
+  axis: CutAxis,
+  rarity: Rarity,
+  cost: number,
+  binding: BindingMode,
+  gpd: number,
+  baseline: number,
+  ff: FuseFirst | null
+): boolean {
+  if (binding !== 'nrb' || !ff) return false;
+  const fuse = ff.fuse[rarity]?.[cost];
+  if (fuse == null) return false;
+  const bd = cellBreakdown(data, axis, rarity, cost, 'nrb', gpd, baseline);
+  if (!bd) return false;
+  return fuse > bd.averageCut;
+}
+
 /** Best (max) cut value across an archetype's four buckets — the per-cell header EV. */
 export function headerCut(
   data: PipelineData,
@@ -237,6 +362,7 @@ const ACTION_LABELS: Record<CutAction, string> = {
   'cut-reset': 'Cut + reset',
   cut: 'Cut',
   'dont-cut': "Don't cut",
+  fuse: 'Fuse first',
 };
 export function actionLabel(action: CutAction): string {
   return ACTION_LABELS[action];
