@@ -5,7 +5,8 @@
     cellBreakdown,
     effectPair,
     getCutCell,
-    getThru,
+    getEconomy,
+    getFusion,
     headerCut,
     isBlockFuse,
     pipelineBaselineForGrade,
@@ -98,6 +99,11 @@
   let fuseFirst = $derived(
     data && binding === 'nrb' ? unopenedFusion(data, axis, goldPerDamage, baselinePct) : null
   );
+
+  // The whole-economy weekly model + fusion/fodder values (both NRB by nature, income/fusion are not
+  // roster-bound), read at the current axis / gpd / baseline.
+  let economy = $derived(data ? getEconomy(data, axis, goldPerDamage, baselinePct) : null);
+  let fusion = $derived(data ? getFusion(data, axis, goldPerDamage, baselinePct) : null);
 
   // CP% headroom = how much CP the active build can still gain (from the solve's scoreSet).
   let scoreSet = $derived(build.solveInfo.after?.scoreSet);
@@ -227,19 +233,27 @@
             </div>
             <div class="ch-col">
               <section>
-                <h4>Weekly throughput (non-roster-bound)</h4>
+                <h4>Weekly economy (non-roster-bound)</h4>
+                <p>
+                  A whole-account model of one week at this budget: daily gem income plus any gem
+                  boxes worth buying, cut with the plan above, below-baseline gems reset (≥ 20k) or
+                  recycled through fusion.
+                </p>
                 <ul>
-                  <li><strong>Total / wk</strong>: above-baseline gems per week (direct cuts + fusion)</li>
-                  <li><strong>Weeks</strong>: weeks to fill all 24 slots at this budget</li>
-                  <li><strong>Gold value / wk</strong>: gold value of the gems flowing in per week</li>
+                  <li><strong>Keepers / week</strong>: above-baseline gems produced (direct cuts + fusion chain)</li>
+                  <li><strong>Weeks</strong>: to fill all 24 slots at this rate</li>
+                  <li><strong>Gold spent / week</strong>: boxes + cutting + 20k resets + fusion fees (and the total to finish)</li>
+                  <li><strong>Combat power</strong>: the % a full run adds to the loadout</li>
                 </ul>
               </section>
               <section>
-                <h4>Fodder / fusion</h4>
+                <h4>Fusion / fodder</h4>
                 <p>
-                  A cut that ends <em>below</em> baseline is fodder. Its tier split (Legendary /
-                  Relic / Ancient, shown on hover) feeds fusion: <strong>3L</strong> → 99L/1R,
-                  <strong>R+2L</strong> → 73L/25R/2A, <strong>A+2L</strong> → 35L/40R/25A (500g each).
+                  A cut that ends <em>below</em> baseline is fodder, recycled 3-into-1. The table
+                  shows, per fodder tier, its <strong>value as fusion material</strong> and the
+                  <strong>expected value of the fused output</strong> (cost-weighted, at your budget).
+                  Mixes: <strong>3L</strong> → 99L/1R, <strong>R+2L</strong> → 73L/25R/2A,
+                  <strong>A+2L</strong> → 35L/40R/25A (500g each).
                 </p>
               </section>
               <section>
@@ -289,7 +303,6 @@
       <div class="gems-grid">
         {#each ARCHES as arch}
           {@const best = headerCut(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
-          {@const thru = binding === 'nrb' ? getThru(data, axis, arch.rarity, arch.cost, goldPerDamage, baselinePct) : null}
           {@const bd = cellBreakdown(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct)}
           {@const blockFuse = isBlockFuse(data, axis, arch.rarity, arch.cost, binding, goldPerDamage, baselinePct, fuseFirst)}
           <div class="gem-card" data-rarity={arch.rarity}>
@@ -330,18 +343,74 @@
                 {/if}
               {/each}
             </div>
-            {#if thru}
-              <div class="gem-thru" title="Weekly throughput at this budget (non-roster-bound).">
-                <span class="t-total">≈ {thru.totalPerWk.toFixed(1)}/wk</span>
-                <span class="t-weeks {thru.weeks == null ? 'slow' : weeksBand(thru.weeks)}"
-                  >{thru.weeks == null ? '∞ wks' : `${thru.weeks.toFixed(1)} wks`}</span
-                >
-                <span class="t-gold">{fmtGold(thru.goldPerWk)} g/wk</span>
-              </div>
-            {/if}
           </div>
         {/each}
       </div>
+
+      {#if economy}
+        <div class="econ">
+          <div class="econ-title">Weekly economy at this budget (non-roster-bound)</div>
+          <div class="econ-grid">
+            <div class="econ-cell">
+              <span class="ec-val">≈ {economy.totalPerWk.toFixed(1)}<span class="ec-unit">/wk</span></span>
+              <span class="ec-lab">Keepers / week ({economy.directPerWk.toFixed(1)} cut + {economy.fusePerWk.toFixed(1)} fused)</span>
+            </div>
+            <div class="econ-cell">
+              <span class="ec-val {economy.weeks == null ? 'slow' : weeksBand(economy.weeks)}"
+                >{economy.weeks == null ? '∞' : economy.weeks.toFixed(1)}<span class="ec-unit"> wks</span></span
+              >
+              <span class="ec-lab">To fill 24 slots</span>
+            </div>
+            <div class="econ-cell">
+              <span class="ec-val">{fmtGold(economy.goldPerWk)}<span class="ec-unit"> g/wk</span></span>
+              <span class="ec-lab">Gold spent / week{economy.goldTotal != null ? ` · ${fmtGold(economy.goldTotal)} total` : ''}</span>
+            </div>
+            <div class="econ-cell">
+              <span class="ec-val">+{(economy.cpPct * 100).toFixed(1)}%</span>
+              <span class="ec-lab">Combat power from a full run</span>
+            </div>
+          </div>
+          <div class="econ-boxes">
+            Buy this week:
+            {#if economy.buyVendor || economy.buyMat || economy.buyEpic}
+              {[
+                economy.buyVendor ? '10x vendor' : '',
+                economy.buyMat ? '20x mat' : '',
+                economy.buyEpic ? '1x epic' : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')} gem boxes
+            {:else}
+              no boxes worth it at this baseline
+            {/if}
+          </div>
+        </div>
+      {/if}
+
+      {#if fusion}
+        <div class="fusion">
+          <div class="fusion-title">Fusion / fodder value (per gem, cost-weighted)</div>
+          <table class="fusion-table">
+            <thead>
+              <tr><th></th><th>Legendary</th><th>Relic</th><th>Ancient</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fl">Fodder value</td>
+                <td>{fmtGold(fusion.fodder.leg)}</td>
+                <td>{fmtGold(fusion.fodder.relic)}</td>
+                <td>{fmtGold(fusion.fodder.anc)}</td>
+              </tr>
+              <tr>
+                <td class="fl">Fused-output EV</td>
+                <td>{fmtGold(fusion.tierEV.leg)}</td>
+                <td>{fmtGold(fusion.tierEV.relic)}</td>
+                <td>{fmtGold(fusion.tierEV.anc)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      {/if}
 
       <div class="cp-callout" title="Combat power still available from better gems (best possible minus current).">
         CP% headroom:
@@ -758,36 +827,96 @@
   .bucket-action[data-action='fuse'] {
     background: #7e5cc0;
   }
-  .gem-thru {
+  /* Whole-economy weekly summary (replaces the legacy per-card throughput row). */
+  .econ {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: var(--card);
+  }
+  .econ-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+  .econ-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+  @media (max-width: 560px) {
+    .econ-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .econ-cell {
     display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.4rem 0.75rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.75rem;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .ec-val {
+    font-size: 1.15rem;
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
-    opacity: 0.9;
   }
-  .gem-thru .fast {
+  .ec-val.fast {
     color: #2e7d32;
-    font-weight: 700;
   }
-  .gem-thru .med {
+  .ec-val.med {
     color: #b8860b;
-    font-weight: 700;
   }
-  .gem-thru .slow {
+  .ec-val.slow {
     color: #8a3a3a;
-    font-weight: 700;
   }
-  :global(.dark-mode) .gem-thru .fast {
+  :global(.dark-mode) .ec-val.fast {
     color: #4ade80;
   }
-  :global(.dark-mode) .gem-thru .med {
+  :global(.dark-mode) .ec-val.med {
     color: #f0c040;
   }
-  :global(.dark-mode) .gem-thru .slow {
+  :global(.dark-mode) .ec-val.slow {
     color: #ef8a8a;
+  }
+  .ec-unit {
+    font-size: 0.8rem;
+    font-weight: 600;
+    opacity: 0.7;
+  }
+  .ec-lab {
+    font-size: 0.72rem;
+    opacity: 0.8;
+  }
+  .econ-boxes {
+    margin-top: 0.6rem;
+    font-size: 0.78rem;
+    opacity: 0.9;
+  }
+  .fusion {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: var(--card);
+  }
+  .fusion-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+  }
+  .fusion-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .fusion-table th,
+  .fusion-table td {
+    text-align: right;
+    padding: 0.25rem 0.5rem;
+  }
+  .fusion-table th:first-child,
+  .fusion-table td.fl {
+    text-align: left;
+    opacity: 0.85;
   }
   .cp-callout {
     align-self: flex-start;

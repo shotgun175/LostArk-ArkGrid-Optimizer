@@ -9,6 +9,7 @@ import type {
   CutAction,
   CutAxis,
   CutCell,
+  EconomyRow,
   GoldBracket,
   PipelineCellEntry,
   PipelineData,
@@ -350,6 +351,67 @@ export function getThru(
     avgScore: f((e) => e.avgScore),
     cpGain: f((e) => e.cpGain),
   };
+}
+
+// Economy and fusion are baked per baseline ANCHOR (not interpolated: box/reset decisions are
+// discrete), indexed parallel to meta.baselines[axis]. `baseline` is already snapped to an anchor by
+// pipelineBaselineForGrade, so we find the matching anchor index.
+function baselineIndex(data: PipelineData, axis: CutAxis, baseline: number): number {
+  const arr = data.meta.baselines[axis];
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    const d = Math.abs(arr[i] - baseline);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** The whole-economy weekly model at the given axis / gpd / baseline (his live pipeline model). */
+export function getEconomy(
+  data: PipelineData,
+  axis: CutAxis,
+  gpd: number,
+  baseline: number
+): EconomyRow | null {
+  const rows = data.axes[axis]?.economy?.[String(gpd)];
+  if (!rows || rows.length === 0) return null;
+  return rows[baselineIndex(data, axis, baseline)] ?? null;
+}
+
+export interface FusionWeighted {
+  tierEV: { leg: number; relic: number; anc: number };
+  fodder: { leg: number; relic: number; anc: number };
+}
+const FUSION_COST_MIX: Record<number, number> = { 8: 0.6, 9: 0.3, 10: 0.1 };
+
+/** Cost-weighted (60/30/10) fusion / fodder values at the given axis / gpd / baseline (his table). */
+export function getFusion(
+  data: PipelineData,
+  axis: CutAxis,
+  gpd: number,
+  baseline: number
+): FusionWeighted | null {
+  const byCost = data.axes[axis]?.fusion?.[String(gpd)];
+  if (!byCost) return null;
+  const idx = baselineIndex(data, axis, baseline);
+  const acc: FusionWeighted = {
+    tierEV: { leg: 0, relic: 0, anc: 0 },
+    fodder: { leg: 0, relic: 0, anc: 0 },
+  };
+  for (const cost of [8, 9, 10]) {
+    const row = byCost[String(cost)]?.[idx];
+    if (!row) return null;
+    const w = FUSION_COST_MIX[cost];
+    for (const k of ['leg', 'relic', 'anc'] as const) {
+      acc.tierEV[k] += w * row.tierEV[k];
+      acc.fodder[k] += w * row.fodder[k];
+    }
+  }
+  return acc;
 }
 
 /** The two effects that define a bucket at a base cost, for the given axis (for tooltips). */
