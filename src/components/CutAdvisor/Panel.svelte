@@ -56,6 +56,7 @@
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
         error = null;
+        engaged = true; // a live read counts as engaging, so market changes re-rank it afterwards
       }
     };
     controller.onShareEnded = () => {
@@ -183,6 +184,7 @@
         result = res;
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
+        engaged = true; // an uploaded read counts as engaging, so market changes re-rank it afterwards
       }
     } catch (e) {
       error = String((e as Error)?.message ?? e);
