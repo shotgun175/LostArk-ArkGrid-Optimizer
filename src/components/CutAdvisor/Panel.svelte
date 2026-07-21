@@ -211,7 +211,9 @@
     lastEdited = edited;
     advisePending++;
     try {
-      const res = await getController().advise(edited, adviceInputs);
+      // $state.snapshot strips Svelte reactive proxies; a raw proxy throws DataCloneError in the
+      // worker's postMessage (structured clone can't clone it), which silently killed the re-advise.
+      const res = await getController().advise($state.snapshot(edited) as EditedAdvisorState, adviceInputs);
       if (res) {
         liveAdvice = res.advice;
         error = null;
