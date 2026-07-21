@@ -61,6 +61,7 @@
     controller.onShareEnded = () => {
       watching = false;
     };
+    controller.onReading = (b) => (reading = b);
     return controller;
   }
 
@@ -111,6 +112,9 @@
   let liveAdvice = $state<AdvisorAdvice | null>(null);
   let advisePending = $state(0);
   let advising = $derived(advisePending > 0);
+  let reading = $state(false); // a live re-read / manual re-parse is in flight (set by the controller)
+  let readingScreen = $derived(reading || parsing); // a NEW screen is being read (live watch or upload)
+  let computing = $derived(reading || parsing || advising); // any advice recompute in flight
   let error = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
   let watching = $state(false);
@@ -291,8 +295,14 @@
           <!-- 2. recommended action -->
           <div class="side-panel actions-panel" data-testid="advisor-advice">
             <div class="side-title">Recommended action</div>
+            {#if readingScreen}
+              <div class="rec-reading" role="status" aria-live="polite">
+                <span>Reading screen…</span>
+                <div class="rec-progress"><div class="rec-progress-bar"></div></div>
+              </div>
+            {/if}
             {#if hasAdvice}
-              <div class="rec-cards" class:stale={advising}>
+              <div class="rec-cards" class:stale={computing}>
                 {#each ACTION_ORDER as name (name)}
                   {@const a = actionByName[name]}
                   {@const isBest = name.toLowerCase() === liveAdvice?.bestAction}
@@ -559,6 +569,43 @@
   }
   .rec-cards.stale {
     opacity: 0.5;
+  }
+  .rec-reading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    margin-bottom: 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #e6c266;
+  }
+  .rec-progress {
+    height: 3px;
+    border-radius: 3px;
+    background: rgba(230, 194, 102, 0.16);
+    overflow: hidden;
+  }
+  .rec-progress-bar {
+    height: 100%;
+    width: 40%;
+    border-radius: 3px;
+    background: #e6c266;
+    animation: rec-progress-slide 1.1s ease-in-out infinite;
+  }
+  @keyframes rec-progress-slide {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(360%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rec-progress-bar {
+      animation: none;
+      width: 100%;
+      opacity: 0.55;
+    }
   }
   .rec-card {
     border-radius: 0.45rem;

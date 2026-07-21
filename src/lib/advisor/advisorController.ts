@@ -155,6 +155,9 @@ export class AdvisorController {
   private sigCanvas: OffscreenCanvas | null = null;
   onAdvice: ((r: AdvisorResult | null) => void) | null = null;
   onShareEnded: (() => void) | null = null;
+  // Fired true when a live re-read / manual re-parse starts and false when it finishes, so the UI can
+  // show a "reading screen" indicator instead of leaving stale advice looking final.
+  onReading: ((busy: boolean) => void) | null = null;
 
   isSharing() {
     return !!this.stream;
@@ -215,10 +218,15 @@ export class AdvisorController {
    */
   async reparseNow(): Promise<void> {
     if (!this.stream) return;
-    const bitmap = await this.grabFrame();
-    if (!bitmap) return;
-    const res = await this.parseImage(bitmap, this.watchInputs);
-    this.onAdvice?.(res);
+    this.onReading?.(true);
+    try {
+      const bitmap = await this.grabFrame();
+      if (!bitmap) return;
+      const res = await this.parseImage(bitmap, this.watchInputs);
+      this.onAdvice?.(res);
+    } finally {
+      this.onReading?.(false);
+    }
   }
 
   private async grabFrame(): Promise<ImageBitmap | null> {
@@ -357,6 +365,7 @@ export class AdvisorController {
           busy = true;
           parsedSig = sig;
           spikeSeen = false;
+          this.onReading?.(true);
           const t0 = Date.now();
           const bitmap = await this.grabFrame();
           if (bitmap) {
@@ -364,6 +373,7 @@ export class AdvisorController {
             if (this.watching) this.onAdvice?.(res);
           }
           if (debug) console.log(`[watch] parse+advise took ${Date.now() - t0}ms`);
+          this.onReading?.(false);
           busy = false;
         }
         prevSig = sig;
