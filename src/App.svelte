@@ -4,6 +4,7 @@
 
   import BackToTop from './components/BackToTop.svelte';
   import BuildSection from './components/BuildSection.svelte';
+  import CutAdvisorPanel from './components/CutAdvisor/Panel.svelte';
   import CuttingPlanPanel from './components/CuttingPlanPanel.svelte';
   import Assumptions from './components/Footer/Assumptions.svelte';
   import Footer from './components/Footer/Footer.svelte';
@@ -78,6 +79,7 @@
         <BuildSection bind:profile={currentProfile}></BuildSection>
         <div id="sec-triage"><GemTriagePanel profile={currentProfile} /></div>
         <div id="sec-cutplan"><CuttingPlanPanel profile={currentProfile} /></div>
+        <div id="sec-advisor"><CutAdvisorPanel profile={currentProfile} /></div>
       </div>
     </div>
   </div>

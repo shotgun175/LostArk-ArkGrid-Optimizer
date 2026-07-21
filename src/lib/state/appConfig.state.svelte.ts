@@ -33,11 +33,13 @@ const defaultUIConfig: UIConfig = {
 // $state keeps collapse per-tab, never written to storage, and expanded again on every page load.
 interface SectionVisibility {
   showGemRecognitionPanel: boolean;
+  showAdvisor: boolean;
   showGemTriage: boolean;
   showCuttingPlan: boolean;
 }
 export const sectionUI = $state<SectionVisibility>({
   showGemRecognitionPanel: true,
+  showAdvisor: true,
   showGemTriage: true,
   showCuttingPlan: true,
 });

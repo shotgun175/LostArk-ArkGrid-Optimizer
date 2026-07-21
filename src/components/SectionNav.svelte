@@ -11,6 +11,7 @@
     { id: 'sec-build', label: 'Cores & Gems' },
     { id: 'sec-triage', label: 'Gem Triage' },
     { id: 'sec-cutplan', label: 'Cutting Plan' },
+    { id: 'sec-advisor', label: 'Cut Advisor' },
   ];
 
   let active = $state<string>(sections[0].id);
@@ -18,6 +19,7 @@
   let menuOpen = $state(false);
 
   function go(id: string) {
+    active = id; // highlight the clicked item immediately; the observer keeps it in sync after
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     menuOpen = false;
   }
@@ -26,9 +28,18 @@
     const els = sections
       .map((s) => document.getElementById(s.id))
       .filter((e): e is HTMLElement => e !== null);
+    const lastId = sections[sections.length - 1].id;
+    // The last section is often too short to scroll its top into the band, so once the page is
+    // scrolled to the bottom the last section is the active one regardless.
+    const atBottom = () =>
+      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
     // A section becomes "active" once it reaches the top ~30% of the viewport.
     const observer = new IntersectionObserver(
       (entries) => {
+        if (atBottom()) {
+          active = lastId;
+          return;
+        }
         for (const e of entries) {
           if (e.isIntersecting) active = e.target.id;
         }
@@ -36,7 +47,15 @@
       { rootMargin: '0px 0px -70% 0px', threshold: 0 }
     );
     els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+    // Scroll-to-bottom fires no new intersection, so catch that case directly.
+    const onScroll = () => {
+      if (atBottom()) active = lastId;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', onScroll);
+    };
   });
 </script>
 

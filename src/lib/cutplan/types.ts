@@ -5,15 +5,17 @@
 export type GoldBracket = '500k' | '1M' | '1_5M' | '2_5M' | '3_5M' | '5M' | '7_5M' | '10M';
 export type BindingMode = 'nrb' | 'rb';
 export type CutAxis = 'dps' | 'support';
-export type CutAction = 'cut-reset' | 'cut' | 'dont-cut';
+export type CutAction = 'cut-reset' | 'cut' | 'dont-cut' | 'fuse';
 export type Rarity = 'uncommon' | 'rare' | 'epic';
 export type BucketKey = '2_damage' | 'optimal_damage' | 'suboptimal_damage' | 'no_damage';
-/** Verdict band from the cut value (his meta.verdict gold thresholds). */
-export type Verdict = 'green' | 'yellow-hi' | 'yellow-mid' | 'yellow-lo' | 'yellow-dim' | 'red';
+/** Verdict band from the cut value (his meta.verdict gold thresholds); 'purple' = block fuse-first. */
+export type Verdict = 'green' | 'yellow-hi' | 'yellow-mid' | 'yellow-lo' | 'yellow-dim' | 'red' | 'purple';
 
 // ---- Baked data shape (output of scripts/extract-pipeline.cjs) ----
+export type CutRootAction = 'process' | 'complete' | 'reroll';
 export interface CellNrb {
   cut: number; // exact Bellman gold value of cutting a fresh gem of this archetype
+  act: CutRootAction; // the DP's chosen root action; a 'complete' cell yields no fodder
   pAbove: number; // P(the optimal cut ends at/above baseline)
   expScore: number; // expected % damage of the cut
   expSpend: number; // expected gold spent per cut attempt of this archetype
@@ -23,6 +25,7 @@ export interface CellNrb {
 }
 export interface CellRb {
   cut: number;
+  act: CutRootAction;
   pAbove: number;
   expScore: number;
   expSpend: number; // 0 in the source (rb is free to cut); shown as "—"
@@ -64,9 +67,38 @@ export interface PipelineMeta {
 }
 type CellsByGpd = Record<string, PipelineCellEntry[]>;
 type ThruByGpd = Record<string, PipelineThruEntry[]>;
+
+/** Fusion / fodder values (his joint fixed-point solve), baked per baseline anchor. */
+export interface FusionRow {
+  /** Expected gold of a random PROCESSED gem of each fodder tier (keep-or-fuse EV). */
+  tierEV: { leg: number; relic: number; anc: number };
+  /** Per-input value of a below-baseline gem of each tier used as fusion fodder. */
+  fodder: { leg: number; relic: number; anc: number };
+}
+// gpd -> cost -> [per baseline anchor], parallel to the cells' baseline order.
+type FusionByGpd = Record<string, Record<string, FusionRow[]>>;
+
+/** The whole-economy weekly model (his pipeline.js computePipeline), baked per baseline anchor. */
+export interface EconomyRow {
+  boxEV: number; // EV/box-gem this week; drives the buy flags
+  buyVendor: boolean;
+  buyMat: boolean;
+  buyEpic: boolean;
+  directPerWk: number; // above-baseline gems/week from cutting
+  fusePerWk: number; // above-baseline gems/week from the fusion chain
+  totalPerWk: number; // direct + fuse
+  weeks: number | null; // 24 / total; null when nothing clears the baseline
+  goldPerWk: number; // gold SPENT per week (boxes + cutting + 20k resets + fusion fees)
+  goldTotal: number | null; // gold to fill all 24 slots
+  cpPct: number; // combat-power % gain of the produced loadout (his COND_SCORE fallback)
+}
+type EconomyByGpd = Record<string, EconomyRow[]>;
+
 export interface PipelineAxis {
   cells: Record<Rarity, Record<string, Record<BucketKey, CellsByGpd>>>;
   thru: Record<Rarity, Record<string, ThruByGpd>>;
+  fusion: FusionByGpd;
+  economy: EconomyByGpd;
 }
 export interface PipelineData {
   _provenance: Record<string, unknown>;

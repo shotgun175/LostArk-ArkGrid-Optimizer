@@ -10,7 +10,9 @@ import {
   getCutCell,
   getThru,
   headerCut,
+  isBlockFuse,
   pipelineBaselineForGrade,
+  unopenedFusion,
   verdictFor,
   weeksBand,
 } from './cutPlan';
@@ -96,6 +98,8 @@ const data: PipelineData = {
           },
         },
       } as unknown as PipelineData['axes']['dps']['thru'],
+      fusion: {},
+      economy: {},
     },
     // Support cells baked on the support % scale (b=0.1/0.2). The top anchor (0.2) has cut=0,
     // like the real data — so reading it at a DPS-scale baseline (>0.2) clamps to zero (the bug),
@@ -120,14 +124,19 @@ const data: PipelineData = {
         },
       } as unknown as PipelineData['axes']['dps']['cells'],
       thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+      fusion: {},
+      economy: {},
     },
   },
 };
 
 describe('verdictFor / actionFor', () => {
   it('bands a cut value by the baked gold thresholds', () => {
+    // Green is the 20k reset threshold (a code override of the baked legacy meta.verdict.green
+    // of 18000). 18k is NO LONGER green; it now falls in the yellow-hi band.
     expect(verdictFor(20000, verdict)).toBe('green');
-    expect(verdictFor(18000, verdict)).toBe('green');
+    expect(verdictFor(19999, verdict)).toBe('yellow-hi');
+    expect(verdictFor(18000, verdict)).toBe('yellow-hi');
     expect(verdictFor(12000, verdict)).toBe('yellow-hi');
     expect(verdictFor(7000, verdict)).toBe('yellow-mid');
     expect(verdictFor(2000, verdict)).toBe('yellow-lo');
@@ -150,7 +159,7 @@ describe('getCutCell (baseline interpolation)', () => {
     expect(c.pAbove).toBeCloseTo(0.35, 6);
     expect(c.expScore).toBeCloseTo(1.25, 6);
     expect(c.fLeg).toBeCloseTo(0.4, 6);
-    expect(c.verdict).toBe('yellow-hi'); // 15000 is in [10000, 18000)
+    expect(c.verdict).toBe('yellow-hi'); // 15000 is in [10000, 20000)
     expect(c.action).toBe('cut');
     expect(c.resetWorthy).toBe(false);
   });
@@ -253,11 +262,15 @@ describe('cellBreakdown', () => {
             },
           } as unknown as PipelineData['axes']['dps']['cells'],
           thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+          fusion: {},
+          economy: {},
         },
         // Support unused here.
         support: {
           cells: {} as unknown as PipelineData['axes']['dps']['cells'],
           thru: {} as unknown as PipelineData['axes']['dps']['thru'],
+          fusion: {},
+          economy: {},
         },
       },
     };
@@ -283,7 +296,7 @@ describe('labels / bands', () => {
   });
   it('actionLabel / bracketLabel / weeksBand', () => {
     expect(actionLabel('cut-reset')).toBe('Cut + reset');
-    expect(actionLabel('dont-cut')).toBe("Don't cut");
+    expect(actionLabel('dont-cut')).toBe('Dismantle');
     expect(bracketLabel('1_5M')).toBe('1.5M');
     expect(weeksBand(6.8)).toBe('fast');
     expect(weeksBand(20)).toBe('med');
@@ -365,5 +378,56 @@ describe('committed pipeline.json shape (locks types <-> data)', () => {
     expect(typeof c.nrb.expSpend).toBe('number');
     expect(c.nrb.expSpend).toBeGreaterThan(0);
     expect(c.rb.expSpend).toBe(0);
+  });
+});
+
+describe('fuse-first (purple)', () => {
+  const real = realPipeline as unknown as PipelineData;
+  // grade -> the baked % baseline the DPS cells were solved at (GRADE_ROWS index).
+  const at = (grade: number) => pipelineBaselineForGrade(grade, real.meta.baselines.dps);
+  const GPD = 1_500_000; // his default Pipeline gpd tier
+
+  it('unopenedFusion returns finite uncommon/rare fuse values and a null epic', () => {
+    const ff = unopenedFusion(real, 'dps', GPD, at(40));
+    expect(ff).not.toBeNull();
+    expect(Number.isFinite(ff!.fuse.uncommon[8]!)).toBe(true);
+    expect(Number.isFinite(ff!.fuse.rare[10]!)).toBe(true);
+    expect(ff!.fuse.epic[8]).toBeNull();
+    expect([8, 9, 10]).toContain(ff!.steer.rare[8]);
+  });
+
+  it('isBlockFuse is false for roster-bound, epic, and null fuse data', () => {
+    const ff = unopenedFusion(real, 'dps', GPD, at(40));
+    // roster-bound gems are free to cut -> never fuse-first
+    expect(isBlockFuse(real, 'dps', 'rare', 10, 'rb', GPD, at(40), ff)).toBe(false);
+    // epic never fuses
+    expect(isBlockFuse(real, 'dps', 'epic', 10, 'nrb', GPD, at(40), ff)).toBe(false);
+    // no fuse data -> false
+    expect(isBlockFuse(real, 'dps', 'rare', 10, 'nrb', GPD, at(40), null)).toBe(false);
+  });
+
+  it('getCutCell honors the blockFuse override', () => {
+    const cell = getCutCell(real, 'dps', 'rare', 10, '2_damage', 'nrb', GPD, at(40), true)!;
+    expect(cell.verdict).toBe('purple');
+    expect(cell.action).toBe('fuse');
+    expect(cell.resetWorthy).toBe(false);
+  });
+
+  // Golden: verdicts read off his live page (DPS / Global / 1.5M / Non-Roster-Bound) on 2026-07-19.
+  // At grade 40 ONLY rare/10 is purple; at grade 80 rare/8 is purple while rare/10 is not. These
+  // cross-checks prove the port tracks BOTH the rarity/cost and the baseline dimensions.
+  it('matches his live-page purple grid at DPS / 1.5M / NRB', () => {
+    const bf = (rarity: 'uncommon' | 'rare' | 'epic', cost: number, grade: number) => {
+      const ff = unopenedFusion(real, 'dps', GPD, at(grade));
+      return isBlockFuse(real, 'dps', rarity, cost, 'nrb', GPD, at(grade), ff);
+    };
+    // grade 40: only rare/10 fuses
+    expect(bf('rare', 10, 40)).toBe(true);
+    expect(bf('rare', 8, 40)).toBe(false);
+    expect(bf('epic', 10, 40)).toBe(false);
+    expect(bf('uncommon', 8, 40)).toBe(false);
+    // grade 80: the pattern shifts to the cheaper rare costs; rare/10 is no longer fuse-first
+    expect(bf('rare', 8, 80)).toBe(true);
+    expect(bf('rare', 10, 80)).toBe(false);
   });
 });
