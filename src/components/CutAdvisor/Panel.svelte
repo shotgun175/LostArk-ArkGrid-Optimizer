@@ -295,9 +295,9 @@
           <!-- 2. recommended action -->
           <div class="side-panel actions-panel" data-testid="advisor-advice">
             <div class="side-title">Recommended action</div>
-            {#if readingScreen}
+            {#if computing}
               <div class="rec-reading" role="status" aria-live="polite">
-                <span>Reading screen…</span>
+                <span>{readingScreen ? 'Reading screen…' : 'Updating advice…'}</span>
                 <div class="rec-progress"><div class="rec-progress-bar"></div></div>
               </div>
             {/if}
