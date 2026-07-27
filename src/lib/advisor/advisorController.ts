@@ -259,17 +259,13 @@ export class AdvisorController {
     return n;
   }
 
-  // Debug-only: when `advisorWatchDebug` is set, stash the exact frame handed to the OCR (captured
-  // before it's transferred to the worker) as a PNG on `window.__advisorFrames`, and expose
-  // `__dumpAdvisorFrame()` to download the last one. This is how we grab a real misreading live frame
-  // to reproduce and fix the OCR against offline. No effect unless the flag is on.
+  // Stash the exact frame handed to the OCR (captured before it's transferred to the worker) as a PNG
+  // on `window.__advisorFrames`, so a misreading live frame can be saved and reproduced offline.
+  // Two ways to get one out: the "Save frame" button while watching (`saveFrame()` below), or
+  // `__dumpAdvisorFrame()` in the console. This runs on the PARSE path only — once per real state
+  // change, not per poll — so the extra draw+encode is negligible next to a multi-second parse.
   private captureDebugFrame(bitmap: ImageBitmap) {
-    if (
-      typeof localStorage === 'undefined' ||
-      localStorage.getItem('advisorWatchDebug') !== '1' ||
-      typeof document === 'undefined'
-    )
-      return;
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
     try {
       const c = document.createElement('canvas');
       c.width = bitmap.width;
@@ -293,9 +289,10 @@ export class AdvisorController {
           a.click();
           return `downloading ${a.download}`;
         };
-        console.log(
-          '[watch] frame dump armed; run __dumpAdvisorFrame() in the console to save the last parsed frame'
-        );
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('advisorWatchDebug') === '1')
+          console.log(
+            '[watch] frame dump armed; run __dumpAdvisorFrame() in the console to save the last parsed frame'
+          );
       }
       const arr = w.__advisorFrames;
       const entry: { t: number; url: string } = { t: Date.now(), url: '' };
@@ -310,8 +307,19 @@ export class AdvisorController {
         if (blob) entry.url = URL.createObjectURL(blob);
       }, 'image/png');
     } catch {
-      // debug-only; never disturb the parse
+      // diagnostic-only; never disturb the parse
     }
+  }
+
+  /**
+   * Download the most recently parsed frame as a PNG — the exact raster the OCR read, which is what
+   * makes it reproducible offline. Returns a short status string for the caller to surface.
+   */
+  saveFrame(): string {
+    if (typeof window === 'undefined') return 'unavailable';
+    const w = window as unknown as { __dumpAdvisorFrame?: (i?: number) => string };
+    if (!w.__dumpAdvisorFrame) return 'no frame read yet';
+    return w.__dumpAdvisorFrame();
   }
 
   private async watchLoop() {

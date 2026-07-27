@@ -120,6 +120,8 @@
   let fileInput: HTMLInputElement | undefined = $state();
   let watching = $state(false);
   let dragOver = $state(false);
+  let frameMsg = $state('');
+  let frameMsgTimer: ReturnType<typeof setTimeout>;
   // The gem currently shown (default / parsed / hand-edited); re-advised when the market inputs change.
   let lastEdited = $state<EditedAdvisorState>(DEFAULT_EDITED);
 
@@ -170,6 +172,13 @@
   }
   function warm() {
     if (captureSupported) getController().warmup();
+  }
+  // Saves the exact raster the reader last parsed. Useful when a value comes out wrong: the saved
+  // frame reproduces the misread offline, which a fresh screenshot of the same state does not.
+  function saveFrame() {
+    frameMsg = getController().saveFrame();
+    clearTimeout(frameMsgTimer);
+    frameMsgTimer = setTimeout(() => (frameMsg = ''), 3000);
   }
 
   async function parseFile(file: File) {
@@ -358,6 +367,12 @@
                   <button onclick={() => void getController().reparseNow()} title="Force a re-read of the current screen">
                     🔄 Re-read now
                   </button>
+                  <button
+                    onclick={saveFrame}
+                    title="Download the exact frame the reader last parsed, as a PNG"
+                  >
+                    💾 Save frame
+                  </button>
                 {/if}
               {/if}
               {#if !watching}
@@ -366,7 +381,9 @@
               <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onPick} />
             </div>
             {#if watching}
-              <div class="watch-status">Watching… the window on the left confirms what's being read.</div>
+              <div class="watch-status">
+                {frameMsg || "Watching… the window on the left confirms what's being read."}
+              </div>
             {:else}
               <div
                 class="drop"
