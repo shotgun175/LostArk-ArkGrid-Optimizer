@@ -14,7 +14,10 @@
  * reads make arithmetically impossible: 94.57% -> 95.48% on 17 Force-21:9 captures, other corpora
  * unchanged. Patch 3 ("ZERO COST") lets the structural gates carry a free-process cost read when
  * the digit match is inconclusive: 91.45% -> 98.29% on a 9-capture cut containing four -100% frames,
- * other corpora unchanged (upstream's cost fields stay 100%). Under Node the
+ * other corpora unchanged (upstream's cost fields stay 100%). Patch 4 ("DECLINED DIGIT SLOT")
+ * caps a level whose digit box the matcher refused to call a digit, so a guessed level always flags:
+ * clears all 4 confidently-wrong levels across our 47 labelled captures with NO value changed on any
+ * of seven corpora, at a cost of ~0.3 extra confirm-me prompts per capture. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -1286,6 +1289,7 @@
     // erode to a 5px sliver that classified as '1' @0.91 while the true '2' eroded
     // into a '/', so the L committed at 0.95 and the checksum pushed the error into
     // the free S node: a SILENT coherent-wrong board. Structure beats scores here.
+    var _declinedSlots = {};   // LOCAL PATCH (DECLINED DIGIT SLOT), see file header
     async function readLevelFull(p, isGoldFace, hasLvPrefix, nodeKind) {
       var box = { x: p.x - gap * 0.5, y: p.y - gap * 0.35, w: gap * 1.0, h: gap * 0.72 };
       var pred = L.isGoldText;
@@ -1362,13 +1366,24 @@
         // rightmost in-zone box still donates its score vector to the solver.
         // Bare-digit nodes (N/S) have no prefix to fake digits, keep the plain
         // last-digit-classified rule.
+        var zoneBoxSeen = false;
         for (var i = 0; i < boxes.length; i++) {
           var bx = boxes[i];
           if (hasLvPrefix && (bx.x + bx.w / 2) <= mask.width * 0.55) continue;
+          zoneBoxSeen = true;
           var sv = digitScoreVec(mask, bx);
           if (sv.isDigit) { db = sv; dbBox = bx; }
           else if (hasLvPrefix && !db) db = { vec: sv.vec, top: sv.top, isDigit: false };   // vec-only candidate
         }
+        // LOCAL PATCH - DECLINED DIGIT SLOT IS NEVER AUTHORITATIVE. On a "Lv. N" line the last in-zone
+        // box IS the digit by construction, so if the glyph matcher will not call it a digit at all,
+        // structure and scores DISAGREE and everything downstream is a guess. Measured case: a '4'
+        // scores as '+' (both a vertical stroke crossed by a horizontal one) at 0.84, the template
+        // rung declines, and the OCR ladder returns '3' at 0.86 - above the flag bar, so it lands as a
+        // CONFIDENT WRONG level and the checksum spreads it into a second field. Recording it here and
+        // capping at publish time makes that read always pulse "confirm me". Confidence only; no value
+        // is changed, so this cannot make any field wrong that was not already wrong.
+        if (hasLvPrefix && zoneBoxSeen && (!db || !db.isDigit)) _declinedSlots[nodeKind] = true;
         if (lvDet) (out._debug.lvDetail = out._debug.lvDetail || []).push(
           { line: { x: Math.round(lineX.x), y: Math.round(lineX.y), w: Math.round(lineX.w), h: Math.round(lineX.h) }, boxes: lvDet.join(" ") });
         // NARROW-FRAGMENT re-mask (the absorber shape): at the windowed tiers the
@@ -1866,6 +1881,14 @@
       if (vb1v === levels[vc] && (vb1 - vb2) >= 0.03) conf4[vc] = 0.82;
     }
 
+    // LOCAL PATCH (DECLINED DIGIT SLOT, part 2). A node's own confidence is only an INPUT to the joint
+    // solve, which can raise it again - the corroborator lifts to 0.82 and the enumeration to 0.9 - so
+    // capping inside the read was measurably not enough. Apply it here, after every rung has spoken.
+    var _declIdx = { N: 0, W: 1, E: 2, S: 3 };
+    Object.keys(_declinedSlots).forEach(function (k) {
+      var di = _declIdx[k];
+      if (di != null) conf4[di] = Math.min(conf4[di], 0.7);
+    });
     out.config.willpowerLevel = levels[0]; confidence.config.willpowerLevel = conf4[0];
     out.config.effect1Level = levels[1]; confidence.config.effect1Level = conf4[1];
     out.config.effect2Level = levels[2]; confidence.config.effect2Level = conf4[2];

@@ -44,10 +44,19 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).toMatch(/zb\.h >= cmedH2 \* 0\.5/);
   });
 
+  it('still refuses to trust a level whose digit slot the matcher declined', () => {
+    expect(SRC).toContain('LOCAL PATCH - DECLINED DIGIT SLOT');
+    expect(SRC).toMatch(/if \(hasLvPrefix && zoneBoxSeen && \(!db \|\| !db\.isDigit\)\) _declinedSlots\[nodeKind\] = true;/);
+    // capping inside the read is NOT enough - the joint solve raises confidence again, so the cap
+    // has to be applied where the confidences are published
+    expect(SRC).toMatch(/conf4\[di\] = Math\.min\(conf4\[di\], 0\.7\);/);
+  });
+
   it('documents the divergence in the file header', () => {
     const header = SRC.slice(0, 2000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
+    expect(header).toContain('DECLINED DIGIT SLOT');
   });
 });
