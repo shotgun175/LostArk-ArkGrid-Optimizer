@@ -9,7 +9,10 @@
  * 0.95; we abstain and let the points checksum solve the node. Measured on 17 Force-21:9 captures:
  * 89.59% -> 94.57% of scalar fields, with 21:9-off and upstream's own 67-sample corpus unchanged and
  * zero silent errors throughout. RE-APPLY IT AFTER ANY RE-SYNC (the test fails if you forget). Any
- * further local change needs the same treatment: measured on both corpora, marked, and guarded. Under Node the
+ * further local change needs the same treatment: measured on both corpora, marked, and guarded.
+ * Patch 2 ("FEASIBILITY ON THE OCR FALLBACK") rejects an OCR-sourced points total the committed level
+ * reads make arithmetically impossible: 94.57% -> 95.48% on 17 Force-21:9 captures, other corpora
+ * unchanged. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -1638,6 +1641,25 @@
       pts = extractPts(rawRead.text);
     }
     var ptsSoft = ptsT != null && ptsTSoft;   // dim anchored template read → capped authority
+    // LOCAL PATCH - FEASIBILITY ON THE OCR FALLBACK. The template rungs above constrain their digits
+    // by the committed level reads (every unread node contributes 1..5); the raw-OCR rescues do not.
+    // So a header whose narrow leading digit never segmented ("14" reaching OCR as "4") committed an
+    // arithmetically impossible total at FULL authority, and the joint solve then forced every free
+    // node to 1 - one bad number costing several fields. Only the OCR-sourced value is checked; the
+    // template rungs keep their own, tighter logic.
+    // The S hint is deliberately NOT folded into these bounds. It is a weak luminance guess - fine as
+    // evidence for picking among digit candidates (rung (b) uses it that way), but as a REJECTION
+    // bound a wrong hint can veto a correct total: with one unknown node it collapses the range to a
+    // single value, which threw away a correct pts=10 on a clean capture.
+    if (ptsT == null && pts != null) {
+      var kSumO = 0, nUnkO = 0;
+      for (var kO = 0; kO < 4; kO++) { if (lvFull[kO].value != null) kSumO += lvFull[kO].value; else nUnkO++; }
+      var loO = Math.max(4, kSumO + nUnkO), hiO = Math.min(20, kSumO + 5 * nUnkO);
+      if (pts < loO || pts > hiO) {
+        if (out._debug) out._debug.ptsRejected = pts + " outside [" + loO + "," + hiO + "]";
+        pts = null;
+      }
+    }
     if (pts == null) {
       // last resort on the (cleanest) masked text: digit + one word + "Points". This
       // accepted turn3's WRONG '5 re Points' once — hence it runs only after every

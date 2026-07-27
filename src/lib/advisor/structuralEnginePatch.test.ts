@@ -28,7 +28,17 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).toMatch(/b1 >= 0\.78 && \(b1 - b2\) >= 0\.05 && !sliverUnrescued/);
   });
 
+  it('still rejects an arithmetically impossible OCR-sourced points total', () => {
+    expect(SRC).toContain('LOCAL PATCH - FEASIBILITY ON THE OCR FALLBACK');
+    // guard the two things that make it correct: it applies ONLY to the OCR-sourced value, and the
+    // bounds come from committed reads alone (folding in the S hint vetoes correct totals)
+    expect(SRC).toMatch(/if \(ptsT == null && pts != null\) \{/);
+    expect(SRC).not.toMatch(/if \(sHint != null && nUnkO > 0\)/);
+  });
+
   it('documents the divergence in the file header', () => {
-    expect(SRC.slice(0, 1500)).toContain('LOCAL PATCH - SLIVER ABSTAIN');
+    const header = SRC.slice(0, 2000);
+    expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
+    expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
   });
 });
