@@ -52,11 +52,17 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).toMatch(/conf4\[di\] = Math\.min\(conf4\[di\], 0\.7\);/);
   });
 
+  it('still reads an unlabelled effect tile as an effect swap, not a +1 raise', () => {
+    expect(SRC).toContain('LOCAL PATCH - AN EFFECT TILE WITH NO AMOUNT AND NO ARROW');
+    expect(SRC).toMatch(/if \(!hadAmt && !dirUp && !dirDown && \(target === "effect1" \|\| target === "effect2"\)\)/);
+  });
+
   it('documents the divergence in the file header', () => {
     const header = SRC.slice(0, 2000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
     expect(header).toContain('DECLINED DIGIT SLOT');
+    expect(header).toContain('EFFECT TILE');
   });
 });

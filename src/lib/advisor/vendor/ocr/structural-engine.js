@@ -17,7 +17,10 @@
  * other corpora unchanged (upstream's cost fields stay 100%). Patch 4 ("DECLINED DIGIT SLOT")
  * caps a level whose digit box the matcher refused to call a digit, so a guessed level always flags:
  * clears all 4 confidently-wrong levels across our 47 labelled captures with NO value changed on any
- * of seven corpora, at a cost of ~0.3 extra confirm-me prompts per capture. Under Node the
+ * of seven corpora, at a cost of ~0.3 extra confirm-me prompts per capture. Patch 5 ("EFFECT TILE
+ * WITH NO AMOUNT AND NO ARROW") reads an unlabelled effect tile as the effect-swap it structurally is
+ * rather than defaulting it to a +1 raise: outcomes 45/48 -> 48/48 and 21/24 -> 24/24 on two of our
+ * cuts, and upstream IMPROVES too (97.39% -> 98.51%, whole-parse 58 -> 61/67). Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -2344,12 +2347,23 @@
           if (wUp.frac > 0.006 && wUp.count >= 8) { dirUp = true; dirDown = false; }
           else { dirDown = true; dirUp = false; oconf -= 0.25; }
         }
+        // LOCAL PATCH - AN EFFECT TILE WITH NO AMOUNT AND NO ARROW IS "EFFECT CHANGED". Every raise
+        // or lower tile carries an amount line AND a direction arrow; the effect-swap tile carries
+        // neither, just the effect name over two lines. Upstream recognises the swap only by finding
+        // "chang" in the caption OCR, so when that word is mangled the tile falls through to here and
+        // is emitted as a raise with a DEFAULTED +1 - inventing an upgrade that is not on offer.
+        // Absence of both signals is the structural tell; use it instead of defaulting.
+        if (!hadAmt && !dirUp && !dirDown && (target === "effect1" || target === "effect2")) {
+          o = { type: "change_side_option", target: target };
+          oconf += 0.45;   // structural inference, not a read - stays checkable
+        } else {
         var type = dirDown && !dirUp ? "lower_effect" : "raise_effect";
         o = { type: type, target: target, amount: amt };
         oconf += (hadAmt ? 0.55 : 0.25) + (strongDir ? 0.3 : (dirUp || dirDown) ? 0.15 : 0.05);
         // a synth-sourced amount NEVER reaches the unflagged zone — the rescue is
         // user/verifier-checkable, not silently authoritative (silent-error class)
         if (amtFromSynth) oconf = Math.min(oconf, 0.78);
+        }
         // SAFETY: on order/points/willpower the direction arrow renders in the icon's
         // OWN hue family (a red raise ▲ on the gold order icon), so the color test is
         // unreliable there — a wrong direction must never be CONFIDENT. Require a clear
