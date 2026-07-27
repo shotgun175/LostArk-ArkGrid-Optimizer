@@ -52,6 +52,12 @@ export interface EditedAdvisorState {
     currentTurn: number;
     maxTurns: number;
     rerollsShownFree?: number;
+    /**
+     * All rerolls gone, including the paid one (the dimmed grey "Charge" button). Needed because
+     * `rerollsShownFree` cannot express it: the snap reads 0 free as "0 free + 1 paid" = 1 in model
+     * units, so a spent gem round-tripped through `rerollsShownFree` grows a phantom reroll.
+     */
+    rerollsChargeSpent?: boolean;
     resetsRemaining?: number;
     processCostMultiplier: number;
     rosterBound?: boolean;
@@ -458,4 +464,30 @@ export class AdvisorController {
       return null;
     }
   }
+}
+
+/**
+ * Convert a parse into the edit shape, so a later market-input change can re-advise the same gem.
+ *
+ * The reroll conversion is the subtle part. `rerollsRemaining` is in MODEL units (free rerolls plus
+ * the one paid "Charge" reroll), so the inverse is `model - 1`. Zero is the one value that cannot go
+ * back through `rerollsShownFree`, because the snap reads 0 free as "0 free + 1 paid" = 1. A fully
+ * spent gem (dimmed grey Charge) must therefore say `rerollsChargeSpent` explicitly, or it grows a
+ * phantom reroll on every re-advise and the DP offers a Reroll that the game will not allow.
+ */
+export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
+  const model = p.state.rerollsRemaining ?? 0;
+  return {
+    config: { ...p.config },
+    state: {
+      currentTurn: p.state.currentTurn,
+      maxTurns: p.state.maxTurns,
+      ...(model <= 0 ? { rerollsChargeSpent: true } : { rerollsShownFree: model - 1 }),
+      resetsRemaining: p.state.resetsRemaining,
+      processCostMultiplier: p.state.processCostMultiplier ?? 0,
+      rosterBound: p.state.rosterBound ?? false,
+    },
+    outcomes: p.outcomes.map((o) => ({ ...o })),
+    rarity: p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
+  };
 }

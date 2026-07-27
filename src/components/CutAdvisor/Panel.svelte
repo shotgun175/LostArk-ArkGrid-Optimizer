@@ -6,6 +6,7 @@
     type AdvisorResult,
     type EditedAdvisorState,
     type ParsedAdvisorState,
+    parsedToEdited,
   } from '../../lib/advisor/advisorController';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
@@ -89,23 +90,6 @@
     outcomes: DEFAULT_PARSED.outcomes,
     rarity: 'epic',
   };
-  // Convert a parse into the edit shape so a later market-input change can re-advise the same gem.
-  function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
-    return {
-      config: { ...p.config },
-      state: {
-        currentTurn: p.state.currentTurn,
-        maxTurns: p.state.maxTurns,
-        rerollsShownFree: Math.max(0, (p.state.rerollsRemaining ?? 0) - 1),
-        resetsRemaining: p.state.resetsRemaining,
-        processCostMultiplier: p.state.processCostMultiplier ?? 0,
-        rosterBound: p.state.rosterBound ?? false,
-      },
-      outcomes: p.outcomes.map((o) => ({ ...o })),
-      rarity: p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
-    };
-  }
-
   let parsing = $state(false);
   // `result.parsed` seeds the window ONCE per fresh parse (upload / live frame / default). Manual
   // edits never touch it, the window renders from its own local state, so the visual stays instant.
@@ -130,12 +114,14 @@
     if (watching) controller?.updateInputs(inputs);
   });
 
-  // First time the user hovers / focuses / touches the advisor: create the worker and rank the gem
-  // that's on screen, so the recommendation isn't blank once they engage (but stays lazy until then).
+  // First time the user hovers / focuses / touches the advisor: build the worker so the first real
+  // read isn't paying for a cold start. Deliberately does NOT rank anything — the gem on screen is
+  // still the placeholder, and advising it presents invented numbers as if they were the user's cut.
+  // Advice starts only once there's a real gem: a parse (screen share / upload) or a manual edit.
   let engaged = false;
   function engage() {
     if (engaged || !sectionUI.showAdvisor) return;
-    void onManualEdit(lastEdited); // onManualEdit flips `engaged`
+    getController().warmup();
   }
   // Re-rank when a market input (role / gold bracket / baseline) changes. The effect only DETECTS the
   // change by reading `inputs`; the async worker call is deferred to a debounced macrotask so the
@@ -216,7 +202,7 @@
   // advice, the window already repainted from its own local state, so we never touch `result.parsed`
   // (that would reseed the window and stomp the edit). The DP is ~0.5-2s; the visual doesn't wait on it.
   async function onManualEdit(edited: EditedAdvisorState, adviceInputs: AdviceInputs = inputs) {
-    engaged = true; // any advise (edit / hover / market change) counts as engaging the advisor
+    engaged = true; // an edit (or a market change on an already-read gem) counts as engaging
     lastEdited = edited;
     advisePending++;
     try {
