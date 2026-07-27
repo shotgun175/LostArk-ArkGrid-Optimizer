@@ -6,6 +6,7 @@
     type AdvisorResult,
     type EditedAdvisorState,
     type ParsedAdvisorState,
+    countUnconfirmed,
     parsedToEdited,
   } from '../../lib/advisor/advisorController';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
@@ -226,6 +227,9 @@
   let actionByName = $derived(
     Object.fromEntries((liveAdvice?.allActions ?? []).map((a) => [a.name, a]))
   );
+  // Fields the reader was not sure about. Ranking actions off them without saying so presents a guess
+  // as a finding — the misread that produced a wrong recommendation was flagged on screen at the time.
+  let unconfirmed = $derived(countUnconfirmed(result?.parsed));
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
@@ -300,8 +304,15 @@
                 <div class="rec-progress"><div class="rec-progress-bar"></div></div>
               </div>
             {/if}
+            {#if hasAdvice && unconfirmed > 0}
+              <div class="rec-unconfirmed" role="status">
+                Based on {unconfirmed} value{unconfirmed > 1 ? 's' : ''} the reader wasn't sure of.
+                Check the highlighted field{unconfirmed > 1 ? 's' : ''} on the gem first — correcting
+                one can change which action wins.
+              </div>
+            {/if}
             {#if hasAdvice}
-              <div class="rec-cards" class:stale={computing}>
+              <div class="rec-cards" class:stale={computing} class:unconfirmed={unconfirmed > 0}>
                 {#each ACTION_ORDER as name (name)}
                   {@const a = actionByName[name]}
                   {@const isBest = name.toLowerCase() === liveAdvice?.bestAction}
@@ -685,6 +696,21 @@
     margin-top: 0.2rem;
     font-size: 0.78rem;
     opacity: 0.7;
+  }
+  .rec-unconfirmed {
+    margin: 0 0 8px;
+    padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--warn, #d9a441) 55%, transparent);
+    border-left-width: 3px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--warn, #d9a441) 12%, transparent);
+    color: var(--text);
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+  /* the ranking is still shown, just not presented as settled while inputs are unconfirmed */
+  .rec-cards.unconfirmed {
+    opacity: 0.92;
   }
   .rec-empty {
     font-size: 0.85rem;

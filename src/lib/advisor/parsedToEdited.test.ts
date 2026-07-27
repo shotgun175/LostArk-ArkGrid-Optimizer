@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type ParsedAdvisorState, parsedToEdited } from './advisorController';
+import { countUnconfirmed, type ParsedAdvisorState, parsedToEdited } from './advisorController';
 
 /**
  * `rerollsRemaining` is in MODEL units: the free rerolls the game shows PLUS the one paid "Charge"
@@ -57,5 +57,32 @@ describe('parsedToEdited reroll conversion', () => {
     expect(parsedToEdited({ ...p, state: { ...p.state, maxTurns: 7 } }).rarity).toBe('rare');
     expect(parsedToEdited({ ...p, state: { ...p.state, maxTurns: 9 } }).rarity).toBe('epic');
     expect(parsedToEdited({ ...p, rarity: 'epic' }).rarity).toBe('epic');
+  });
+});
+
+describe('countUnconfirmed', () => {
+  const withConf = (confidence: unknown): ParsedAdvisorState =>
+    ({ ...parsed(2), confidence }) as ParsedAdvisorState;
+
+  it('counts config fields and outcomes below the flag bar', () => {
+    expect(
+      countUnconfirmed(
+        withConf({ config: { willpowerLevel: 0.54, effect1Level: 0.9 }, outcomes: [0.4, 0.95, null] })
+      )
+    ).toBe(2); // one config field + one outcome
+  });
+
+  it('treats a missing confidence block as nothing to confirm', () => {
+    expect(countUnconfirmed(withConf(undefined))).toBe(0);
+    expect(countUnconfirmed(undefined)).toBe(0);
+  });
+
+  it('does not count a field sitting exactly on the bar', () => {
+    expect(countUnconfirmed(withConf({ config: { willpowerLevel: 0.8 }, outcomes: [] }))).toBe(0);
+  });
+
+  it('ignores state fields, which the window does not highlight', () => {
+    // counting them would print a number that disagrees with the highlighted fields on screen
+    expect(countUnconfirmed(withConf({ config: {}, state: { currentTurn: 0.1 }, outcomes: [] }))).toBe(0);
   });
 });

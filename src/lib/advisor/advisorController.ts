@@ -491,3 +491,23 @@ export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
     rarity: p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
   };
 }
+
+/**
+ * How many parsed fields the reader was not confident about (confidence below 0.8 — the same bar the
+ * Processing window uses to glow a field amber).
+ *
+ * These are the fields the user is being asked to confirm, so ranking actions off them without
+ * saying so presents a guess as a finding. Counts config fields and outcomes, matching what the
+ * window actually highlights; state fields are excluded because they are not highlighted there and a
+ * mismatched count would just look like a bug.
+ */
+export function countUnconfirmed(parsed: ParsedAdvisorState | undefined): number {
+  const cf = parsed?.confidence as
+    | { config?: Record<string, number>; outcomes?: (number | null)[] }
+    | undefined;
+  if (!cf) return 0;
+  let n = 0;
+  for (const v of Object.values(cf.config ?? {})) if ((v ?? 1) < 0.8) n++;
+  for (const v of cf.outcomes ?? []) if (v != null && v < 0.8) n++;
+  return n;
+}
