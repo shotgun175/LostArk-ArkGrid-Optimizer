@@ -230,6 +230,14 @@
   // Fields the reader was not sure about. Ranking actions off them without saying so presents a guess
   // as a finding — the misread that produced a wrong recommendation was flagged on screen at the time.
   let unconfirmed = $derived(countUnconfirmed(result?.parsed));
+  // Below this the Processing window is small enough that glyph reads measurably degrade (~95.5% of
+  // fields vs ~97.7%). The usual cause is the game's Force 21:9 setting, which letterboxes the UI.
+  const READABLE_PANEL_PX = 800;
+  let smallPanel = $derived(
+    result?.parsed?.panelWidth != null && result.parsed.panelWidth < READABLE_PANEL_PX
+      ? result.parsed.panelWidth
+      : null
+  );
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
@@ -377,6 +385,13 @@
               {/if}
               <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onPick} />
             </div>
+            {#if smallPanel}
+              <div class="small-panel-note">
+                The Processing window is only {smallPanel}px wide in this capture, which makes the
+                small level digits harder to read. If your game has <strong>Force 21:9 Aspect Ratio</strong>
+                turned on, switching it off makes the window noticeably bigger and reads more accurate.
+              </div>
+            {/if}
             {#if watching}
               <div class="watch-status">
                 {frameMsg || "Watching… the window on the left confirms what's being read."}
@@ -696,6 +711,18 @@
     margin-top: 0.2rem;
     font-size: 0.78rem;
     opacity: 0.7;
+  }
+  .small-panel-note {
+    margin: 8px 0 0;
+    padding: 7px 9px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent, #6aa9e9) 10%, transparent);
+    color: var(--muted, #9aa7b8);
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .small-panel-note strong {
+    color: var(--text);
   }
   .rec-unconfirmed {
     margin: 0 0 8px;

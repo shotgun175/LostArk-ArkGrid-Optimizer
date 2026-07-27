@@ -70,6 +70,7 @@ interface DpAdvice {
 const g = self as unknown as {
   OcrStructuralEngine?: { parseStructural: (r: Raster, f: unknown) => Promise<ParsedState> };
   OcrEngineAPI?: { constraintSnap: (raw: ParsedState) => ParsedState };
+  OcrLayout?: { panelOrWhole: (r: Raster) => { rect?: { w?: number } } | null };
   AstrogemDP?: {
     evaluateActionsDP: (
       state: unknown,
@@ -169,6 +170,28 @@ function adviseFrom(
   return evaluate(dpState, baseline, gpd, 1, null, { axis: isSupport ? 'support' : 'dps' });
 }
 
+/**
+ * Carry the Processing window's on-screen width out with the parse.
+ *
+ * How many pixels that window occupies is the single best predictor of how well it reads: measured on
+ * one machine, the same client scores 97.7% of fields with a ~925px panel and 95.5% with a ~677px one,
+ * because the game's Force 21:9 setting letterboxes the UI and shrinks every glyph with it. Surfacing
+ * the number lets the UI say so instead of the user discovering it the hard way.
+ *
+ * Measured by locating the panel on the ORIGINAL raster. The parser's own debug channel is not usable
+ * for this: it stores the rect AFTER a wheel-fit and scale normalisation, so the same 677px window
+ * comes back as ~1354 there. Best-effort — wrapped so a shape change upstream costs the note, not the
+ * parse.
+ */
+function attachPanelSize(raster: Raster, snapped: Record<string, unknown>) {
+  try {
+    const w = g.OcrLayout?.panelOrWhole(raster)?.rect?.w;
+    if (typeof w === 'number' && w > 0) snapped.panelWidth = Math.round(w);
+  } catch {
+    // diagnostic only; never fail a parse over it
+  }
+}
+
 // Grey-Charge rescue (pixel channel): the vendored parser reads the gold "Charge" button but misses the
 // dim all-spent grey one, then constraintSnap defaults the unread reroll count to FULL. Step in ONLY
 // when the parser failed to read the reroll (no pill, no bright Charge) AND we're past turn 1 (a fresh
@@ -202,6 +225,7 @@ self.onmessage = async (ev: MessageEvent) => {
       const raw = await parseStructural(raster, ocrFn);
       const snapped = constraintSnap(raw) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
       applyGreyChargeRescue(raster, raw as Record<string, unknown>, snapped.state);
+      attachPanelSize(raster, snapped as Record<string, unknown>);
       const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
       self.postMessage({ type: 'parse:done', id: msg.id, result: snapped, advice });
     } catch (e) {
