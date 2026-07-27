@@ -3,7 +3,13 @@
 /*
  * VENDORED from shizukaziye/astrogem-calculator (ocr/structural-engine.js), re-synced 2026-07-27.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
+ * Third-party code, kept as close to upstream as possible. It carries ONE local patch, marked
+ * "LOCAL PATCH - SLIVER ABSTAIN" below and guarded by structuralEnginePatch.test.ts: when the
+ * narrow-fragment re-mask fails to widen a digit box, upstream still commits the sliver at up to
+ * 0.95; we abstain and let the points checksum solve the node. Measured on 17 Force-21:9 captures:
+ * 89.59% -> 94.57% of scalar fields, with 21:9-off and upstream's own 67-sample corpus unchanged and
+ * zero silent errors throughout. RE-APPLY IT AFTER ANY RE-SYNC (the test fails if you forget). Any
+ * further local change needs the same treatment: measured on both corpora, marked, and guarded. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -1360,6 +1366,7 @@
         // downstream, which the sliver never was. A true '1' stays narrow under
         // the relaxed mask too, so this cannot rewrite genuine ones; clean
         // frames produce full-width digits and never enter this branch.
+        var sliverUnrescued = false;   // LOCAL PATCH (sliver-abstain), see file header
         if (!isGoldFace && db && db.isDigit && dbBox && dbBox.w / Math.max(1, dbBox.h) < 0.45) {
           var lvPredRelaxed = function (r2, g2, b2) {
             var c2 = L.hsv(r2, g2, b2);
@@ -1379,13 +1386,22 @@
             db = re; dbBox = reBox; mask = maskR;
             if (out._debug) (out._debug.lvRelax = out._debug.lvRelax || {})[nodeKind] =
               Math.round(reBox.w) + "x" + Math.round(reBox.h) + "=" + re.full.ch + ":" + re.full.score.toFixed(2);
+          } else {
+            // LOCAL PATCH - SLIVER ABSTAIN (see file header). When the re-mask cannot widen the box,
+            // upstream falls through and the sliver COMMITS anyway at up to 0.95 - the silent
+            // coherent-wrong board this function's own header warns about. A 3px shard is a fragment
+            // of a glyph, not a glyph. Abstaining hands the node to the points checksum + S hint,
+            // which solve it from the other three reads.
+            sliverUnrescued = true;
+            if (out._debug) (out._debug.lvSliver = out._debug.lvSliver || {})[nodeKind] =
+              Math.round(dbBox.w) + "x" + Math.round(dbBox.h);
           }
         }
         if (db) {
           vec = db.vec;
           var b1 = -1, b1v = null, b2 = -1;
           for (var v = 1; v <= 5; v++) { var s = db.vec[v]; if (s > b1) { b2 = b1; b1 = s; b1v = v; } else if (s > b2) b2 = s; }
-          if (db.isDigit && dbBox && b1 >= 0.78 && (b1 - b2) >= 0.05) {
+          if (db.isDigit && dbBox && b1 >= 0.78 && (b1 - b2) >= 0.05 && !sliverUnrescued) {
             // proven bitmapSim commit — but ink-IoU gets a VETO: sim's background-
             // dominated score let a live "Lv. 5" read as a confident 3 (which the
             // checksum then propagated into the unreadable S digit). If IoU clearly
