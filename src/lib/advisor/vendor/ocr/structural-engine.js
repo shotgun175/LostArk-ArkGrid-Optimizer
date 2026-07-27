@@ -12,7 +12,9 @@
  * further local change needs the same treatment: measured on both corpora, marked, and guarded.
  * Patch 2 ("FEASIBILITY ON THE OCR FALLBACK") rejects an OCR-sourced points total the committed level
  * reads make arithmetically impossible: 94.57% -> 95.48% on 17 Force-21:9 captures, other corpora
- * unchanged. Under Node the
+ * unchanged. Patch 3 ("ZERO COST") lets the structural gates carry a free-process cost read when
+ * the digit match is inconclusive: 91.45% -> 98.29% on a 9-capture cut containing four -100% frames,
+ * other corpora unchanged (upstream's cost fields stay 100%). Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -562,9 +564,20 @@
             var zb = run2[0].box;
             var zd = iouDigit(tgC2.mask, zb);
             if (out._debug) out._debug.costZero = zd ? zd.ch + ":" + zd.score.toFixed(2) : "null";
-            if (zd && zd.ch === "0" && zd.score >= 0.7 &&
-                zb.h >= cmedH2 * 0.6 && zb.w >= zb.h * 0.45 && zb.w <= zb.h * 1.15) {
-              cval = 0; costConf = 0.85;
+            // LOCAL PATCH - ZERO COST: STRUCTURE WINS WHEN THE DIGIT MATCH IS INCONCLUSIVE. The
+            // gates around this branch are already the real evidence - a lone glyph right-aligned
+            // after a wide gap, sized like a single digit, and 0 is the only one-digit cost.
+            // Demanding a CONFIDENT '0' on top of that vetoed four captures whose zero is crisp to
+            // the eye: this glyph is a thin narrow oval that the mask catches as a ~5px fragment and
+            // the averaged atlas scores at 0.17. A confident NON-zero match still vetoes (the
+            // mask-eaten-"900" guard the original comment describes), but an inconclusive one no
+            // longer beats the structure, and the height floor allows the fragment. Reading 900 for
+            // a free process makes the DP undervalue processing, so abstaining is not the safe default.
+            var zOk = zd && zd.ch === "0" && zd.score >= 0.7;
+            var zInconclusive = !zd || zd.score < 0.5;
+            if ((zOk || zInconclusive) &&
+                zb.h >= cmedH2 * 0.5 && zb.w >= zb.h * 0.45 && zb.w <= zb.h * 1.15) {
+              cval = 0; costConf = zOk ? 0.85 : 0.6;   // structure-only reads stay checkable
             }
           }
         }

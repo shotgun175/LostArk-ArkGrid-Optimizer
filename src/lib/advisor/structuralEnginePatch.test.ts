@@ -36,9 +36,18 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).not.toMatch(/if \(sHint != null && nUnkO > 0\)/);
   });
 
+  it('still reads a zero processing cost from structure alone', () => {
+    expect(SRC).toContain('LOCAL PATCH - ZERO COST');
+    // a confident non-zero match must still veto; only an inconclusive one defers to structure
+    expect(SRC).toMatch(/var zInconclusive = !zd \|\| zd\.score < 0\.5;/);
+    // the height floor has to admit the mask fragment this glyph produces
+    expect(SRC).toMatch(/zb\.h >= cmedH2 \* 0\.5/);
+  });
+
   it('documents the divergence in the file header', () => {
     const header = SRC.slice(0, 2000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
+    expect(header).toContain('ZERO COST');
   });
 });
