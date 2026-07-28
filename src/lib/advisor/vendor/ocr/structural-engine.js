@@ -1,12 +1,28 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (ocr/structural-engine.js), re-synced 2026-07-20.
+ * VENDORED from shizukaziye/astrogem-calculator (ocr/structural-engine.js), re-synced 2026-07-27.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
+ * Third-party code, kept as close to upstream as possible. It carries ONE local patch, marked
+ * "LOCAL PATCH - SLIVER ABSTAIN" below and guarded by structuralEnginePatch.test.ts: when the
+ * narrow-fragment re-mask fails to widen a digit box, upstream still commits the sliver at up to
+ * 0.95; we abstain and let the points checksum solve the node. Measured on 17 Force-21:9 captures:
+ * 89.59% -> 94.57% of scalar fields, with 21:9-off and upstream's own 67-sample corpus unchanged and
+ * zero silent errors throughout. RE-APPLY IT AFTER ANY RE-SYNC (the test fails if you forget). Any
+ * further local change needs the same treatment: measured on both corpora, marked, and guarded.
+ * Patch 2 ("FEASIBILITY ON THE OCR FALLBACK") rejects an OCR-sourced points total the committed level
+ * reads make arithmetically impossible: 94.57% -> 95.48% on 17 Force-21:9 captures, other corpora
+ * unchanged. Patch 3 ("ZERO COST") lets the structural gates carry a free-process cost read when
+ * the digit match is inconclusive: 91.45% -> 98.29% on a 9-capture cut containing four -100% frames,
+ * other corpora unchanged (upstream's cost fields stay 100%). Patch 4 ("DECLINED DIGIT SLOT")
+ * caps a level whose digit box the matcher refused to call a digit, so a guessed level always flags:
+ * clears all 4 confidently-wrong levels across our 47 labelled captures with NO value changed on any
+ * of seven corpora, at a cost of ~0.3 extra confirm-me prompts per capture. Patch 5 ("EFFECT TILE
+ * WITH NO AMOUNT AND NO ARROW") reads an unlabelled effect tile as the effect-swap it structurally is
+ * rather than defaulting it to a +1 raise: outcomes 45/48 -> 48/48 and 21/24 -> 24/24 on two of our
+ * cuts, and upstream IMPROVES too (97.39% -> 98.51%, whole-parse 58 -> 61/67). Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
- */
 /**
  * ocr/structural-engine.js — the FREE-tier screenshot parser ("structural").
  *
@@ -317,6 +333,15 @@
     // Best confidently-matched GOLD digit (g1..g5) in a line. BEST-of, not last-of:
     // a gold frame sliver trailing the line segments as its own box and matches "4"
     // (diagonals do) — the true digit outscores it.
+    // Fraction of mask ON-pixels inside a glyph box (chromaMask: 0 = text pixel).
+    function maskFill(mask, box) {
+      if (!mask || !box || !box.w || !box.h) return 0;
+      var on = 0;
+      for (var yy = box.y; yy < box.y + box.h; yy++)
+        for (var xx = box.x; xx < box.x + box.w; xx++)
+          if (mask.data[(yy * mask.width + xx) * 4] === 0) on++;
+      return on / (box.w * box.h);
+    }
     function lastGoldDigit(rect, pred, maxVal) {
       var tl = templateGlyphs(rect, pred);
       if (!tl) return null;
@@ -326,6 +351,13 @@
         if (t.ch && /^[1-5]$/.test(t.ch) && t.score >= 0.78 && t.margin >= 0.03) {
           var v = parseInt(t.ch, 10);
           if (maxVal && v > maxVal) continue;
+          // SOLIDITY VETO (2026-07-21, level4.webp): at collect-crop blur the
+          // ▲/▼ bleeds into the amount mask (arrow hue 75-145 overlaps
+          // chartreuse 55-95) and a solid triangle template-matches '4'.
+          // Digits are STROKES (fill ≲0.40 of their own wide box); a solid
+          // wide blob is an arrow, whatever glyph it matched. Narrow '1'
+          // boxes are exempt — a bar legitimately fills its shrink-wrapped box.
+          if (t.box.w >= t.box.h * 0.55 && maskFill(tl.mask, t.box) > 0.45) continue;
           if (!best || t.score >= best.score) best = { score: t.score, margin: t.margin, v: v };
         }
       }
@@ -538,9 +570,20 @@
             var zb = run2[0].box;
             var zd = iouDigit(tgC2.mask, zb);
             if (out._debug) out._debug.costZero = zd ? zd.ch + ":" + zd.score.toFixed(2) : "null";
-            if (zd && zd.ch === "0" && zd.score >= 0.7 &&
-                zb.h >= cmedH2 * 0.6 && zb.w >= zb.h * 0.45 && zb.w <= zb.h * 1.15) {
-              cval = 0; costConf = 0.85;
+            // LOCAL PATCH - ZERO COST: STRUCTURE WINS WHEN THE DIGIT MATCH IS INCONCLUSIVE. The
+            // gates around this branch are already the real evidence - a lone glyph right-aligned
+            // after a wide gap, sized like a single digit, and 0 is the only one-digit cost.
+            // Demanding a CONFIDENT '0' on top of that vetoed four captures whose zero is crisp to
+            // the eye: this glyph is a thin narrow oval that the mask catches as a ~5px fragment and
+            // the averaged atlas scores at 0.17. A confident NON-zero match still vetoes (the
+            // mask-eaten-"900" guard the original comment describes), but an inconclusive one no
+            // longer beats the structure, and the height floor allows the fragment. Reading 900 for
+            // a free process makes the DP undervalue processing, so abstaining is not the safe default.
+            var zOk = zd && zd.ch === "0" && zd.score >= 0.7;
+            var zInconclusive = !zd || zd.score < 0.5;
+            if ((zOk || zInconclusive) &&
+                zb.h >= cmedH2 * 0.5 && zb.w >= zb.h * 0.45 && zb.w <= zb.h * 1.15) {
+              cval = 0; costConf = zOk ? 0.85 : 0.6;   // structure-only reads stay checkable
             }
           }
         }
@@ -1037,6 +1080,88 @@
       return { value: ra[0].v, conf: 0.55, gm: gm };
     }
 
+    // ANALYSIS-BY-SYNTHESIS for outcome AMOUNT digits (2026-07-21, Shizu's
+    // replicated "green diamond Lv.4" report): the collect-tier crop blurs the
+    // chartreuse "Lv. N ▲"/"+N ▲" line past the template+OCR ladder — the same
+    // degradation class the wheel levels hit (v75), same cure. The amount lines
+    // use the SAME glyph art as the W/E "Lv. N" node lines, so their ref patches
+    // transfer: pool W+E exemplars per class (1-4 — the legal amount range),
+    // scan the line's right half (the digit sits just left of the arrow), and
+    // commit ONLY on raw+gradient ranking agreement with margin. Greyscale
+    // patches make it color-blind — chartreuse raises and red lowers both read.
+    function synthAmountDigit(amtLine) {
+      var tv = _synthVariants();
+      if (!tv) return null;
+      var pool = {}, kk, cls;
+      for (kk = 0; kk < 2; kk++) {
+        var t = tv[kk === 0 ? "W" : "E"] || {};
+        for (cls in t) {
+          var v = parseInt(cls, 10);
+          if (!(v >= 1 && v <= 4)) continue;
+          (pool[cls] = pool[cls] || []).push.apply(pool[cls], t[cls]);
+        }
+      }
+      if (!Object.keys(pool).length) return null;
+      var cy = amtLine.y + amtLine.h / 2;
+      // Stop the scan LEFT of a visible ▲/▼ — arrow patches poison the class
+      // argmax (mJLklhw: a clean '4' ranked '2' when the scan covered the arrow).
+      // The located line INCLUDES the arrow on some tiers and EXCLUDES it on
+      // others (level4 vs mJLklhw — assumed geometry burned once already), so
+      // the clip anchors on the arrow's MEASURED centroid, not the line end.
+      var endBox = { x: amtLine.x + amtLine.w - gap * 0.18, y: amtLine.y - amtLine.h * 0.5, w: gap * 0.30, h: amtLine.h * 2 };
+      var endCrop = L.crop(raster, endBox);
+      var eUp = L.colorClusterStats(endCrop, function (r2, g2, b2) { var c2 = L.hsv(r2, g2, b2); return c2.h >= 75 && c2.h < 145 && c2.s > 0.35 && c2.v > 0.45; });
+      var eDn = L.colorClusterStats(endCrop, function (r2, g2, b2) { var c2 = L.hsv(r2, g2, b2); return (c2.h < 20 || c2.h >= 345) && c2.s > 0.45 && c2.v > 0.4; });
+      var arrow = (eUp.count >= 8 && eUp.density > 0.25) ? eUp : (eDn.count >= 8 && eDn.density > 0.25) ? eDn : null;
+      var x1 = amtLine.x + amtLine.w - gap * 0.05;
+      if (arrow) x1 = Math.min(x1, endBox.x + arrow.cx - gap * 0.09);
+      var x0 = Math.max(amtLine.x, x1 - gap * 0.24);
+      var perRaw = {}, perGrad = {}, i;
+      for (var cxs = x0; cxs <= x1; cxs += gap * 0.0075) {
+        for (var dy = -0.03; dy <= 0.0301; dy += 0.0075) {
+          var op = _synthPatch(cxs, cy + dy * gap);
+          var oraw = _synthZnorm(op), ograd = _synthGrad(op);
+          for (cls in pool) {
+            var arr = pool[cls];
+            for (i = 0; i < arr.length; i++) {
+              var sr = _synthCos(oraw, arr[i].raw);
+              if (!(cls in perRaw) || sr > perRaw[cls]) perRaw[cls] = sr;
+              var sg = _synthCos(ograd, arr[i].grad);
+              if (!(cls in perGrad) || sg > perGrad[cls]) perGrad[cls] = sg;
+            }
+          }
+        }
+      }
+      function rankAm(per) {
+        return Object.keys(per).map(function (v2) { return { v: parseInt(v2, 10), s: per[v2] }; })
+          .sort(function (a, b) { return b.s - a.s; });
+      }
+      var ra = rankAm(perRaw), rg = rankAm(perGrad);
+      if (!ra.length || !rg.length) return null;
+      var gm = rg.length > 1 ? rg[0].s - rg[1].s : 1;
+      if (out._debug) (out._debug.amtSynthDet = out._debug.amtSynthDet || []).push({
+        line: { x: Math.round(amtLine.x), y: Math.round(amtLine.y), w: Math.round(amtLine.w), h: Math.round(amtLine.h) },
+        arrowCx: arrow ? Math.round(endBox.x + arrow.cx) : null,
+        span: [Math.round(x0), Math.round(x1)],
+        raw: ra.slice(0, 2).map(function (r3) { return r3.v + "@" + r3.s.toFixed(3); }).join(" "),
+        grad: rg.slice(0, 2).map(function (r3) { return r3.v + "@" + r3.s.toFixed(3); }).join(" "),
+        gm: Math.round(gm * 1000) / 1000
+      });
+      // Always report the gradient-top (the transferable channel) even on refusal —
+      // the bare-digit rung accepts a weak OCR digit only when it AGREES with it.
+      var res = { value: null, gm: gm, gradOnly: false, gradTop: rg[0].v, agree: ra[0].v === rg[0].v };
+      if (ra[0].v !== rg[0].v) {
+        // The refs are node-harvested; over an OUTCOME CELL's background the raw
+        // channel votes low-frequency background, not glyph (level4: raw said '1'
+        // while grad said the true '2' at gm 0.12). Gradient is the transferable
+        // channel — commit on grad ALONE only at a 3× margin (asymmetric trust).
+        if (gm >= 0.03) { res.value = rg[0].v; res.gradOnly = true; }
+        return res;
+      }
+      if (gm >= 0.01) res.value = ra[0].v;
+      return res;
+    }
+
     // ---- name-band synthesis (same method, 6-class, wide patches) ----
     var NPW = 48, NPH = 16;
     function _nZnorm(p2) {
@@ -1167,6 +1292,7 @@
     // erode to a 5px sliver that classified as '1' @0.91 while the true '2' eroded
     // into a '/', so the L committed at 0.95 and the checksum pushed the error into
     // the free S node: a SILENT coherent-wrong board. Structure beats scores here.
+    var _declinedSlots = {};   // LOCAL PATCH (DECLINED DIGIT SLOT), see file header
     async function readLevelFull(p, isGoldFace, hasLvPrefix, nodeKind) {
       var box = { x: p.x - gap * 0.5, y: p.y - gap * 0.35, w: gap * 1.0, h: gap * 0.72 };
       var pred = L.isGoldText;
@@ -1243,13 +1369,24 @@
         // rightmost in-zone box still donates its score vector to the solver.
         // Bare-digit nodes (N/S) have no prefix to fake digits, keep the plain
         // last-digit-classified rule.
+        var zoneBoxSeen = false;
         for (var i = 0; i < boxes.length; i++) {
           var bx = boxes[i];
           if (hasLvPrefix && (bx.x + bx.w / 2) <= mask.width * 0.55) continue;
+          zoneBoxSeen = true;
           var sv = digitScoreVec(mask, bx);
           if (sv.isDigit) { db = sv; dbBox = bx; }
           else if (hasLvPrefix && !db) db = { vec: sv.vec, top: sv.top, isDigit: false };   // vec-only candidate
         }
+        // LOCAL PATCH - DECLINED DIGIT SLOT IS NEVER AUTHORITATIVE. On a "Lv. N" line the last in-zone
+        // box IS the digit by construction, so if the glyph matcher will not call it a digit at all,
+        // structure and scores DISAGREE and everything downstream is a guess. Measured case: a '4'
+        // scores as '+' (both a vertical stroke crossed by a horizontal one) at 0.84, the template
+        // rung declines, and the OCR ladder returns '3' at 0.86 - above the flag bar, so it lands as a
+        // CONFIDENT WRONG level and the checksum spreads it into a second field. Recording it here and
+        // capping at publish time makes that read always pulse "confirm me". Confidence only; no value
+        // is changed, so this cannot make any field wrong that was not already wrong.
+        if (hasLvPrefix && zoneBoxSeen && (!db || !db.isDigit)) _declinedSlots[nodeKind] = true;
         if (lvDet) (out._debug.lvDetail = out._debug.lvDetail || []).push(
           { line: { x: Math.round(lineX.x), y: Math.round(lineX.y), w: Math.round(lineX.w), h: Math.round(lineX.h) }, boxes: lvDet.join(" ") });
         // NARROW-FRAGMENT re-mask (the absorber shape): at the windowed tiers the
@@ -1263,6 +1400,7 @@
         // downstream, which the sliver never was. A true '1' stays narrow under
         // the relaxed mask too, so this cannot rewrite genuine ones; clean
         // frames produce full-width digits and never enter this branch.
+        var sliverUnrescued = false;   // LOCAL PATCH (sliver-abstain), see file header
         if (!isGoldFace && db && db.isDigit && dbBox && dbBox.w / Math.max(1, dbBox.h) < 0.45) {
           var lvPredRelaxed = function (r2, g2, b2) {
             var c2 = L.hsv(r2, g2, b2);
@@ -1282,13 +1420,22 @@
             db = re; dbBox = reBox; mask = maskR;
             if (out._debug) (out._debug.lvRelax = out._debug.lvRelax || {})[nodeKind] =
               Math.round(reBox.w) + "x" + Math.round(reBox.h) + "=" + re.full.ch + ":" + re.full.score.toFixed(2);
+          } else {
+            // LOCAL PATCH - SLIVER ABSTAIN (see file header). When the re-mask cannot widen the box,
+            // upstream falls through and the sliver COMMITS anyway at up to 0.95 - the silent
+            // coherent-wrong board this function's own header warns about. A 3px shard is a fragment
+            // of a glyph, not a glyph. Abstaining hands the node to the points checksum + S hint,
+            // which solve it from the other three reads.
+            sliverUnrescued = true;
+            if (out._debug) (out._debug.lvSliver = out._debug.lvSliver || {})[nodeKind] =
+              Math.round(dbBox.w) + "x" + Math.round(dbBox.h);
           }
         }
         if (db) {
           vec = db.vec;
           var b1 = -1, b1v = null, b2 = -1;
           for (var v = 1; v <= 5; v++) { var s = db.vec[v]; if (s > b1) { b2 = b1; b1 = s; b1v = v; } else if (s > b2) b2 = s; }
-          if (db.isDigit && dbBox && b1 >= 0.78 && (b1 - b2) >= 0.05) {
+          if (db.isDigit && dbBox && b1 >= 0.78 && (b1 - b2) >= 0.05 && !sliverUnrescued) {
             // proven bitmapSim commit — but ink-IoU gets a VETO: sim's background-
             // dominated score let a live "Lv. 5" read as a confident 3 (which the
             // checksum then propagated into the unreadable S digit). If IoU clearly
@@ -1525,6 +1672,25 @@
       pts = extractPts(rawRead.text);
     }
     var ptsSoft = ptsT != null && ptsTSoft;   // dim anchored template read → capped authority
+    // LOCAL PATCH - FEASIBILITY ON THE OCR FALLBACK. The template rungs above constrain their digits
+    // by the committed level reads (every unread node contributes 1..5); the raw-OCR rescues do not.
+    // So a header whose narrow leading digit never segmented ("14" reaching OCR as "4") committed an
+    // arithmetically impossible total at FULL authority, and the joint solve then forced every free
+    // node to 1 - one bad number costing several fields. Only the OCR-sourced value is checked; the
+    // template rungs keep their own, tighter logic.
+    // The S hint is deliberately NOT folded into these bounds. It is a weak luminance guess - fine as
+    // evidence for picking among digit candidates (rung (b) uses it that way), but as a REJECTION
+    // bound a wrong hint can veto a correct total: with one unknown node it collapses the range to a
+    // single value, which threw away a correct pts=10 on a clean capture.
+    if (ptsT == null && pts != null) {
+      var kSumO = 0, nUnkO = 0;
+      for (var kO = 0; kO < 4; kO++) { if (lvFull[kO].value != null) kSumO += lvFull[kO].value; else nUnkO++; }
+      var loO = Math.max(4, kSumO + nUnkO), hiO = Math.min(20, kSumO + 5 * nUnkO);
+      if (pts < loO || pts > hiO) {
+        if (out._debug) out._debug.ptsRejected = pts + " outside [" + loO + "," + hiO + "]";
+        pts = null;
+      }
+    }
     if (pts == null) {
       // last resort on the (cleanest) masked text: digit + one word + "Points". This
       // accepted turn3's WRONG '5 re Points' once — hence it runs only after every
@@ -1718,6 +1884,14 @@
       if (vb1v === levels[vc] && (vb1 - vb2) >= 0.03) conf4[vc] = 0.82;
     }
 
+    // LOCAL PATCH (DECLINED DIGIT SLOT, part 2). A node's own confidence is only an INPUT to the joint
+    // solve, which can raise it again - the corroborator lifts to 0.82 and the enumeration to 0.9 - so
+    // capping inside the read was measurably not enough. Apply it here, after every rung has spoken.
+    var _declIdx = { N: 0, W: 1, E: 2, S: 3 };
+    Object.keys(_declinedSlots).forEach(function (k) {
+      var di = _declIdx[k];
+      if (di != null) conf4[di] = Math.min(conf4[di], 0.7);
+    });
     out.config.willpowerLevel = levels[0]; confidence.config.willpowerLevel = conf4[0];
     out.config.effect1Level = levels[1]; confidence.config.effect1Level = conf4[1];
     out.config.effect2Level = levels[2]; confidence.config.effect2Level = conf4[2];
@@ -2025,7 +2199,17 @@
         // amount ("Lv. 2" / "+1") is the chartreuse line at the caption's bottom —
         // the name above it is white, so a chroma line-locate isolates it even over
         // the nebula art and the icon face behind the text.
+        // Amount evidence ladder (2026-07-21, the level4/mJLklhw pair): rungs are
+        // TIERED BY EVIDENCE QUALITY, and every weak rung has a second channel —
+        //   tm   (template, solidity-vetoed)         → trusted outright
+        //   ocr/cap (prefix-anchored regex)          → synth can override ONLY on
+        //        full-agreement at 5× margin (the ▲ OCRs as a digit BEHIND a real
+        //        '+' anchor: level4's "+1 ▲" read "+ 4")
+        //   bare digit                               → accepted only when it agrees
+        //        with the synth gradient-top (two weak channels)
+        //   synth alone (agreement-gated)            → fills, conf-capped ≤0.78
         var amt = null, dirUp = false, dirDown = false;
+        var amtSrc = null, bareCand = null, amtFromSynth = false;
         var capCx = iconXs[oi];
         var amtLine = L.findMaskedTextLine(raster, capRect, L.isAmountText, {
           maxRowFill: 0.7, minH: Math.max(4, Math.round(gap * 0.05)), maxH: Math.round(gap * 0.2), minRowPx: 3,
@@ -2040,13 +2224,20 @@
           var amtRectX = { x: amtLine.x, y: amtLine.y - agrow, w: amtLine.w, h: amtLine.h + agrow * 2 };
           // template match first (amounts use the same glyph art as the wheel digits)
           var amTm = lastGoldDigit(amtRectX, L.isAmountText, 4);
-          if (amTm) amt = amTm.value;
+          if (amTm) { amt = amTm.value; amtSrc = "tm"; }
           if (amt == null) {
             var amtRead = await maskedOcr(amtRectX, L.isAmountText, { whitelist: "Lv.+12345 ", psm: 7 });
-            // prefix-anchored FIRST — the ▲ hue can bleed into the chartreuse window
-            // and OCR the triangle as a trailing digit ("Lv. 2 ▲" → "Lv. 24")
-            var am = amtRead.text.match(/(?:lv\.?|\+)\s*([1-4])/i) || amtRead.text.match(/([1-4])/);
-            if (am) amt = parseInt(am[1], 10);
+            // prefix-anchored — a bare digit here is a trap ('L' of a garbled
+            // "Lv." OCRs as '1' at collect-crop blur); it becomes only a weak
+            // CANDIDATE that must match the synth gradient-top to count
+            var am = amtRead.text.match(/(?:lv\.?|\+)\s*([1-4])/i);
+            if (am) { amt = parseInt(am[1], 10); amtSrc = "ocr"; }
+            else {
+              var bm = amtRead.text.match(/([1-4])(?![\s\S]*[1-4])/);   // last bare digit
+              if (bm) bareCand = parseInt(bm[1], 10);
+            }
+            if (out._debug) (out._debug.amtOcr = out._debug.amtOcr || [])[oi] =
+              "'" + amtRead.text.replace(/\n/g, "|").slice(0, 24) + "' -> " + (am ? am[1] : "null") + (bareCand != null ? " bare=" + bareCand : "");
           }
           // ▲/▼ sits at the line's right end; classify green-vs-red in that box only.
           // (Whole-cell clustering is hopeless: the outcome ICON — red willpower, green
@@ -2097,19 +2288,47 @@
             // template first: the red lower digits are the same glyph art as the gold
             // ones (the chroma mask makes them identical binary shapes)
             var redTm = lastGoldDigit(redRectX, L.isRedAmountText, 4);
-            if (redTm) amt = redTm.value;
+            if (redTm) { amt = redTm.value; amtSrc = "tm"; }
             if (amt == null) {
               var redRead = await maskedOcr(redRectX, L.isRedAmountText, { whitelist: "Lv.-12345 ", psm: 7 });
-              var rm2 = redRead.text.match(/(?:lv\.?|-|−)\s*([1-4])/i) || redRead.text.match(/([1-4])/);
-              if (rm2) amt = parseInt(rm2[1], 10);
+              // prefix-anchored; bare digits are weak candidates (see raise path)
+              var rm2 = redRead.text.match(/(?:lv\.?|-|−)\s*([1-4])/i);
+              if (rm2) { amt = parseInt(rm2[1], 10); amtSrc = "ocr"; }
+              else {
+                var rbm = redRead.text.match(/([1-4])(?![\s\S]*[1-4])/);
+                if (rbm) bareCand = parseInt(rbm[1], 10);
+              }
             }
             dirDown = true; dirUp = false;
           }
         }
         if (amt == null) {
-          var amtM = cap.match(/(?:lv\.?\s*|\+\s*)([1-4])/) || cap.match(/([1-4])\s*$/);
-          if (amtM) amt = parseInt(amtM[1], 10);
+          // prefix-anchored only — the caption's trailing garbage ends in stray
+          // digits at collect-crop blur ("…1 7 4" from "+1 ▲" + sparkle)
+          var amtM = cap.match(/(?:lv\.?\s*|\+\s*)([1-4])/);
+          if (amtM) { amt = parseInt(amtM[1], 10); amtSrc = "cap"; }
         }
+        // ---- synth consult (skipped only after a trusted template commit) ----
+        var lnForSynth = amtLine || redLine;
+        var amSy = (amtSrc !== "tm" && lnForSynth) ? synthAmountDigit(lnForSynth) : null;
+        if (amSy && amt != null && amSy.value != null && !amSy.gradOnly && amSy.gm >= 0.05 && amSy.value !== amt) {
+          // an anchored-regex read can still be the ▲ wearing a legitimate anchor
+          // (level4's "+1 ▲" OCR'd "+ 4") — a FULL-AGREE synth at 5× margin
+          // outranks OCR/cap rungs. gradOnly synth never overrides anything.
+          amt = amSy.value; amtFromSynth = true; amtSrc = "synth-override";
+        }
+        if (amt == null && bareCand != null && amSy && amSy.gradTop === bareCand) {
+          // two weak channels agreeing: a bare OCR digit + the synth gradient-top
+          // (even below its commit gate) — either alone is a trap, together usable
+          amt = bareCand; amtFromSynth = true; amtSrc = "bare+synth";
+        }
+        if (amt == null && amSy && amSy.value != null) {
+          // synth alone (agreement-gated or grad-only at 3× margin) fills the null
+          amt = amSy.value; amtFromSynth = true; amtSrc = "synth";
+        }
+        if (out._debug) (out._debug.amtSynth = out._debug.amtSynth || [])[oi] =
+          (amSy ? (amSy.value != null ? "synth " + amSy.value : "refuse(top " + amSy.gradTop + ")") + "@gm" + amSy.gm.toFixed(3) + (amSy.gradOnly ? " gradOnly" : "") : "n/a") +
+          " src=" + (amtSrc || "none");
         var hadAmt = amt != null;
         if (amt == null) amt = 1;
         // direction earns full confidence only with a STRONG signal: a located red
@@ -2128,9 +2347,23 @@
           if (wUp.frac > 0.006 && wUp.count >= 8) { dirUp = true; dirDown = false; }
           else { dirDown = true; dirUp = false; oconf -= 0.25; }
         }
+        // LOCAL PATCH - AN EFFECT TILE WITH NO AMOUNT AND NO ARROW IS "EFFECT CHANGED". Every raise
+        // or lower tile carries an amount line AND a direction arrow; the effect-swap tile carries
+        // neither, just the effect name over two lines. Upstream recognises the swap only by finding
+        // "chang" in the caption OCR, so when that word is mangled the tile falls through to here and
+        // is emitted as a raise with a DEFAULTED +1 - inventing an upgrade that is not on offer.
+        // Absence of both signals is the structural tell; use it instead of defaulting.
+        if (!hadAmt && !dirUp && !dirDown && (target === "effect1" || target === "effect2")) {
+          o = { type: "change_side_option", target: target };
+          oconf += 0.45;   // structural inference, not a read - stays checkable
+        } else {
         var type = dirDown && !dirUp ? "lower_effect" : "raise_effect";
         o = { type: type, target: target, amount: amt };
         oconf += (hadAmt ? 0.55 : 0.25) + (strongDir ? 0.3 : (dirUp || dirDown) ? 0.15 : 0.05);
+        // a synth-sourced amount NEVER reaches the unflagged zone — the rescue is
+        // user/verifier-checkable, not silently authoritative (silent-error class)
+        if (amtFromSynth) oconf = Math.min(oconf, 0.78);
+        }
         // SAFETY: on order/points/willpower the direction arrow renders in the icon's
         // OWN hue family (a red raise ▲ on the gold order icon), so the color test is
         // unreliable there — a wrong direction must never be CONFIDENT. Require a clear

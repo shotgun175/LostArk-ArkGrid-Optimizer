@@ -6,6 +6,8 @@
     type AdvisorResult,
     type EditedAdvisorState,
     type ParsedAdvisorState,
+    countUnconfirmed,
+    parsedToEdited,
   } from '../../lib/advisor/advisorController';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
@@ -89,23 +91,6 @@
     outcomes: DEFAULT_PARSED.outcomes,
     rarity: 'epic',
   };
-  // Convert a parse into the edit shape so a later market-input change can re-advise the same gem.
-  function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
-    return {
-      config: { ...p.config },
-      state: {
-        currentTurn: p.state.currentTurn,
-        maxTurns: p.state.maxTurns,
-        rerollsShownFree: Math.max(0, (p.state.rerollsRemaining ?? 0) - 1),
-        resetsRemaining: p.state.resetsRemaining,
-        processCostMultiplier: p.state.processCostMultiplier ?? 0,
-        rosterBound: p.state.rosterBound ?? false,
-      },
-      outcomes: p.outcomes.map((o) => ({ ...o })),
-      rarity: p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
-    };
-  }
-
   let parsing = $state(false);
   // `result.parsed` seeds the window ONCE per fresh parse (upload / live frame / default). Manual
   // edits never touch it, the window renders from its own local state, so the visual stays instant.
@@ -120,6 +105,8 @@
   let fileInput: HTMLInputElement | undefined = $state();
   let watching = $state(false);
   let dragOver = $state(false);
+  let frameMsg = $state('');
+  let frameMsgTimer: ReturnType<typeof setTimeout>;
   // The gem currently shown (default / parsed / hand-edited); re-advised when the market inputs change.
   let lastEdited = $state<EditedAdvisorState>(DEFAULT_EDITED);
 
@@ -128,12 +115,14 @@
     if (watching) controller?.updateInputs(inputs);
   });
 
-  // First time the user hovers / focuses / touches the advisor: create the worker and rank the gem
-  // that's on screen, so the recommendation isn't blank once they engage (but stays lazy until then).
+  // First time the user hovers / focuses / touches the advisor: build the worker so the first real
+  // read isn't paying for a cold start. Deliberately does NOT rank anything — the gem on screen is
+  // still the placeholder, and advising it presents invented numbers as if they were the user's cut.
+  // Advice starts only once there's a real gem: a parse (screen share / upload) or a manual edit.
   let engaged = false;
   function engage() {
     if (engaged || !sectionUI.showAdvisor) return;
-    void onManualEdit(lastEdited); // onManualEdit flips `engaged`
+    getController().warmup();
   }
   // Re-rank when a market input (role / gold bracket / baseline) changes. The effect only DETECTS the
   // change by reading `inputs`; the async worker call is deferred to a debounced macrotask so the
@@ -171,6 +160,13 @@
   function warm() {
     if (captureSupported) getController().warmup();
   }
+  // Saves the exact raster the reader last parsed. Useful when a value comes out wrong: the saved
+  // frame reproduces the misread offline, which a fresh screenshot of the same state does not.
+  function saveFrame() {
+    frameMsg = getController().saveFrame();
+    clearTimeout(frameMsgTimer);
+    frameMsgTimer = setTimeout(() => (frameMsg = ''), 3000);
+  }
 
   async function parseFile(file: File) {
     if (parsing) return;
@@ -207,7 +203,7 @@
   // advice, the window already repainted from its own local state, so we never touch `result.parsed`
   // (that would reseed the window and stomp the edit). The DP is ~0.5-2s; the visual doesn't wait on it.
   async function onManualEdit(edited: EditedAdvisorState, adviceInputs: AdviceInputs = inputs) {
-    engaged = true; // any advise (edit / hover / market change) counts as engaging the advisor
+    engaged = true; // an edit (or a market change on an already-read gem) counts as engaging
     lastEdited = edited;
     advisePending++;
     try {
@@ -230,6 +226,17 @@
   const ACTION_ORDER = ['Process', 'Reroll', 'Complete', 'Reset'] as const;
   let actionByName = $derived(
     Object.fromEntries((liveAdvice?.allActions ?? []).map((a) => [a.name, a]))
+  );
+  // Fields the reader was not sure about. Ranking actions off them without saying so presents a guess
+  // as a finding — the misread that produced a wrong recommendation was flagged on screen at the time.
+  let unconfirmed = $derived(countUnconfirmed(result?.parsed));
+  // Below this the Processing window is small enough that glyph reads measurably degrade (~95.5% of
+  // fields vs ~97.7%). The usual cause is the game's Force 21:9 setting, which letterboxes the UI.
+  const READABLE_PANEL_PX = 800;
+  let smallPanel = $derived(
+    result?.parsed?.panelWidth != null && result.parsed.panelWidth < READABLE_PANEL_PX
+      ? result.parsed.panelWidth
+      : null
   );
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
@@ -305,8 +312,15 @@
                 <div class="rec-progress"><div class="rec-progress-bar"></div></div>
               </div>
             {/if}
+            {#if hasAdvice && unconfirmed > 0}
+              <div class="rec-unconfirmed" role="status">
+                Based on {unconfirmed} value{unconfirmed > 1 ? 's' : ''} the reader wasn't sure of.
+                Check the highlighted field{unconfirmed > 1 ? 's' : ''} on the gem first — correcting
+                one can change which action wins.
+              </div>
+            {/if}
             {#if hasAdvice}
-              <div class="rec-cards" class:stale={computing}>
+              <div class="rec-cards" class:stale={computing} class:unconfirmed={unconfirmed > 0}>
                 {#each ACTION_ORDER as name (name)}
                   {@const a = actionByName[name]}
                   {@const isBest = name.toLowerCase() === liveAdvice?.bestAction}
@@ -358,6 +372,12 @@
                   <button onclick={() => void getController().reparseNow()} title="Force a re-read of the current screen">
                     🔄 Re-read now
                   </button>
+                  <button
+                    onclick={saveFrame}
+                    title="Download the exact frame the reader last parsed, as a PNG"
+                  >
+                    💾 Save frame
+                  </button>
                 {/if}
               {/if}
               {#if !watching}
@@ -365,8 +385,17 @@
               {/if}
               <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onPick} />
             </div>
+            {#if smallPanel}
+              <div class="small-panel-note">
+                The Processing window is only {smallPanel}px wide in this capture, which makes the
+                small level digits harder to read. If your game has <strong>Force 21:9 Aspect Ratio</strong>
+                turned on, switching it off makes the window noticeably bigger and reads more accurate.
+              </div>
+            {/if}
             {#if watching}
-              <div class="watch-status">Watching… the window on the left confirms what's being read.</div>
+              <div class="watch-status">
+                {frameMsg || "Watching… the window on the left confirms what's being read."}
+              </div>
             {:else}
               <div
                 class="drop"
@@ -682,6 +711,33 @@
     margin-top: 0.2rem;
     font-size: 0.78rem;
     opacity: 0.7;
+  }
+  .small-panel-note {
+    margin: 8px 0 0;
+    padding: 7px 9px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent, #6aa9e9) 10%, transparent);
+    color: var(--muted, #9aa7b8);
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .small-panel-note strong {
+    color: var(--text);
+  }
+  .rec-unconfirmed {
+    margin: 0 0 8px;
+    padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--warn, #d9a441) 55%, transparent);
+    border-left-width: 3px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--warn, #d9a441) 12%, transparent);
+    color: var(--text);
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+  /* the ranking is still shown, just not presented as settled while inputs are unconfirmed */
+  .rec-cards.unconfirmed {
+    opacity: 0.92;
   }
   .rec-empty {
     font-size: 0.85rem;

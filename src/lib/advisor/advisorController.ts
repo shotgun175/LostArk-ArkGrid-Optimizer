@@ -38,6 +38,12 @@ export interface ParsedAdvisorState {
   rarity?: string; // uncommon | rare | epic (constraintSnap emits it)
   confidence?: unknown;
   ocrDegraded?: boolean;
+  /**
+   * On-screen width of the Processing window in the captured frame, in pixels. The best single
+   * predictor of read quality: the same client measures 97.7% of fields correct at ~925px and 95.5%
+   * at ~677px, because Force 21:9 letterboxes the UI and shrinks every glyph with it.
+   */
+  panelWidth?: number;
 }
 
 /**
@@ -52,6 +58,12 @@ export interface EditedAdvisorState {
     currentTurn: number;
     maxTurns: number;
     rerollsShownFree?: number;
+    /**
+     * All rerolls gone, including the paid one (the dimmed grey "Charge" button). Needed because
+     * `rerollsShownFree` cannot express it: the snap reads 0 free as "0 free + 1 paid" = 1 in model
+     * units, so a spent gem round-tripped through `rerollsShownFree` grows a phantom reroll.
+     */
+    rerollsChargeSpent?: boolean;
     resetsRemaining?: number;
     processCostMultiplier: number;
     rosterBound?: boolean;
@@ -259,17 +271,13 @@ export class AdvisorController {
     return n;
   }
 
-  // Debug-only: when `advisorWatchDebug` is set, stash the exact frame handed to the OCR (captured
-  // before it's transferred to the worker) as a PNG on `window.__advisorFrames`, and expose
-  // `__dumpAdvisorFrame()` to download the last one. This is how we grab a real misreading live frame
-  // to reproduce and fix the OCR against offline. No effect unless the flag is on.
+  // Stash the exact frame handed to the OCR (captured before it's transferred to the worker) as a PNG
+  // on `window.__advisorFrames`, so a misreading live frame can be saved and reproduced offline.
+  // Two ways to get one out: the "Save frame" button while watching (`saveFrame()` below), or
+  // `__dumpAdvisorFrame()` in the console. This runs on the PARSE path only — once per real state
+  // change, not per poll — so the extra draw+encode is negligible next to a multi-second parse.
   private captureDebugFrame(bitmap: ImageBitmap) {
-    if (
-      typeof localStorage === 'undefined' ||
-      localStorage.getItem('advisorWatchDebug') !== '1' ||
-      typeof document === 'undefined'
-    )
-      return;
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
     try {
       const c = document.createElement('canvas');
       c.width = bitmap.width;
@@ -293,9 +301,10 @@ export class AdvisorController {
           a.click();
           return `downloading ${a.download}`;
         };
-        console.log(
-          '[watch] frame dump armed; run __dumpAdvisorFrame() in the console to save the last parsed frame'
-        );
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('advisorWatchDebug') === '1')
+          console.log(
+            '[watch] frame dump armed; run __dumpAdvisorFrame() in the console to save the last parsed frame'
+          );
       }
       const arr = w.__advisorFrames;
       const entry: { t: number; url: string } = { t: Date.now(), url: '' };
@@ -310,8 +319,19 @@ export class AdvisorController {
         if (blob) entry.url = URL.createObjectURL(blob);
       }, 'image/png');
     } catch {
-      // debug-only; never disturb the parse
+      // diagnostic-only; never disturb the parse
     }
+  }
+
+  /**
+   * Download the most recently parsed frame as a PNG — the exact raster the OCR read, which is what
+   * makes it reproducible offline. Returns a short status string for the caller to surface.
+   */
+  saveFrame(): string {
+    if (typeof window === 'undefined') return 'unavailable';
+    const w = window as unknown as { __dumpAdvisorFrame?: (i?: number) => string };
+    if (!w.__dumpAdvisorFrame) return 'no frame read yet';
+    return w.__dumpAdvisorFrame();
   }
 
   private async watchLoop() {
@@ -450,4 +470,50 @@ export class AdvisorController {
       return null;
     }
   }
+}
+
+/**
+ * Convert a parse into the edit shape, so a later market-input change can re-advise the same gem.
+ *
+ * The reroll conversion is the subtle part. `rerollsRemaining` is in MODEL units (free rerolls plus
+ * the one paid "Charge" reroll), so the inverse is `model - 1`. Zero is the one value that cannot go
+ * back through `rerollsShownFree`, because the snap reads 0 free as "0 free + 1 paid" = 1. A fully
+ * spent gem (dimmed grey Charge) must therefore say `rerollsChargeSpent` explicitly, or it grows a
+ * phantom reroll on every re-advise and the DP offers a Reroll that the game will not allow.
+ */
+export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
+  const model = p.state.rerollsRemaining ?? 0;
+  return {
+    config: { ...p.config },
+    state: {
+      currentTurn: p.state.currentTurn,
+      maxTurns: p.state.maxTurns,
+      ...(model <= 0 ? { rerollsChargeSpent: true } : { rerollsShownFree: model - 1 }),
+      resetsRemaining: p.state.resetsRemaining,
+      processCostMultiplier: p.state.processCostMultiplier ?? 0,
+      rosterBound: p.state.rosterBound ?? false,
+    },
+    outcomes: p.outcomes.map((o) => ({ ...o })),
+    rarity: p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
+  };
+}
+
+/**
+ * How many parsed fields the reader was not confident about (confidence below 0.8 — the same bar the
+ * Processing window uses to glow a field amber).
+ *
+ * These are the fields the user is being asked to confirm, so ranking actions off them without
+ * saying so presents a guess as a finding. Counts config fields and outcomes, matching what the
+ * window actually highlights; state fields are excluded because they are not highlighted there and a
+ * mismatched count would just look like a bug.
+ */
+export function countUnconfirmed(parsed: ParsedAdvisorState | undefined): number {
+  const cf = parsed?.confidence as
+    | { config?: Record<string, number>; outcomes?: (number | null)[] }
+    | undefined;
+  if (!cf) return 0;
+  let n = 0;
+  for (const v of Object.values(cf.config ?? {})) if ((v ?? 1) < 0.8) n++;
+  for (const v of cf.outcomes ?? []) if (v != null && v < 0.8) n++;
+  return n;
 }
