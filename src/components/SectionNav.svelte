@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
 
   import BuildViewSwitch from './BuildViewSwitch.svelte';
+  import OptimizeNavButton from './OptimizeNavButton.svelte';
   import ProfileNavSwitcher from './ProfileNavSwitcher.svelte';
 
   // Section anchors are rendered in App.svelte / BuildSection.svelte with these ids.
@@ -88,6 +89,8 @@
   {/each}
   <ProfileNavSwitcher />
   <div class="nav-switch"><BuildViewSwitch compact /></div>
+  <!-- Deliberately no menu-close: on mobile the dropdown stays open so the percent is watchable. -->
+  <OptimizeNavButton />
 </nav>
 
 <style>
