@@ -25,13 +25,13 @@
   import { solveInputSignature } from '../lib/solver/solveSignature';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
-    type BuildRole,
     type CharacterProfile,
     activeBuildState,
     buildState,
     otherRole,
   } from '../lib/state/profile.state.svelte';
   import { getProgressLabel, runSolve, solveState } from '../lib/state/solve.state.svelte';
+  import { isSolveNeverRun, isSolveStale } from '../lib/state/solveStale';
   import ArkGridGemDetail from './ArkGridGemDetail.svelte';
   import BaselineControl from './BaselineControl.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
@@ -64,32 +64,10 @@
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
 
-  // "Out of sync": a stored solve the triage relies on no longer matches the live cores + gems, so
-  // its verdicts (and any withheld removals) are stale until you refresh. For a dual-role profile
-  // BOTH builds count, since the refresh button re-solves both. A solve with no signature
-  // (pre-feature / never run) never reads as stale.
-  let solveStale = $derived.by(() => {
-    const buildStaleFor = (r: BuildRole) => {
-      const b = buildState(r, profile);
-      const s = solveInputSignature(b.cores, profile.gems);
-      const after = b.solveInfo.after;
-      const endgame = b.solveInfo.endgame;
-      return (
-        (!!after?.inputSig && after.inputSig !== s) ||
-        (!!endgame?.inputSig && endgame.inputSig !== s)
-      );
-    };
-    if (buildStaleFor(profile.activeBuild)) return true;
-    return profile.dualRole && buildStaleFor(otherRole(profile.activeBuild));
-  });
+  let solveStale = $derived(isSolveStale(profile));
 
-  // First-run nudge: gems exist but this build has never been solved, so triage has no evidence
-  // yet and nothing else on screen says the Optimize button is step 1.
-  let neverRun = $derived(
-    profile.gems.orderGems.length + profile.gems.chaosGems.length > 0 &&
-      !build.solveInfo.after &&
-      !build.solveInfo.endgame
-  );
+  // First-run nudge: nothing else on screen says the Optimize button is step 1.
+  let neverRun = $derived(isSolveNeverRun(profile));
 
   let rows: Row[] = $derived.by(() => {
     const owned = [...profile.gems.orderGems, ...profile.gems.chaosGems];
