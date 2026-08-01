@@ -176,6 +176,9 @@ export class AdvisorController {
   // Null until the first read of a session; cleared on start/stop so one gem's memory can
   // never leak into another session. See docs spec: temporal fusion.
   private tracker: FusionPrior | null = null;
+  // Bumped on every start/stop; invalidates fusion adoption from a parse still in flight from a
+  // previous watch session.
+  private watchGen = 0;
   private sigCanvas: OffscreenCanvas | null = null;
   onAdvice: ((r: AdvisorResult | null) => void) | null = null;
   onShareEnded: (() => void) | null = null;
@@ -195,6 +198,7 @@ export class AdvisorController {
     if (this.stream) return this.stream;
     this.watchInputs = inputs;
     this.tracker = null;
+    this.watchGen++;
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 10 },
       audio: false,
@@ -235,6 +239,14 @@ export class AdvisorController {
       this.video = null;
     }
     this.tracker = null;
+    this.watchGen++;
+  }
+
+  // Only adopt fusion memory from a resolution that still belongs to the current watch session:
+  // gen must match watchGen (a stop/restart since this parse was issued invalidates it) and we
+  // must still be watching (a manual edit while not watching must not seed the tracker).
+  private adoptTracker(gen: number, res: AdvisorResult | null) {
+    if (this.watching && gen === this.watchGen && res?.fusion) this.tracker = res.fusion.nextPrior;
   }
 
   /**
@@ -248,8 +260,9 @@ export class AdvisorController {
     try {
       const bitmap = await this.grabFrame();
       if (!bitmap) return;
+      const gen = this.watchGen;
       const res = await this.parseImage(bitmap, this.watchInputs, this.tracker);
-      if (res?.fusion) this.tracker = res.fusion.nextPrior;
+      this.adoptTracker(gen, res);
       this.onAdvice?.(res);
     } finally {
       this.onReading?.(false);
@@ -404,8 +417,9 @@ export class AdvisorController {
           const t0 = Date.now();
           const bitmap = await this.grabFrame();
           if (bitmap) {
+            const gen = this.watchGen;
             const res = await this.parseImage(bitmap, this.watchInputs, this.tracker);
-            if (res?.fusion) this.tracker = res.fusion.nextPrior;
+            this.adoptTracker(gen, res);
             if (this.watching) this.onAdvice?.(res);
           }
           if (debug) console.log(`[watch] parse+advise took ${Date.now() - t0}ms`);
@@ -480,6 +494,7 @@ export class AdvisorController {
         });
       }
       const id = ++this.seq;
+      const gen = this.watchGen;
       const res = await new Promise<AdvisorResult | null>((resolve) => {
         this.pending.set(id, resolve);
         this.worker!.postMessage({
@@ -494,7 +509,7 @@ export class AdvisorController {
           axis: inputs.axis,
         });
       });
-      if (this.watching && res?.fusion) this.tracker = res.fusion.nextPrior;
+      this.adoptTracker(gen, res);
       return res;
     } catch {
       return null;
