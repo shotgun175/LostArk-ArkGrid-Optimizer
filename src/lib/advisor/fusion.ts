@@ -62,3 +62,43 @@ export function seedFromParse(p: ParsedAdvisorState): FusionPrior {
     quality: { config: cq, state: sq, outcomes: p.outcomes.map((_, i) => qualityOf(cf.outcomes?.[i])) },
   };
 }
+
+export interface Successor {
+  tileIndex: number;
+  config: AdvisorConfig;
+  /** Only the state fields this transition determines. Untouched fields mean "same as prior". */
+  state: Partial<Record<'rerollsRemaining' | 'processCostMultiplier' | 'processCost', number>>;
+  /** change_side_option: this slot's NAME is a fresh pixel read (random draw); its level is pinned. */
+  nameChangeSlot?: 'effect1' | 'effect2';
+  tileQuality: ChainQuality;
+}
+
+const clampCm = (v: number) => Math.max(-100, Math.min(100, v));
+/** Display cost from the multiplier (base 900: -100 reads 0, 0 reads 900, +100 reads 1800). */
+export const costFromCm = (cm: number) => Math.max(0, Math.round(900 * (1 + cm / 100)));
+
+export function buildSuccessors(prior: FusionPrior, applyOutcome: ApplyOutcomeFn): Successor[] {
+  return prior.outcomes.map((tile, i) => {
+    const s: Successor = {
+      tileIndex: i,
+      config: { ...prior.config },
+      state: {},
+      tileQuality: prior.quality.outcomes[i] ?? 'soft',
+    };
+    if (tile.type === 'raise_effect' || tile.type === 'lower_effect') {
+      s.config = applyOutcome(prior.config, tile);
+    } else if (tile.type === 'change_side_option') {
+      s.nameChangeSlot = tile.target === 'effect2' ? 'effect2' : 'effect1';
+      // applyOutcome draws a RANDOM new name for this tile type, so it is deliberately not
+      // called here; the name stays a pixel read and the levels stay pinned to the prior
+      // (the swapped-in effect keeps the replaced effect's level).
+    } else if (tile.type === 'change_gold_cost') {
+      const cm = clampCm((prior.state.processCostMultiplier ?? 0) + (tile.change ?? 0));
+      s.state = { processCostMultiplier: cm, processCost: costFromCm(cm) };
+    } else if (tile.type === 'reroll_increase') {
+      s.state = { rerollsRemaining: (prior.state.rerollsRemaining ?? 0) + (tile.change ?? 1) };
+    }
+    // do_nothing: config and state carry over unchanged.
+    return s;
+  });
+}

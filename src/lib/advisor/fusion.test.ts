@@ -1,6 +1,10 @@
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import type { ParsedAdvisorState } from './advisorController';
-import { FLAG_BAR, seedFromParse } from './fusion';
+import { FLAG_BAR, buildSuccessors, costFromCm, seedFromParse, type ApplyOutcomeFn } from './fusion';
+
+const require_ = createRequire(import.meta.url);
+const applyOutcome = require_('./vendor/model/nested.js').applyOutcome as ApplyOutcomeFn;
 
 export function mkParse(over: Partial<ParsedAdvisorState> = {}): ParsedAdvisorState {
   return {
@@ -50,5 +54,58 @@ describe('seedFromParse', () => {
     p.outcomes[0].amount = 4;
     expect(prior.config.willpowerLevel).toBe(2);
     expect(prior.outcomes[0].amount).toBe(1);
+  });
+});
+
+describe('buildSuccessors', () => {
+  it('raise/lower go through the vendored applyOutcome with level clamping', () => {
+    const prior = seedFromParse(mkParse());
+    const succ = buildSuccessors(prior, applyOutcome);
+    expect(succ[0].config.willpowerLevel).toBe(3); // raise willpower +1 from 2
+    expect(succ[1].config.effect1Level).toBe(2); // lower effect1 -1 from 3
+    expect(succ[0].config.effect1Level).toBe(3); // untouched fields carry over
+  });
+
+  it('clamps at the 1 and 5 bounds', () => {
+    const p = mkParse();
+    p.config.willpowerLevel = 5;
+    p.outcomes[0] = { type: 'raise_effect', target: 'willpower', amount: 2 };
+    p.outcomes[1] = { type: 'lower_effect', target: 'order', amount: 3 };
+    p.config.orderLevel = 1;
+    const succ = buildSuccessors(seedFromParse(p), applyOutcome);
+    expect(succ[0].config.willpowerLevel).toBe(5);
+    expect(succ[1].config.orderLevel).toBe(1);
+  });
+
+  it('change_gold_cost moves the multiplier via tile.change and derives the display cost', () => {
+    const succ = buildSuccessors(seedFromParse(mkParse()), applyOutcome);
+    expect(succ[2].state.processCostMultiplier).toBe(-100);
+    expect(succ[2].state.processCost).toBe(0);
+    expect(costFromCm(100)).toBe(1800);
+    expect(costFromCm(0)).toBe(900);
+  });
+
+  it('change_side_option pins levels and marks the slot as a fresh name read', () => {
+    const p = mkParse();
+    p.outcomes[3] = { type: 'change_side_option', target: 'effect2' };
+    const succ = buildSuccessors(seedFromParse(p), applyOutcome);
+    expect(succ[3].nameChangeSlot).toBe('effect2');
+    expect(succ[3].config.effect2Level).toBe(1); // level preserved from prior
+    expect(succ[3].config.effect2).toBe('Boss Damage'); // name field left as prior; matching treats it specially
+  });
+
+  it('reroll_increase adds tile.change to rerolls; do_nothing changes nothing', () => {
+    const p = mkParse();
+    p.outcomes[3] = { type: 'reroll_increase', change: 2 };
+    const succ = buildSuccessors(seedFromParse(p), applyOutcome);
+    expect(succ[3].state.rerollsRemaining).toBe(4);
+    const still = buildSuccessors(seedFromParse(mkParse()), applyOutcome)[3];
+    expect(still.state).toEqual({});
+    expect(still.config).toEqual(mkParse().config);
+  });
+
+  it('tileQuality mirrors the remembered per-tile quality', () => {
+    const succ = buildSuccessors(seedFromParse(mkParse()), applyOutcome);
+    expect(succ.map((s) => s.tileQuality)).toEqual(['hard', 'hard', 'soft', 'hard']);
   });
 });
