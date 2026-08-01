@@ -199,6 +199,25 @@ describe('contradicts', () => {
     (p.confidence as { config: Record<string, number> }).config.effect2 = 0.95;
     expect(contradicts(succ[3], prior, p)).toBe(false);
   });
+
+  it('a mismatched processCost does not kill a change_gold_cost successor when processCostMultiplier is unread (defaulted)', () => {
+    const prior = hardPrior(); // mkParse's tile 2 is already change_gold_cost, change: -100
+    const succ = buildSuccessors(prior, applyOutcome);
+    const p = at(4);
+    p.state.processCost = 12345; // wildly different from the expected costFromCm(-100) = 0
+    // processCost carries no confidence key of its own in the real pipeline; nothing read it.
+    (p.confidence as { state: Record<string, number> }).state.processCostMultiplier = 0;
+    expect(contradicts(succ[2], prior, p)).toBe(false);
+  });
+
+  it('a genuinely contradicting processCostMultiplier, read confidently, kills the change_gold_cost successor', () => {
+    const prior = hardPrior();
+    const succ = buildSuccessors(prior, applyOutcome);
+    const p = at(4);
+    p.state.processCostMultiplier = 50; // genuinely different from the expected -100
+    (p.confidence as { state: Record<string, number> }).state.processCostMultiplier = 0.9;
+    expect(contradicts(succ[2], prior, p)).toBe(true);
+  });
 });
 
 describe('inferAction soft-turn branches', () => {
@@ -250,7 +269,7 @@ describe('inferAction soft-turn branches', () => {
   });
 });
 
-import { ADOPT_HARD, ADOPT_SOFT, LIFT_AGREE_HARD, LIFT_CEILING, fuse } from './fusion';
+import { ADOPT_HARD, ADOPT_SOFT, LIFT_AGREE_HARD, LIFT_AGREE_SOFT, LIFT_CEILING, fuse } from './fusion';
 
 const conf = (r: ParsedAdvisorState, f: string) =>
   (r.confidence as { config: Record<string, number> }).config[f];
@@ -304,8 +323,23 @@ describe('fuse', () => {
     expect(conf(out.result, 'willpowerLevel')).toBeGreaterThanOrEqual(LIFT_AGREE_HARD);
   });
 
-  it('fields differing across multiple viable successors get no lift and no adoption', () => {
+  it('adoption is observable: a soft misread field is actually rewritten, not left as a no-op', () => {
     const prior = hardPrior();
+    const p = at(4);
+    p.config.willpowerLevel = 3; // read confidently (0.9 default); uniquely selects raise-willpower,
+    // killing lower_effect / change_gold_cost / do_nothing
+    p.config.orderLevel = 3; // misread; prior/every viable successor says 1
+    (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.config.orderLevel).toBe(1); // adopted, not left at the misread 3
+    expect(conf(out.result, 'orderLevel')).toBe(ADOPT_HARD);
+  });
+
+  it('fields differing across multiple viable successors get no lift and no adoption', () => {
+    // Prior is seeded from mkParse's OWN confidences (not hardPrior) so remembered tile 3's
+    // 0.75 confidence stays soft, capping the whole process-frame chain (finding 1).
+    const prior = seedFromParse(mkParse());
     const p = at(4);
     // Soften every read that distinguishes the four successors so all stay viable.
     const c = (p.confidence as { config: Record<string, number>; state: Record<string, number> });
@@ -313,12 +347,48 @@ describe('fuse', () => {
     c.config.effect1Level = 0.5;
     c.state.processCost = 0.5;
     c.state.processCostMultiplier = 0.5;
+    // Read low enough that the soft-capped lift (0.7) is distinguishable from a no-op fuse.
+    c.config.effect2Level = 0.5;
     const out = fuse(prior, p, applyOutcome);
     expect(out.status).toBe('fused');
     expect(out.result.config.willpowerLevel).toBe(p.config.willpowerLevel); // untouched
     expect(conf(out.result, 'willpowerLevel')).toBe(0.5); // no lift
-    // effect2Level is identical across ALL successors, so it still fuses
-    expect(conf(out.result, 'effect2Level')).toBe(LIFT_AGREE_HARD);
+    // effect2Level is identical across ALL successors, so it still fuses, but the remembered
+    // tile set has a soft member (tile 3, 0.75), so the chain caps at LIFT_AGREE_SOFT.
+    expect(conf(out.result, 'effect2Level')).toBe(LIFT_AGREE_SOFT);
+  });
+
+  it('one soft remembered tile caps the whole process-frame chain, even for a field an unrelated tile determines', () => {
+    const seed = mkParse();
+    const oc = (seed.confidence as { outcomes: number[] }).outcomes;
+    oc[0] = 0.9; oc[1] = 0.5; oc[2] = 0.9; oc[3] = 0.9; // exactly one remembered tile is soft
+    const prior = seedFromParse(seed);
+    const p = at(4);
+    p.config.willpowerLevel = 3; // read confidently; uniquely selects the raise-willpower successor
+    // effect2Level agrees with every viable successor's value, but is itself read softly so the
+    // lift is observable (a no-op fuse would leave it at 0.5, not raise it to 0.7).
+    (p.confidence as { config: Record<string, number> }).config.effect2Level = 0.5;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(conf(out.result, 'effect2Level')).toBe(LIFT_AGREE_SOFT);
+  });
+
+  it('soft turn inference caps the still-frame chain', () => {
+    const prior = hardPrior();
+    const p = at(3); // same turn as the prior, but the read itself is soft
+    (p.confidence as { state: Record<string, number> }).state.currentTurn = 0.3;
+    // config identical to prior (no confident differences), so inferAction falls back to still.
+    // effect1Level agrees but is read softly, so the lift is observable.
+    (p.confidence as { config: Record<string, number> }).config.effect1Level = 0.5;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(conf(out.result, 'effect1Level')).toBe(LIFT_AGREE_SOFT);
+  });
+
+  it('confidence constants respect the ceiling and flag-bar invariants', () => {
+    expect(ADOPT_HARD).toBeLessThanOrEqual(LIFT_CEILING);
+    expect(LIFT_AGREE_SOFT).toBeLessThan(FLAG_BAR);
+    expect(ADOPT_SOFT).toBeLessThan(FLAG_BAR);
   });
 
   it('zero viable successors is desync and reseeds from the parse', () => {

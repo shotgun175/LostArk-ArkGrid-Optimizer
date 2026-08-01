@@ -113,6 +113,18 @@ export type Inferred =
   | { kind: 'process'; successors: Successor[]; turnQuality: ChainQuality }
   | { kind: 'desync'; reason: string };
 
+/**
+ * processCost carries no confidence key of its own in the real pipeline: the vendored
+ * constraintSnap always synthesizes `state.processCost`, but its confidence map only ever
+ * populates `processCostMultiplier`. Looking `processCost` up directly falls through the `?? 1`
+ * default and treats a defaulted 900 as a confident pixel read. Borrow the multiplier's
+ * confidence for it instead.
+ */
+function stateConfOf(cf: ConfMaps, key: string): number | undefined {
+  if (key === 'processCost') return cf.state?.processCostMultiplier;
+  return cf.state?.[key];
+}
+
 /** True when a confidently-read field of the parse rules this successor out. */
 export function contradicts(s: Successor, prior: FusionPrior, snapped: ParsedAdvisorState): boolean {
   const cf = confMapsOf(snapped);
@@ -130,7 +142,7 @@ export function contradicts(s: Successor, prior: FusionPrior, snapped: ParsedAdv
   for (const f of ['processCostMultiplier', 'processCost'] as const) {
     const expected = s.state[f] ?? (prior.state[f] as number | undefined);
     if (expected == null) continue;
-    if ((cf.state?.[f] ?? 1) >= FLAG_BAR && snapped.state[f] !== expected) return true;
+    if ((stateConfOf(cf, f) ?? 1) >= FLAG_BAR && snapped.state[f] !== expected) return true;
   }
   // rerollsRemaining deliberately never contradicts: a Charge purchase changes it legally
   // between frames without any tile explaining it.
@@ -241,6 +253,15 @@ export function fuse(
   cf.state = cf.state ?? {};
   result.confidence = cf as ParsedAdvisorState['confidence'];
 
+  // Tile link: whether the remembered tile SET can be trusted, not whether the one tile that
+  // appears to move a given field looks hard. A process frame's successors are a pick among all
+  // four remembered tiles together, so a single soft tile taints every field the process path
+  // determines: a tile read soft as do_nothing that was really change_side_option makes the
+  // stale effect name look "moved by nobody," and a per-successor mover check would wrongly call
+  // that hard. A still frame involves no tile at all, so its link is unconditionally hard.
+  const tileLink: ChainQuality =
+    inferred.kind === 'process' ? minQ(...prior.quality.outcomes) : 'hard';
+
   const refs: FieldRef[] = [
     ...CONFIG_FIELDS.map((k) => ({ bucket: 'config' as const, key: k as string })),
     ...STATE_FUSABLE,
@@ -252,24 +273,17 @@ export function fuse(
     if (values.some((v) => v == null) || new Set(values).size !== 1) continue; // not determined
     const determined = values[0];
 
-    // Chain quality: the prior fields feeding this value, the tile that moved it (if any),
-    // and the turn inference itself.
+    // Chain quality: the prior field feeding this value, the remembered tile set's trust, and
+    // the turn inference itself.
     const priorQ =
       ref.bucket === 'config'
         ? (prior.quality.config[ref.key] ?? 'soft')
         : (prior.quality.state[ref.key] ?? 'soft');
-    const movers = viable.filter(
-      (s) => valueFor(s, prior, ref) !== (ref.bucket === 'config'
-        ? prior.config[ref.key as keyof AdvisorConfig]
-        : prior.state[ref.key as keyof FusionPrior['state']])
-    );
-    const tileQ: ChainQuality =
-      movers.length === 0 ? 'hard' : movers.some((s) => s.tileQuality === 'hard') ? 'hard' : 'soft';
-    const chainQ = minQ(priorQ, tileQ, inferred.turnQuality);
+    const chainQ = minQ(priorQ, tileLink, inferred.turnQuality);
 
     const bucketVals = ref.bucket === 'config' ? result.config : result.state;
     const bucketConf = ref.bucket === 'config' ? cf.config : cf.state;
-    const parseConf = bucketConf[ref.key] ?? 1;
+    const parseConf = ref.bucket === 'config' ? (bucketConf[ref.key] ?? 1) : (stateConfOf(cf, ref.key) ?? 1);
     const parseVal = (bucketVals as Record<string, unknown>)[ref.key];
 
     if (parseVal === determined) {
@@ -280,7 +294,12 @@ export function fuse(
       (bucketVals as Record<string, unknown>)[ref.key] = determined;
       bucketConf[ref.key] = chainQ === 'hard' ? ADOPT_HARD : ADOPT_SOFT;
     }
-    // parseConf >= FLAG_BAR with a different value cannot reach here: viability filtered it.
+    // rerollsRemaining can reach here confidently different from `determined`: contradicts()
+    // deliberately exempts it from viability filtering (a Charge purchase is legal outside the
+    // remembered tiles), so it alone can arrive with parseConf >= FLAG_BAR and a mismatched
+    // value; the else-if guard above already leaves it pixel-owned in that case. Every other
+    // field's viability filtering means parseConf >= FLAG_BAR with a different value cannot
+    // reach here at all.
   }
 
   return { result, status: 'fused', nextPrior: seedFromParse(result) };
