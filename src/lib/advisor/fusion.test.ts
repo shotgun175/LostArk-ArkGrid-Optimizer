@@ -31,6 +31,14 @@ export function mkParse(over: Partial<ParsedAdvisorState> = {}): ParsedAdvisorSt
   } as ParsedAdvisorState;
 }
 
+/** Mirrors the ground-truth convention of omitting `outcomes` entirely for tooltip-occluded
+ * captures (e.g. c10corpus/c10_7.json), not just leaving it empty. */
+function withoutOutcomes(over: Partial<ParsedAdvisorState> = {}): ParsedAdvisorState {
+  const raw = mkParse(over) as unknown as Record<string, unknown>;
+  delete raw.outcomes;
+  return raw as unknown as ParsedAdvisorState;
+}
+
 describe('seedFromParse', () => {
   it('maps confidences to hard/soft at the flag bar', () => {
     const prior = seedFromParse(mkParse());
@@ -54,6 +62,12 @@ describe('seedFromParse', () => {
     p.outcomes[0].amount = 4;
     expect(prior.config.willpowerLevel).toBe(2);
     expect(prior.outcomes[0].amount).toBe(1);
+  });
+
+  it('tolerates a parse with no outcomes key: prior outcomes and quality.outcomes are both empty', () => {
+    const prior = seedFromParse(withoutOutcomes()); // must not throw
+    expect(prior.outcomes).toEqual([]);
+    expect(prior.quality.outcomes).toEqual([]);
   });
 });
 
@@ -423,6 +437,21 @@ describe('fuse', () => {
     (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
     const out = fuse(hardPrior(), p, applyOutcome);
     expect(out.nextPrior.quality.config.orderLevel).toBe('hard'); // adopted at ADOPT_HARD = 0.85
+  });
+
+  it('still frame works without outcomes on the CURRENT frame: config still pins normally', () => {
+    const p = withoutOutcomes(); // same turn as the prior; no outcomes key at all
+    p.config.orderLevel = 3; // misread; prior says 1
+    (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
+    const out = fuse(hardPrior(), p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.config.orderLevel).toBe(1); // adopted just like any other still frame
+  });
+
+  it('process frame with a prior that remembers no tiles cannot be explained and desyncs', () => {
+    const priorWithNoTiles = seedFromParse(withoutOutcomes());
+    const out = fuse(priorWithNoTiles, at(4), applyOutcome);
+    expect(out.status).toBe('desync');
   });
 });
 

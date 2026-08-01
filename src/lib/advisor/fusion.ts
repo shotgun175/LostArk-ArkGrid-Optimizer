@@ -55,11 +55,12 @@ export function seedFromParse(p: ParsedAdvisorState): FusionPrior {
   for (const k of Object.keys(p.config)) cq[k] = qualityOf(cf.config?.[k]);
   const sq: Record<string, ChainQuality> = {};
   for (const k of Object.keys(p.state)) sq[k] = qualityOf(cf.state?.[k]);
+  const outs = p.outcomes ?? []; // tooltip-occluded captures can omit outcomes entirely
   return {
     config: { ...p.config },
     state: { ...p.state },
-    outcomes: p.outcomes.map((o) => ({ ...o })),
-    quality: { config: cq, state: sq, outcomes: p.outcomes.map((_, i) => qualityOf(cf.outcomes?.[i])) },
+    outcomes: outs.map((o) => ({ ...o })),
+    quality: { config: cq, state: sq, outcomes: outs.map((_, i) => qualityOf(cf.outcomes?.[i])) },
   };
 }
 
@@ -215,7 +216,7 @@ function deepCopy(p: ParsedAdvisorState): ParsedAdvisorState {
     ...p,
     config: { ...p.config },
     state: { ...p.state },
-    outcomes: p.outcomes.map((o) => ({ ...o })),
+    outcomes: (p.outcomes ?? []).map((o) => ({ ...o })),
     confidence: p.confidence
       ? {
           config: { ...(p.confidence as ConfMaps).config },
