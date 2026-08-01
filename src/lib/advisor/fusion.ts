@@ -122,6 +122,42 @@ export function buildSuccessors(prior: FusionPrior, applyOutcome: ApplyOutcomeFn
   });
 }
 
+/**
+ * The vendored pool's excludeIf table (vendor/model/astrogem.js:173-205) proves the game can only
+ * OFFER a tile within fixed bounds, owner-confirmed against that table: lower_effect is always
+ * exactly -1 and only offered above level 1; a raise never overshoots level 5 (amount N only
+ * offered when level + N <= 5); change_gold_cost is always exactly +100 or -100; reroll_increase
+ * is always exactly +1 or +2. A remembered tile that violates its bound against the prior's own
+ * config is an impossible read: proof the remembered tile SET is corrupt (a misread tile, or the
+ * prior level itself was misread), so nothing this frame's tiles determine may cross the flag bar.
+ * Deliberately soften-only: no successor is excluded here, because when the prior level itself is
+ * the misread field, excluding could drop the true transition.
+ */
+export function tileSetTrust(prior: FusionPrior): ChainQuality {
+  const levelFor = (target: string | undefined): number | undefined => {
+    if (target === 'willpower') return prior.config.willpowerLevel;
+    if (target === 'order') return prior.config.orderLevel;
+    if (target === 'effect1') return prior.config.effect1Level;
+    if (target === 'effect2') return prior.config.effect2Level;
+    return undefined;
+  };
+  for (const tile of prior.outcomes) {
+    if (tile.type === 'raise_effect') {
+      const level = levelFor(tile.target);
+      if (level == null || level + (tile.amount ?? 0) > 5) return 'soft';
+    } else if (tile.type === 'lower_effect') {
+      const level = levelFor(tile.target);
+      if (level == null || level <= 1 || (tile.amount ?? 1) !== 1) return 'soft';
+    } else if (tile.type === 'change_gold_cost') {
+      if (tile.change !== 100 && tile.change !== -100) return 'soft';
+    } else if (tile.type === 'reroll_increase') {
+      if (tile.change !== 1 && tile.change !== 2) return 'soft';
+    }
+    // do_nothing / change_side_option: always legal, no bound to check.
+  }
+  return 'hard';
+}
+
 export const CONFIG_FIELDS: (keyof AdvisorConfig)[] = [
   'baseCost',
   'gemType',
@@ -284,9 +320,10 @@ export function fuse(
   // four remembered tiles together, so a single soft tile taints every field the process path
   // determines: a tile read soft as do_nothing that was really change_side_option makes the
   // stale effect name look "moved by nobody," and a per-successor mover check would wrongly call
-  // that hard. A still frame involves no tile at all, so its link is unconditionally hard.
+  // that hard. tileSetTrust folds in offer-legality on top of remembered read confidence (see its
+  // own doc comment). A still frame involves no tile at all, so its link is unconditionally hard.
   const tileLink: ChainQuality =
-    inferred.kind === 'process' ? minQ(...prior.quality.outcomes) : 'hard';
+    inferred.kind === 'process' ? minQ(...prior.quality.outcomes, tileSetTrust(prior)) : 'hard';
 
   const refs: FieldRef[] = [
     ...CONFIG_FIELDS.map((k) => ({ bucket: 'config' as const, key: k as string })),

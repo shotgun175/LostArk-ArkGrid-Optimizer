@@ -13,6 +13,7 @@ import {
   costFromCm,
   inferAction,
   seedFromParse,
+  tileSetTrust,
 } from './fusion';
 import {
   ADOPT_HARD,
@@ -291,6 +292,61 @@ describe('contradicts', () => {
   });
 });
 
+describe('tileSetTrust', () => {
+  it('an all-legal remembered tile set (mkParse defaults) is trusted hard', () => {
+    expect(tileSetTrust(hardPrior())).toBe('hard');
+  });
+
+  it('lower_effect on a stat already at level 1 is an impossible offer', () => {
+    const prior = hardPrior();
+    prior.config.orderLevel = 1;
+    prior.outcomes[2] = { type: 'lower_effect', target: 'order', amount: 1 };
+    expect(tileSetTrust(prior)).toBe('soft');
+  });
+
+  it('lower_effect amount other than 1 is an impossible offer (the game always lowers by exactly 1)', () => {
+    const prior = hardPrior(); // effect1Level default 3, > 1
+    prior.outcomes[1] = { type: 'lower_effect', target: 'effect1', amount: 2 };
+    expect(tileSetTrust(prior)).toBe('soft');
+  });
+
+  it('a raise that exactly reaches level 5 is a legal offer', () => {
+    const prior = hardPrior();
+    prior.config.orderLevel = 3;
+    prior.outcomes[0] = { type: 'raise_effect', target: 'order', amount: 2 }; // 3+2=5, exactly legal
+    expect(tileSetTrust(prior)).toBe('hard');
+  });
+
+  it('a raise that would overshoot level 5 is an impossible offer', () => {
+    const prior = hardPrior();
+    prior.config.effect1Level = 2;
+    prior.outcomes[1] = { type: 'raise_effect', target: 'effect1', amount: 4 }; // 2+4>5: impossible
+    expect(tileSetTrust(prior)).toBe('soft');
+  });
+
+  it('change_gold_cost limited to exactly +/-100', () => {
+    const prior = hardPrior();
+    prior.outcomes[2] = { type: 'change_gold_cost', change: 50 };
+    expect(tileSetTrust(prior)).toBe('soft');
+  });
+
+  it('reroll_increase limited to exactly 1 or 2', () => {
+    const prior = hardPrior();
+    prior.outcomes[3] = { type: 'reroll_increase', change: 3 };
+    expect(tileSetTrust(prior)).toBe('soft');
+  });
+
+  it('change_gold_cost +100/-100 and reroll_increase 1/2 are legal', () => {
+    const prior = hardPrior();
+    prior.outcomes[2] = { type: 'change_gold_cost', change: -100 };
+    prior.outcomes[3] = { type: 'reroll_increase', change: 1 };
+    expect(tileSetTrust(prior)).toBe('hard');
+    prior.outcomes[2] = { type: 'change_gold_cost', change: 100 };
+    prior.outcomes[3] = { type: 'reroll_increase', change: 2 };
+    expect(tileSetTrust(prior)).toBe('hard');
+  });
+});
+
 describe('inferAction soft-turn branches', () => {
   it('soft turn read + config matching exactly one successor returns process', () => {
     const prior = hardPrior();
@@ -403,6 +459,26 @@ describe('fuse', () => {
     expect(out.status).toBe('fused');
     expect(out.result.config.orderLevel).toBe(1); // adopted, not left at the misread 3
     expect(conf(out.result, 'orderLevel')).toBe(ADOPT_HARD);
+  });
+
+  it('a remembered tile the game could not have offered caps adoption below the flag bar (the closed gap)', () => {
+    const prior = hardPrior();
+    prior.config.effect1Level = 2; // 2 + 4 > 5: this raise could never have been offered
+    prior.outcomes[1] = { type: 'raise_effect', target: 'effect1', amount: 4 }; // impossible tile
+    const p = at(4);
+    p.config.effect1Level = 2; // unaffected by the raise-willpower successor; confirms the prior
+    p.config.willpowerLevel = 3; // read confidently; still uniquely selects the raise-willpower
+    // successor (index 0, untouched), same setup as the 'adoption is observable' test above.
+    p.config.orderLevel = 3; // misread; prior/every viable successor says 1
+    (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.config.orderLevel).toBe(1);
+    // Before tileSetTrust, this all-hard prior adopted orderLevel at ADOPT_HARD (see the test
+    // directly above). The impossible remembered tile now caps the whole tile-set trust to soft,
+    // so adoption can only reach ADOPT_SOFT, below the flag bar.
+    expect(conf(out.result, 'orderLevel')).toBe(ADOPT_SOFT);
+    expect(conf(out.result, 'orderLevel')).toBeLessThan(FLAG_BAR);
   });
 
   it('fields differing across multiple viable successors get no lift and no adoption', () => {
