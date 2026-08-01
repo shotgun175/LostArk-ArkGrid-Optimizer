@@ -189,4 +189,63 @@ describe('contradicts', () => {
     const p = at(4); // effect2 still Boss Damage at 0.95
     expect(contradicts(succ[3], prior, p)).toBe(true);
   });
+
+  it('a changed-slot name confidently DIFFERENT from the prior does not kill that change successor', () => {
+    const prior = hardPrior();
+    prior.outcomes[3] = { type: 'change_side_option', target: 'effect2' };
+    const succ = buildSuccessors(prior, applyOutcome);
+    const p = at(4);
+    p.config.effect2 = 'Additional Damage'; // changed from Boss Damage at high confidence
+    (p.confidence as { config: Record<string, number> }).config.effect2 = 0.95;
+    expect(contradicts(succ[3], prior, p)).toBe(false);
+  });
+});
+
+describe('inferAction soft-turn branches', () => {
+  it('soft turn read + config matching exactly one successor returns process', () => {
+    const prior = hardPrior();
+    const p = at(9); // nonsense turn but read softly
+    (p.confidence as { state: Record<string, number> }).state.currentTurn = 0.3;
+    // Confidently read willpowerLevel 3, which only the raise-willpower successor has
+    p.config.willpowerLevel = 3;
+    (p.confidence as { config: Record<string, number> }).config.willpowerLevel = 0.95;
+    // Everything else matches prior with high confidence
+    const inf = inferAction(prior, p, applyOutcome);
+    expect(inf.kind).toBe('process');
+    if (inf.kind === 'process') {
+      expect(inf.turnQuality).toBe('soft');
+      expect(inf.successors).toHaveLength(4); // all successors returned for caller to filter
+    }
+  });
+
+  it('soft turn read + ambiguous config (matches multiple successors) returns desync', () => {
+    const prior = hardPrior();
+    const p = at(9); // nonsense turn but read softly
+    (p.confidence as { state: Record<string, number> }).state.currentTurn = 0.3;
+    // Set a config that matches the prior perfectly (no change detected)
+    // but lower enough other confidences that stillContradiction becomes true
+    // e.g., raise effect1Level to 4 with high confidence
+    p.config.effect1Level = 4;
+    (p.confidence as { config: Record<string, number> }).config.effect1Level = 0.95;
+    // Soften other confidences so multiple successors could be viable
+    (p.confidence as { config: Record<string, number> }).config.effect1 = 0.3;
+    const inf = inferAction(prior, p, applyOutcome);
+    expect(inf.kind).toBe('desync');
+    if (inf.kind === 'desync') {
+      expect(inf.reason).toBe('soft turn read and ambiguous config');
+    }
+  });
+
+  it('soft turn read + no successors viable due to confident mismatch returns desync', () => {
+    const prior = hardPrior();
+    const p = at(9); // nonsense turn but read softly
+    (p.confidence as { state: Record<string, number> }).state.currentTurn = 0.3;
+    // Set a config that doesn't match any successor and is read with high confidence
+    // e.g., willpowerLevel 5 when all successors expect 2 or 3
+    p.config.willpowerLevel = 5;
+    (p.confidence as { config: Record<string, number> }).config.willpowerLevel = 0.95;
+    // Keep others high to make still clear, but this one mismatch kills all successors
+    const inf = inferAction(prior, p, applyOutcome);
+    expect(inf.kind).toBe('desync');
+  });
 });
