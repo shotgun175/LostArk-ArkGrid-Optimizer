@@ -483,8 +483,18 @@ export class AdvisorController {
    * Re-rank from a manually-entered / corrected state (the dropdown backup on the Processing window).
    * No image: the worker runs the edit through his constraintSnap + DP and returns the snapped state
    * plus fresh advice, exactly as a parse would.
+   *
+   * `adoptMemory` gates whether this call's fusion result becomes the watch tracker's next prior.
+   * constraintSnap treats every field it's handed as authoritative (confidence 1.0), so it must default
+   * to false: a market-only re-rank replays the SAME last-seen state (Panel's `lastEdited`) through this
+   * path on every gold-bracket / role / baseline change, and adopting that would silently promote all of
+   * that frame's sub-0.8 OCR fields to hard memory. Only a genuine user correction should adopt.
    */
-  async advise(edited: EditedAdvisorState, inputs: AdviceInputs = {}): Promise<AdvisorResult | null> {
+  async advise(
+    edited: EditedAdvisorState,
+    inputs: AdviceInputs = {},
+    adoptMemory = false
+  ): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
       if (!this.initialized) {
@@ -509,7 +519,7 @@ export class AdvisorController {
           axis: inputs.axis,
         });
       });
-      this.adoptTracker(gen, res);
+      if (adoptMemory) this.adoptTracker(gen, res);
       return res;
     } catch {
       return null;

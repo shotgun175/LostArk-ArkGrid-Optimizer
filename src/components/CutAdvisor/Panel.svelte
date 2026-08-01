@@ -134,7 +134,8 @@
     const snapshot = inputs; // capture the FRESH inputs here (a $derived read in a detached macrotask
     if (!engaged) return; //    can come back stale), and pass it into the deferred re-advise.
     clearTimeout(reAdviseTimer);
-    reAdviseTimer = setTimeout(() => void onManualEdit(lastEdited, snapshot), 200);
+    // adoptMemory: false — this replays the last-seen gem, it is not a new user correction.
+    reAdviseTimer = setTimeout(() => void onManualEdit(lastEdited, snapshot, false), 200);
   });
 
   const fmtGold = (g: number) =>
@@ -202,14 +203,27 @@
   // Manual edit on the Processing window: re-rank from the hand-set state (no image). Update ONLY the
   // advice, the window already repainted from its own local state, so we never touch `result.parsed`
   // (that would reseed the window and stomp the edit). The DP is ~0.5-2s; the visual doesn't wait on it.
-  async function onManualEdit(edited: EditedAdvisorState, adviceInputs: AdviceInputs = inputs) {
+  //
+  // `adoptMemory` defaults true because ProcessingWindow's `onEdit` calls this with just `edited` — a
+  // genuine hand correction should update the watch tracker. The market-recalc effect below is the one
+  // other caller, and it replays the SAME `lastEdited` on every gold-bracket / role / baseline change
+  // (not a real edit), so it passes false explicitly to keep that re-rank from adopting the frame.
+  async function onManualEdit(
+    edited: EditedAdvisorState,
+    adviceInputs: AdviceInputs = inputs,
+    adoptMemory = true
+  ) {
     engaged = true; // an edit (or a market change on an already-read gem) counts as engaging
     lastEdited = edited;
     advisePending++;
     try {
       // $state.snapshot strips Svelte reactive proxies; a raw proxy throws DataCloneError in the
       // worker's postMessage (structured clone can't clone it), which silently killed the re-advise.
-      const res = await getController().advise($state.snapshot(edited) as EditedAdvisorState, adviceInputs);
+      const res = await getController().advise(
+        $state.snapshot(edited) as EditedAdvisorState,
+        adviceInputs,
+        adoptMemory
+      );
       if (res) {
         liveAdvice = res.advice;
         error = null;
