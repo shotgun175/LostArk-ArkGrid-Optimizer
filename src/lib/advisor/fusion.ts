@@ -5,6 +5,10 @@
 // Pure module: no Svelte, no DOM, no Vite-isms, no vendor imports. The vendored transition
 // primitive (AstrogemNested.applyOutcome) is injected by the caller, so this file imports
 // cleanly under plain Node (the tsx harness) and inside the advisor worker.
+// A determined value that disagrees with a soft (<0.8) pixel read is ADOPTED outright at a flat
+// ADOPT_HARD/ADOPT_SOFT confidence, never blended with the parse's own confidence; see the "field
+// determined" rows in the spec's rule table. rerollsRemaining is exempt: it only ever lifts,
+// never adopts, since a legal Charge purchase can move it outside the remembered tiles.
 import type { AdvisorConfig, AdvisorOutcome, ParsedAdvisorState } from './advisorController';
 
 export const FLAG_BAR = 0.8;
