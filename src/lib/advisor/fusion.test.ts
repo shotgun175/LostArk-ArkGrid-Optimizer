@@ -9,12 +9,23 @@ const applyOutcome = require_('./vendor/model/nested.js').applyOutcome as ApplyO
 export function mkParse(over: Partial<ParsedAdvisorState> = {}): ParsedAdvisorState {
   return {
     config: {
-      baseCost: 8, gemType: 'order',
-      willpowerLevel: 2, orderLevel: 1,
-      effect1: 'Attack Power', effect1Level: 3,
-      effect2: 'Boss Damage', effect2Level: 1,
+      baseCost: 8,
+      gemType: 'order',
+      willpowerLevel: 2,
+      orderLevel: 1,
+      effect1: 'Attack Power',
+      effect1Level: 3,
+      effect2: 'Boss Damage',
+      effect2Level: 1,
     },
-    state: { currentTurn: 3, maxTurns: 9, rerollsRemaining: 2, processCost: 900, processCostMultiplier: 0, rosterBound: false },
+    state: {
+      currentTurn: 3,
+      maxTurns: 9,
+      rerollsRemaining: 2,
+      processCost: 900,
+      processCostMultiplier: 0,
+      rosterBound: false,
+    },
     outcomes: [
       { type: 'raise_effect', target: 'willpower', amount: 1 },
       { type: 'lower_effect', target: 'effect1', amount: 1 },
@@ -23,8 +34,23 @@ export function mkParse(over: Partial<ParsedAdvisorState> = {}): ParsedAdvisorSt
     ],
     rarity: 'epic',
     confidence: {
-      config: { baseCost: 0.95, gemType: 0.95, willpowerLevel: 0.9, orderLevel: 0.7, effect1: 0.95, effect1Level: 0.85, effect2: 0.95, effect2Level: 0.85 },
-      state: { currentTurn: 0.96, maxTurns: 0.96, rerollsRemaining: 0.92, processCost: 0.85, processCostMultiplier: 0.85 },
+      config: {
+        baseCost: 0.95,
+        gemType: 0.95,
+        willpowerLevel: 0.9,
+        orderLevel: 0.7,
+        effect1: 0.95,
+        effect1Level: 0.85,
+        effect2: 0.95,
+        effect2Level: 0.85,
+      },
+      state: {
+        currentTurn: 0.96,
+        maxTurns: 0.96,
+        rerollsRemaining: 0.92,
+        processCost: 0.85,
+        processCostMultiplier: 0.85,
+      },
       outcomes: [0.9, 0.9, 0.75, 0.9],
     },
     ...over,
@@ -68,6 +94,13 @@ describe('seedFromParse', () => {
     const prior = seedFromParse(withoutOutcomes()); // must not throw
     expect(prior.outcomes).toEqual([]);
     expect(prior.quality.outcomes).toEqual([]);
+  });
+
+  it('processCost quality borrows from the multiplier confidence (finding 3): a soft multiplier means soft processCost', () => {
+    const p = mkParse();
+    (p.confidence as { state: Record<string, number> }).state.processCostMultiplier = 0.4;
+    const prior = seedFromParse(p);
+    expect(prior.quality.state.processCost).toBe('soft');
   });
 });
 
@@ -136,7 +169,10 @@ function at(turn: number, over: Partial<ParsedAdvisorState> = {}): ParsedAdvisor
 
 describe('inferAction', () => {
   it('turn delta 0 is still (reroll or re-read)', () => {
-    expect(inferAction(hardPrior(), at(3), applyOutcome)).toEqual({ kind: 'still', turnQuality: 'hard' });
+    expect(inferAction(hardPrior(), at(3), applyOutcome)).toEqual({
+      kind: 'still',
+      turnQuality: 'hard',
+    });
   });
 
   it('turn delta 1 is process with four successors', () => {
@@ -214,13 +250,14 @@ describe('contradicts', () => {
     expect(contradicts(succ[3], prior, p)).toBe(false);
   });
 
-  it('a mismatched processCost does not kill a change_gold_cost successor when processCostMultiplier is unread (defaulted)', () => {
+  it('a mismatched processCost never kills a change_gold_cost successor: it is derived, not checked at all', () => {
     const prior = hardPrior(); // mkParse's tile 2 is already change_gold_cost, change: -100
     const succ = buildSuccessors(prior, applyOutcome);
     const p = at(4);
+    p.state.processCostMultiplier = -100; // matches the successor: isolates the test to processCost
     p.state.processCost = 12345; // wildly different from the expected costFromCm(-100) = 0
-    // processCost carries no confidence key of its own in the real pipeline; nothing read it.
-    (p.confidence as { state: Record<string, number> }).state.processCostMultiplier = 0;
+    // processCost is bijectively derived from processCostMultiplier (fuse() re-derives it after
+    // fusing the multiplier), so contradicts() never inspects it, at any confidence.
     expect(contradicts(succ[2], prior, p)).toBe(false);
   });
 
@@ -452,6 +489,35 @@ describe('fuse', () => {
     const priorWithNoTiles = seedFromParse(withoutOutcomes());
     const out = fuse(priorWithNoTiles, at(4), applyOutcome);
     expect(out.status).toBe('desync');
+  });
+
+  it('regression (finding 2): a fused processCost never goes stale relative to the fused multiplier', () => {
+    // Still frame: hard prior at mult 0 / cost 900. The parse misreads mult 50 softly (0.5) with a
+    // self-consistent-looking but wrong cost of 1350 (costFromCm(50)). Under the pre-fix STATE_FUSABLE
+    // ordering bug, adopting the multiplier first mutated cf.state.processCostMultiplier to ADOPT_HARD
+    // (0.85) BEFORE processCost's own turn in the loop, and processCost's parseConf lookup borrowed
+    // that already-adopted value, so it read as confident and skipped its own adoption -- the misread
+    // 1350 survived into the result and nextPrior even though the multiplier got corrected to 0.
+    const prior = hardPrior(); // mult 0, cost 900, all-hard
+    const p = mkParse(); // same turn as the prior: a still frame
+    p.state.processCostMultiplier = 50; // misread; prior says 0
+    p.state.processCost = 1350; // costFromCm(50): internally consistent with the misread, but wrong
+    (p.confidence as { state: Record<string, number> }).state.processCostMultiplier = 0.5;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.state.processCostMultiplier).toBe(0); // adopted back to the prior
+    expect(out.result.state.processCost).toBe(900); // re-derived from the corrected multiplier:
+    // a consistent pair, not the stale misread 1350
+
+    // A following frame that reads both fields confidently and correctly must not desync: nextPrior
+    // no longer carries a stale processCost the way the pre-fix ordering bug would have baked in.
+    const next = mkParse();
+    next.state.processCostMultiplier = 0;
+    next.state.processCost = 900;
+    (next.confidence as { state: Record<string, number> }).state.processCostMultiplier = 0.95;
+    (next.confidence as { state: Record<string, number> }).state.processCost = 0.95;
+    const out2 = fuse(out.nextPrior, next, applyOutcome);
+    expect(out2.status).toBe('fused');
   });
 });
 

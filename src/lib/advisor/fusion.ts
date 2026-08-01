@@ -53,12 +53,26 @@ export function minQ(...qs: ChainQuality[]): ChainQuality {
   return qs.includes('soft') ? 'soft' : 'hard';
 }
 
+/**
+ * processCost carries no confidence key of its own in the real pipeline: the vendored
+ * constraintSnap always synthesizes `state.processCost`, but its confidence map only ever
+ * populates `processCostMultiplier`. Looking `processCost` up directly falls through the `?? 1`
+ * default and treats a defaulted 900 as a confident pixel read. Borrow the multiplier's
+ * confidence for it instead. `fuse()` also derives `processCost`'s VALUE from the multiplier
+ * (see the end of the field loop), so this borrow is the only place processCost confidence is
+ * ever computed from.
+ */
+function stateConfOf(cf: ConfMaps, key: string): number | undefined {
+  if (key === 'processCost') return cf.state?.processCostMultiplier;
+  return cf.state?.[key];
+}
+
 export function seedFromParse(p: ParsedAdvisorState): FusionPrior {
   const cf = confMapsOf(p);
   const cq: Record<string, ChainQuality> = {};
   for (const k of Object.keys(p.config)) cq[k] = qualityOf(cf.config?.[k]);
   const sq: Record<string, ChainQuality> = {};
-  for (const k of Object.keys(p.state)) sq[k] = qualityOf(cf.state?.[k]);
+  for (const k of Object.keys(p.state)) sq[k] = qualityOf(stateConfOf(cf, k));
   const outs = p.outcomes ?? []; // tooltip-occluded captures can omit outcomes entirely
   return {
     config: { ...p.config },
@@ -118,18 +132,6 @@ export type Inferred =
   | { kind: 'process'; successors: Successor[]; turnQuality: ChainQuality }
   | { kind: 'desync'; reason: string };
 
-/**
- * processCost carries no confidence key of its own in the real pipeline: the vendored
- * constraintSnap always synthesizes `state.processCost`, but its confidence map only ever
- * populates `processCostMultiplier`. Looking `processCost` up directly falls through the `?? 1`
- * default and treats a defaulted 900 as a confident pixel read. Borrow the multiplier's
- * confidence for it instead.
- */
-function stateConfOf(cf: ConfMaps, key: string): number | undefined {
-  if (key === 'processCost') return cf.state?.processCostMultiplier;
-  return cf.state?.[key];
-}
-
 /** True when a confidently-read field of the parse rules this successor out. */
 export function contradicts(s: Successor, prior: FusionPrior, snapped: ParsedAdvisorState): boolean {
   const cf = confMapsOf(snapped);
@@ -144,11 +146,13 @@ export function contradicts(s: Successor, prior: FusionPrior, snapped: ParsedAdv
     }
     if (parsed !== s.config[f]) return true;
   }
-  for (const f of ['processCostMultiplier', 'processCost'] as const) {
-    const expected = s.state[f] ?? (prior.state[f] as number | undefined);
-    if (expected == null) continue;
-    if ((stateConfOf(cf, f) ?? 1) >= FLAG_BAR && snapped.state[f] !== expected) return true;
-  }
+  // processCost is not checked here: it is bijectively derived from processCostMultiplier (see
+  // fuse()), so vetoing on the multiplier already covers it, and a defaulted/unread cost value
+  // can never wrongly veto a successor.
+  const f = 'processCostMultiplier';
+  const expected = s.state[f] ?? (prior.state[f] as number | undefined);
+  if (expected != null && (stateConfOf(cf, f) ?? 1) >= FLAG_BAR && snapped.state[f] !== expected)
+    return true;
   // rerollsRemaining deliberately never contradicts: a Charge purchase changes it legally
   // between frames without any tile explaining it.
   return false;
@@ -206,8 +210,9 @@ interface FieldRef {
 
 const STATE_FUSABLE: FieldRef[] = [
   { bucket: 'state', key: 'processCostMultiplier' },
-  { bucket: 'state', key: 'processCost' },
   { bucket: 'state', key: 'rerollsRemaining' }, // lift-only, see below
+  // processCost is deliberately absent: it is derived from processCostMultiplier after this
+  // loop runs (see the end of fuse()), never fused as its own field.
 ];
 
 function valueFor(s: Successor, prior: FusionPrior, ref: FieldRef): unknown {
@@ -305,6 +310,15 @@ export function fuse(
     // value; the else-if guard above already leaves it pixel-owned in that case. Every other
     // field's viability filtering means parseConf >= FLAG_BAR with a different value cannot
     // reach here at all.
+  }
+
+  // processCost is derived, not fused: deriving it from the just-fused multiplier (rather than
+  // fusing it as its own STATE_FUSABLE field) guarantees the pair the result reports is always
+  // internally consistent, and mirroring the multiplier's final confidence into processCost's
+  // slot keeps the confidence map honest for anything that reads processCost directly.
+  if (typeof result.state.processCostMultiplier === 'number') {
+    result.state.processCost = costFromCm(result.state.processCostMultiplier);
+    cf.state.processCost = cf.state.processCostMultiplier;
   }
 
   return { result, status: 'fused', nextPrior: seedFromParse(result) };
