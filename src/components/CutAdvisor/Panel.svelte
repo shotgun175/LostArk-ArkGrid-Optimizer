@@ -241,6 +241,9 @@
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
+  // Fusion lost the thread of the cut (gem switch, missed frames, an off-screen action):
+  // this frame was read fresh, so it may carry more amber flags than usual.
+  let fusionDesync = $derived(watching && result?.fusion?.status === 'desync');
   function naReason(name: string): string {
     const st = lastEdited.state;
     const turn = st.currentTurn ?? 1;
@@ -390,6 +393,12 @@
                 The Processing window is only {smallPanel}px wide in this capture, which makes the
                 small level digits harder to read. If your game has <strong>Force 21:9 Aspect Ratio</strong>
                 turned on, switching it off makes the window noticeably bigger and reads more accurate.
+              </div>
+            {/if}
+            {#if fusionDesync}
+              <div class="small-panel-note" role="status">
+                Lost track of the cut, reading this frame fresh. If a value looks off, correct
+                it on the gem and the reader re-syncs from there.
               </div>
             {/if}
             {#if watching}
