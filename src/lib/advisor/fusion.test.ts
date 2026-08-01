@@ -1,7 +1,27 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import type { ParsedAdvisorState } from './advisorController';
-import { FLAG_BAR, buildSuccessors, contradicts, costFromCm, inferAction, seedFromParse, type ApplyOutcomeFn, type FusionPrior } from './fusion';
+import {
+  type ApplyOutcomeFn,
+  FLAG_BAR,
+  type FusionPrior,
+  buildSuccessors,
+  contradicts,
+  costFromCm,
+  inferAction,
+  seedFromParse,
+} from './fusion';
+import {
+  ADOPT_HARD,
+  ADOPT_SOFT,
+  LIFT_AGREE_HARD,
+  LIFT_AGREE_SOFT,
+  LIFT_CEILING,
+  fuse,
+} from './fusion';
 
 const require_ = createRequire(import.meta.url);
 const applyOutcome = require_('./vendor/model/nested.js').applyOutcome as ApplyOutcomeFn;
@@ -320,8 +340,6 @@ describe('inferAction soft-turn branches', () => {
   });
 });
 
-import { ADOPT_HARD, ADOPT_SOFT, LIFT_AGREE_HARD, LIFT_AGREE_SOFT, LIFT_CEILING, fuse } from './fusion';
-
 const conf = (r: ParsedAdvisorState, f: string) =>
   (r.confidence as { config: Record<string, number> }).config[f];
 
@@ -393,7 +411,7 @@ describe('fuse', () => {
     const prior = seedFromParse(mkParse());
     const p = at(4);
     // Soften every read that distinguishes the four successors so all stay viable.
-    const c = (p.confidence as { config: Record<string, number>; state: Record<string, number> });
+    const c = p.confidence as { config: Record<string, number>; state: Record<string, number> };
     c.config.willpowerLevel = 0.5;
     c.config.effect1Level = 0.5;
     c.state.processCost = 0.5;
@@ -412,7 +430,10 @@ describe('fuse', () => {
   it('one soft remembered tile caps the whole process-frame chain, even for a field an unrelated tile determines', () => {
     const seed = mkParse();
     const oc = (seed.confidence as { outcomes: number[] }).outcomes;
-    oc[0] = 0.9; oc[1] = 0.5; oc[2] = 0.9; oc[3] = 0.9; // exactly one remembered tile is soft
+    oc[0] = 0.9;
+    oc[1] = 0.5;
+    oc[2] = 0.9;
+    oc[3] = 0.9; // exactly one remembered tile is soft
     const prior = seedFromParse(seed);
     const p = at(4);
     p.config.willpowerLevel = 3; // read confidently; uniquely selects the raise-willpower successor
@@ -465,7 +486,9 @@ describe('fuse', () => {
     (p.confidence as { state: Record<string, number> }).state.rerollsRemaining = 0.4;
     const out = fuse(prior, p, applyOutcome);
     expect(out.result.state.rerollsRemaining).toBe(0); // pixel value stands
-    expect((out.result.confidence as { state: Record<string, number> }).state.rerollsRemaining).toBe(0.4);
+    expect(
+      (out.result.confidence as { state: Record<string, number> }).state.rerollsRemaining
+    ).toBe(0.4);
   });
 
   it('nextPrior quality derives from the FUSED confidences', () => {
@@ -521,13 +544,7 @@ describe('fuse', () => {
   });
 });
 
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-const GT = join(
-  process.cwd(),
-  'Reference Projects/advisor-fixtures/groundtruth/corpora/c219'
-);
+const GT = join(process.cwd(), 'Reference Projects/advisor-fixtures/groundtruth/corpora/c219');
 const seqFrames = ['r0of2', 'r1of2', 'rcharge'];
 const haveSeq = seqFrames.every((n) => existsSync(join(GT, `${n}.json`)));
 const loadTruth = (n: string) =>
@@ -537,6 +554,8 @@ const loadTruth = (n: string) =>
 // turns are r2of2=1, r1of2=6, r0of2=8, rcharge=9. Only r0of2 to rcharge is one legal action
 // apart; every other hop spans missed turns and MUST desync (that is the designed gap
 // behavior, worth asserting against real data too).
+// Truth JSONs carry no confidence maps, so seedFromParse treats them all-hard: these two tests
+// exercise turn-delta / contradiction INFERENCE against real data, not the confidence-lift math.
 describe.skipIf(!haveSeq)('c219 ground truth replay', () => {
   it('the consecutive hop r0of2 to rcharge fuses from an all-hard prior', () => {
     const out = fuse(seedFromParse(loadTruth('r0of2')), loadTruth('rcharge'), applyOutcome);

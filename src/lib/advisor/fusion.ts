@@ -123,8 +123,14 @@ export function buildSuccessors(prior: FusionPrior, applyOutcome: ApplyOutcomeFn
 }
 
 export const CONFIG_FIELDS: (keyof AdvisorConfig)[] = [
-  'baseCost', 'gemType', 'willpowerLevel', 'orderLevel',
-  'effect1', 'effect1Level', 'effect2', 'effect2Level',
+  'baseCost',
+  'gemType',
+  'willpowerLevel',
+  'orderLevel',
+  'effect1',
+  'effect1Level',
+  'effect2',
+  'effect2Level',
 ];
 
 export type Inferred =
@@ -133,7 +139,11 @@ export type Inferred =
   | { kind: 'desync'; reason: string };
 
 /** True when a confidently-read field of the parse rules this successor out. */
-export function contradicts(s: Successor, prior: FusionPrior, snapped: ParsedAdvisorState): boolean {
+export function contradicts(
+  s: Successor,
+  prior: FusionPrior,
+  snapped: ParsedAdvisorState
+): boolean {
   const cf = confMapsOf(snapped);
   for (const f of CONFIG_FIELDS) {
     if ((cf.config?.[f] ?? 1) < FLAG_BAR) continue;
@@ -191,6 +201,9 @@ export function inferAction(
   const stillContradiction = CONFIG_FIELDS.some(
     (f) => (cf.config?.[f] ?? 1) >= FLAG_BAR && snapped.config[f] !== prior.config[f]
   );
+  // nameDesyncAtStill() is provably a no-op here (its two fields are a subset of CONFIG_FIELDS,
+  // which stillContradiction already found no confident difference on); kept anyway as a guard
+  // against a future edit to either field list silently losing that coverage.
   if (!stillContradiction) return nameDesyncAtStill() ?? { kind: 'still', turnQuality: 'soft' };
   const viable = successors.filter((s) => !contradicts(s, prior, snapped));
   if (viable.length === 1) return { kind: 'process', successors, turnQuality: 'soft' };
@@ -217,7 +230,10 @@ const STATE_FUSABLE: FieldRef[] = [
 
 function valueFor(s: Successor, prior: FusionPrior, ref: FieldRef): unknown {
   if (ref.bucket === 'config') return s.config[ref.key as keyof AdvisorConfig];
-  return s.state[ref.key as keyof Successor['state']] ?? prior.state[ref.key as keyof FusionPrior['state']];
+  return (
+    s.state[ref.key as keyof Successor['state']] ??
+    prior.state[ref.key as keyof FusionPrior['state']]
+  );
 }
 
 function deepCopy(p: ParsedAdvisorState): ParsedAdvisorState {
@@ -293,7 +309,8 @@ export function fuse(
 
     const bucketVals = ref.bucket === 'config' ? result.config : result.state;
     const bucketConf = ref.bucket === 'config' ? cf.config : cf.state;
-    const parseConf = ref.bucket === 'config' ? (bucketConf[ref.key] ?? 1) : (stateConfOf(cf, ref.key) ?? 1);
+    const parseConf =
+      ref.bucket === 'config' ? (bucketConf[ref.key] ?? 1) : (stateConfOf(cf, ref.key) ?? 1);
     const parseVal = (bucketVals as Record<string, unknown>)[ref.key];
 
     if (parseVal === determined) {
