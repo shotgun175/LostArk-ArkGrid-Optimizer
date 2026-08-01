@@ -249,3 +249,137 @@ describe('inferAction soft-turn branches', () => {
     expect(inf.kind).toBe('desync');
   });
 });
+
+import { ADOPT_HARD, ADOPT_SOFT, LIFT_AGREE_HARD, LIFT_CEILING, fuse } from './fusion';
+
+const conf = (r: ParsedAdvisorState, f: string) =>
+  (r.confidence as { config: Record<string, number> }).config[f];
+
+describe('fuse', () => {
+  it('no prior seeds and passes the parse through untouched', () => {
+    const p = mkParse();
+    const out = fuse(null, p, applyOutcome);
+    expect(out.status).toBe('seeded');
+    expect(out.result).toBe(p);
+    expect(out.nextPrior.config.willpowerLevel).toBe(2);
+  });
+
+  it('still frame pins config: a soft misread level is adopted from a hard prior at ADOPT_HARD', () => {
+    const p = mkParse(); // same turn as prior
+    p.config.orderLevel = 3; // misread; prior says 1
+    (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
+    const out = fuse(hardPrior(), p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.config.orderLevel).toBe(1);
+    expect(conf(out.result, 'orderLevel')).toBe(ADOPT_HARD);
+  });
+
+  it('soft chain caps adoption at ADOPT_SOFT (stays amber)', () => {
+    const softPrior = seedFromParse(mkParse()); // orderLevel prior quality is soft (0.7)
+    const p = mkParse();
+    p.config.orderLevel = 3;
+    (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
+    const out = fuse(softPrior, p, applyOutcome);
+    expect(out.result.config.orderLevel).toBe(1);
+    expect(conf(out.result, 'orderLevel')).toBe(ADOPT_SOFT);
+    expect(ADOPT_SOFT).toBeLessThan(0.8);
+  });
+
+  it('agreement lifts but never lowers pixel confidence', () => {
+    const p = mkParse();
+    const out = fuse(hardPrior(), p, applyOutcome);
+    expect(conf(out.result, 'effect1')).toBe(0.95); // stays above the lift
+    expect(conf(out.result, 'orderLevel')).toBe(LIFT_AGREE_HARD); // 0.7 lifted
+    expect(LIFT_AGREE_HARD).toBeLessThanOrEqual(LIFT_CEILING);
+  });
+
+  it('process frame: unique viable successor pins the moved level', () => {
+    const prior = hardPrior();
+    const p = at(4);
+    p.config.willpowerLevel = 3; // matches the raise-willpower successor
+    // every other read confident, so the other three successors are contradicted
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.config.willpowerLevel).toBe(3);
+    expect(conf(out.result, 'willpowerLevel')).toBeGreaterThanOrEqual(LIFT_AGREE_HARD);
+  });
+
+  it('fields differing across multiple viable successors get no lift and no adoption', () => {
+    const prior = hardPrior();
+    const p = at(4);
+    // Soften every read that distinguishes the four successors so all stay viable.
+    const c = (p.confidence as { config: Record<string, number>; state: Record<string, number> });
+    c.config.willpowerLevel = 0.5;
+    c.config.effect1Level = 0.5;
+    c.state.processCost = 0.5;
+    c.state.processCostMultiplier = 0.5;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('fused');
+    expect(out.result.config.willpowerLevel).toBe(p.config.willpowerLevel); // untouched
+    expect(conf(out.result, 'willpowerLevel')).toBe(0.5); // no lift
+    // effect2Level is identical across ALL successors, so it still fuses
+    expect(conf(out.result, 'effect2Level')).toBe(LIFT_AGREE_HARD);
+  });
+
+  it('zero viable successors is desync and reseeds from the parse', () => {
+    const prior = hardPrior();
+    const p = at(4);
+    p.config.willpowerLevel = 5; // no tile explains a jump to 5 (raise is +1 from 2)
+    p.config.effect1Level = 3;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.status).toBe('desync');
+    expect(out.result).toBe(p);
+    expect(out.nextPrior.config.willpowerLevel).toBe(5);
+  });
+
+  it('rerollsRemaining is lift-only: never adopted from the prior', () => {
+    const prior = hardPrior();
+    // All four tiles reroll +1 so rerollsRemaining is DETERMINED (+1) across every viable
+    // successor; only then does the adopt branch trigger, which the lift-only rule must block.
+    // (The game never draws duplicate tiles, but buildSuccessors does not care and this is the
+    // only shape that isolates the rule.)
+    for (let i = 0; i < 4; i++) prior.outcomes[i] = { type: 'reroll_increase', change: 1 };
+    const p = at(4);
+    p.state.rerollsRemaining = 0; // soft, disagreeing with every determined expectation
+    (p.confidence as { state: Record<string, number> }).state.rerollsRemaining = 0.4;
+    const out = fuse(prior, p, applyOutcome);
+    expect(out.result.state.rerollsRemaining).toBe(0); // pixel value stands
+    expect((out.result.confidence as { state: Record<string, number> }).state.rerollsRemaining).toBe(0.4);
+  });
+
+  it('nextPrior quality derives from the FUSED confidences', () => {
+    const p = mkParse();
+    p.config.orderLevel = 3;
+    (p.confidence as { config: Record<string, number> }).config.orderLevel = 0.4;
+    const out = fuse(hardPrior(), p, applyOutcome);
+    expect(out.nextPrior.quality.config.orderLevel).toBe('hard'); // adopted at ADOPT_HARD = 0.85
+  });
+});
+
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const GT = join(
+  process.cwd(),
+  'Reference Projects/advisor-fixtures/groundtruth/corpora/c219'
+);
+const seqFrames = ['r0of2', 'r1of2', 'rcharge'];
+const haveSeq = seqFrames.every((n) => existsSync(join(GT, `${n}.json`)));
+const loadTruth = (n: string) =>
+  JSON.parse(readFileSync(join(GT, `${n}.json`), 'utf8')) as ParsedAdvisorState;
+
+// The four reroll fixtures are PILL-STATE samples, not consecutive frames: their labelled
+// turns are r2of2=1, r1of2=6, r0of2=8, rcharge=9. Only r0of2 to rcharge is one legal action
+// apart; every other hop spans missed turns and MUST desync (that is the designed gap
+// behavior, worth asserting against real data too).
+describe.skipIf(!haveSeq)('c219 ground truth replay', () => {
+  it('the consecutive hop r0of2 to rcharge fuses from an all-hard prior', () => {
+    const out = fuse(seedFromParse(loadTruth('r0of2')), loadTruth('rcharge'), applyOutcome);
+    expect(out.status).toBe('fused');
+  });
+
+  it('a multi-turn gap (r1of2 to r0of2, turns 6 to 8) desyncs instead of guessing', () => {
+    const out = fuse(seedFromParse(loadTruth('r1of2')), loadTruth('r0of2'), applyOutcome);
+    expect(out.status).toBe('desync');
+  });
+});

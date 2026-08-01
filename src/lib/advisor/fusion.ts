@@ -175,3 +175,113 @@ export function inferAction(
   if (viable.length === 1) return { kind: 'process', successors, turnQuality: 'soft' };
   return { kind: 'desync', reason: 'soft turn read and ambiguous config' };
 }
+
+export interface FuseOutput {
+  result: ParsedAdvisorState;
+  status: FusionStatus;
+  nextPrior: FusionPrior;
+}
+
+interface FieldRef {
+  bucket: 'config' | 'state';
+  key: string;
+}
+
+const STATE_FUSABLE: FieldRef[] = [
+  { bucket: 'state', key: 'processCostMultiplier' },
+  { bucket: 'state', key: 'processCost' },
+  { bucket: 'state', key: 'rerollsRemaining' }, // lift-only, see below
+];
+
+function valueFor(s: Successor, prior: FusionPrior, ref: FieldRef): unknown {
+  if (ref.bucket === 'config') return s.config[ref.key as keyof AdvisorConfig];
+  return s.state[ref.key as keyof Successor['state']] ?? prior.state[ref.key as keyof FusionPrior['state']];
+}
+
+function deepCopy(p: ParsedAdvisorState): ParsedAdvisorState {
+  return {
+    ...p,
+    config: { ...p.config },
+    state: { ...p.state },
+    outcomes: p.outcomes.map((o) => ({ ...o })),
+    confidence: p.confidence
+      ? {
+          config: { ...(p.confidence as ConfMaps).config },
+          state: { ...(p.confidence as ConfMaps).state },
+          outcomes: [...((p.confidence as ConfMaps).outcomes ?? [])],
+        }
+      : undefined,
+  } as ParsedAdvisorState;
+}
+
+export function fuse(
+  prior: FusionPrior | null,
+  snapped: ParsedAdvisorState,
+  applyOutcome: ApplyOutcomeFn
+): FuseOutput {
+  if (!prior) return { result: snapped, status: 'seeded', nextPrior: seedFromParse(snapped) };
+  const inferred = inferAction(prior, snapped, applyOutcome);
+  if (inferred.kind === 'desync')
+    return { result: snapped, status: 'desync', nextPrior: seedFromParse(snapped) };
+
+  const stillSuccessor: Successor = {
+    tileIndex: -1,
+    config: { ...prior.config },
+    state: {},
+    tileQuality: 'hard', // a still frame involves no tile; hardness comes from the prior fields
+  };
+  const candidates = inferred.kind === 'still' ? [stillSuccessor] : inferred.successors;
+  const viable = candidates.filter((s) => !contradicts(s, prior, snapped));
+  if (viable.length === 0)
+    return { result: snapped, status: 'desync', nextPrior: seedFromParse(snapped) };
+
+  const result = deepCopy(snapped);
+  const cf = (result.confidence ?? { config: {}, state: {}, outcomes: [] }) as Required<ConfMaps>;
+  cf.config = cf.config ?? {};
+  cf.state = cf.state ?? {};
+  result.confidence = cf as ParsedAdvisorState['confidence'];
+
+  const refs: FieldRef[] = [
+    ...CONFIG_FIELDS.map((k) => ({ bucket: 'config' as const, key: k as string })),
+    ...STATE_FUSABLE,
+  ];
+  for (const ref of refs) {
+    // A slot whose name a viable change tile refreshes is a free draw: pixel-owned, no fusion.
+    if (ref.bucket === 'config' && viable.some((s) => s.nameChangeSlot === ref.key)) continue;
+    const values = viable.map((s) => valueFor(s, prior, ref));
+    if (values.some((v) => v == null) || new Set(values).size !== 1) continue; // not determined
+    const determined = values[0];
+
+    // Chain quality: the prior fields feeding this value, the tile that moved it (if any),
+    // and the turn inference itself.
+    const priorQ =
+      ref.bucket === 'config'
+        ? (prior.quality.config[ref.key] ?? 'soft')
+        : (prior.quality.state[ref.key] ?? 'soft');
+    const movers = viable.filter(
+      (s) => valueFor(s, prior, ref) !== (ref.bucket === 'config'
+        ? prior.config[ref.key as keyof AdvisorConfig]
+        : prior.state[ref.key as keyof FusionPrior['state']])
+    );
+    const tileQ: ChainQuality =
+      movers.length === 0 ? 'hard' : movers.some((s) => s.tileQuality === 'hard') ? 'hard' : 'soft';
+    const chainQ = minQ(priorQ, tileQ, inferred.turnQuality);
+
+    const bucketVals = ref.bucket === 'config' ? result.config : result.state;
+    const bucketConf = ref.bucket === 'config' ? cf.config : cf.state;
+    const parseConf = bucketConf[ref.key] ?? 1;
+    const parseVal = (bucketVals as Record<string, unknown>)[ref.key];
+
+    if (parseVal === determined) {
+      const lift = chainQ === 'hard' ? LIFT_AGREE_HARD : LIFT_AGREE_SOFT;
+      bucketConf[ref.key] = Math.max(parseConf, lift);
+    } else if (parseConf < FLAG_BAR) {
+      if (ref.key === 'rerollsRemaining') continue; // lift-only field, never adopted
+      (bucketVals as Record<string, unknown>)[ref.key] = determined;
+      bucketConf[ref.key] = chainQ === 'hard' ? ADOPT_HARD : ADOPT_SOFT;
+    }
+    // parseConf >= FLAG_BAR with a different value cannot reach here: viability filtered it.
+  }
+
+  return { result, status: 'fused', nextPrior: seedFromParse(result) };
+}
