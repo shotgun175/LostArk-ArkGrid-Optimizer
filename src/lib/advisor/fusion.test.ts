@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import type { ParsedAdvisorState } from './advisorController';
-import { FLAG_BAR, buildSuccessors, costFromCm, seedFromParse, type ApplyOutcomeFn } from './fusion';
+import { FLAG_BAR, buildSuccessors, contradicts, costFromCm, inferAction, seedFromParse, type ApplyOutcomeFn, type FusionPrior } from './fusion';
 
 const require_ = createRequire(import.meta.url);
 const applyOutcome = require_('./vendor/model/nested.js').applyOutcome as ApplyOutcomeFn;
@@ -107,5 +107,86 @@ describe('buildSuccessors', () => {
   it('tileQuality mirrors the remembered per-tile quality', () => {
     const succ = buildSuccessors(seedFromParse(mkParse()), applyOutcome);
     expect(succ.map((s) => s.tileQuality)).toEqual(['hard', 'hard', 'soft', 'hard']);
+  });
+});
+
+function hardPrior(): FusionPrior {
+  return seedFromParse(mkParse({ confidence: undefined })); // all-hard
+}
+
+function at(turn: number, over: Partial<ParsedAdvisorState> = {}): ParsedAdvisorState {
+  const p = mkParse(over);
+  p.state.currentTurn = turn;
+  return p;
+}
+
+describe('inferAction', () => {
+  it('turn delta 0 is still (reroll or re-read)', () => {
+    expect(inferAction(hardPrior(), at(3), applyOutcome)).toEqual({ kind: 'still', turnQuality: 'hard' });
+  });
+
+  it('turn delta 1 is process with four successors', () => {
+    const inf = inferAction(hardPrior(), at(4), applyOutcome);
+    expect(inf.kind).toBe('process');
+    if (inf.kind === 'process') expect(inf.successors).toHaveLength(4);
+  });
+
+  it('turn jumping 2+ or backwards (Reset) is desync', () => {
+    expect(inferAction(hardPrior(), at(5), applyOutcome).kind).toBe('desync');
+    expect(inferAction(hardPrior(), at(2), applyOutcome).kind).toBe('desync');
+  });
+
+  it('confident gem identity mismatch is desync (gem switch)', () => {
+    const p = at(4);
+    p.config.gemType = 'chaos';
+    expect(inferAction(hardPrior(), p, applyOutcome).kind).toBe('desync');
+  });
+
+  it('a confident name change is desync at delta 0, allowed at delta 1 with a change tile', () => {
+    const changed = at(3);
+    changed.config.effect2 = 'Additional Damage';
+    expect(inferAction(hardPrior(), changed, applyOutcome).kind).toBe('desync');
+
+    const prior = hardPrior();
+    prior.outcomes[3] = { type: 'change_side_option', target: 'effect2' };
+    const processed = at(4);
+    processed.config.effect2 = 'Additional Damage';
+    expect(inferAction(prior, processed, applyOutcome).kind).toBe('process');
+  });
+
+  it('soft turn read falls back to config matching', () => {
+    const p = at(9); // nonsense turn value, but read softly
+    (p.confidence as { state: Record<string, number> }).state.currentTurn = 0.3;
+    // config identical to prior means still
+    expect(inferAction(hardPrior(), p, applyOutcome).kind).toBe('still');
+  });
+});
+
+describe('contradicts', () => {
+  it('a confident field mismatch kills a successor; a soft one does not', () => {
+    const prior = hardPrior();
+    const succ = buildSuccessors(prior, applyOutcome);
+    const p = at(4);
+    p.config.willpowerLevel = 2; // raise-willpower successor expects 3
+    expect(contradicts(succ[0], prior, p)).toBe(true); // willpowerLevel conf 0.9 in mkParse
+    (p.confidence as { config: Record<string, number> }).config.willpowerLevel = 0.5;
+    expect(contradicts(succ[0], prior, p)).toBe(false);
+  });
+
+  it('rerollsRemaining never kills a successor (Charge purchases are legal outside tiles)', () => {
+    const prior = hardPrior();
+    prior.outcomes[0] = { type: 'reroll_increase', change: 1 };
+    const succ = buildSuccessors(prior, applyOutcome);
+    const p = at(4);
+    p.state.rerollsRemaining = 0; // wildly off the +1 expectation, confidently read
+    expect(contradicts(succ[0], prior, p)).toBe(false);
+  });
+
+  it('a changed-slot name confidently EQUAL to the prior kills that change successor', () => {
+    const prior = hardPrior();
+    prior.outcomes[3] = { type: 'change_side_option', target: 'effect2' };
+    const succ = buildSuccessors(prior, applyOutcome);
+    const p = at(4); // effect2 still Boss Damage at 0.95
+    expect(contradicts(succ[3], prior, p)).toBe(true);
   });
 });

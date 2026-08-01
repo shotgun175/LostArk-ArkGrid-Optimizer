@@ -102,3 +102,76 @@ export function buildSuccessors(prior: FusionPrior, applyOutcome: ApplyOutcomeFn
     return s;
   });
 }
+
+export const CONFIG_FIELDS: (keyof AdvisorConfig)[] = [
+  'baseCost', 'gemType', 'willpowerLevel', 'orderLevel',
+  'effect1', 'effect1Level', 'effect2', 'effect2Level',
+];
+
+export type Inferred =
+  | { kind: 'still'; turnQuality: ChainQuality }
+  | { kind: 'process'; successors: Successor[]; turnQuality: ChainQuality }
+  | { kind: 'desync'; reason: string };
+
+/** True when a confidently-read field of the parse rules this successor out. */
+export function contradicts(s: Successor, prior: FusionPrior, snapped: ParsedAdvisorState): boolean {
+  const cf = confMapsOf(snapped);
+  for (const f of CONFIG_FIELDS) {
+    if ((cf.config?.[f] ?? 1) < FLAG_BAR) continue;
+    const parsed = snapped.config[f];
+    if (s.nameChangeSlot === f) {
+      // The game always swaps to a DIFFERENT effect: reading the prior's name confidently
+      // means this change tile did not apply.
+      if (parsed === prior.config[f]) return true;
+      continue; // any other confident name is compatible (the draw is random)
+    }
+    if (parsed !== s.config[f]) return true;
+  }
+  for (const f of ['processCostMultiplier', 'processCost'] as const) {
+    const expected = s.state[f] ?? (prior.state[f] as number | undefined);
+    if (expected == null) continue;
+    if ((cf.state?.[f] ?? 1) >= FLAG_BAR && snapped.state[f] !== expected) return true;
+  }
+  // rerollsRemaining deliberately never contradicts: a Charge purchase changes it legally
+  // between frames without any tile explaining it.
+  return false;
+}
+
+export function inferAction(
+  prior: FusionPrior,
+  snapped: ParsedAdvisorState,
+  applyOutcome: ApplyOutcomeFn
+): Inferred {
+  const cf = confMapsOf(snapped);
+  for (const f of ['gemType', 'baseCost'] as const) {
+    if (snapped.config[f] !== prior.config[f] && (cf.config?.[f] ?? 1) >= FLAG_BAR)
+      return { kind: 'desync', reason: `identity: ${f} changed` };
+  }
+  const turnQuality = qualityOf(cf.state?.currentTurn);
+  const successors = buildSuccessors(prior, applyOutcome);
+
+  const nameDesyncAtStill = (): Inferred | null => {
+    for (const f of ['effect1', 'effect2'] as const) {
+      if (snapped.config[f] !== prior.config[f] && (cf.config?.[f] ?? 1) >= FLAG_BAR)
+        return { kind: 'desync', reason: `name changed without a process: ${f}` };
+    }
+    return null;
+  };
+
+  if (turnQuality === 'hard') {
+    const d = (snapped.state.currentTurn ?? 0) - (prior.state.currentTurn ?? 0);
+    if (d === 0) return nameDesyncAtStill() ?? { kind: 'still', turnQuality };
+    if (d === 1) return { kind: 'process', successors, turnQuality };
+    return { kind: 'desync', reason: `turn moved by ${d}` };
+  }
+
+  // Soft turn read: infer by config. Identical (no confident differences vs the prior on any
+  // config field) reads as still; matching exactly one successor reads as that process.
+  const stillContradiction = CONFIG_FIELDS.some(
+    (f) => (cf.config?.[f] ?? 1) >= FLAG_BAR && snapped.config[f] !== prior.config[f]
+  );
+  if (!stillContradiction) return nameDesyncAtStill() ?? { kind: 'still', turnQuality: 'soft' };
+  const viable = successors.filter((s) => !contradicts(s, prior, snapped));
+  if (viable.length === 1) return { kind: 'process', successors, turnQuality: 'soft' };
+  return { kind: 'desync', reason: 'soft turn read and ambiguous config' };
+}
