@@ -2,6 +2,7 @@
 // init, and exposes a single-image parse (upload / paste / one screen-share frame). The parser stack
 // lives entirely in the worker; this class is the main-thread message shell with a worker-crash
 // backstop, mirroring CaptureController and SolverController.
+import type { FusionPrior, FusionStatus } from './fusion';
 export interface AdvisorConfig {
   baseCost: number;
   gemType: string;
@@ -90,6 +91,9 @@ export interface AdvisorAdvice {
 export interface AdvisorResult {
   parsed: ParsedAdvisorState;
   advice: AdvisorAdvice | null; // null when no baseline/gpd was supplied
+  /** Present on watch-loop parses (and manual advises): the fusion status and the memory
+   * to carry into the next frame. Uploads ignore it. */
+  fusion?: { status: FusionStatus; nextPrior: FusionPrior };
 }
 export interface AdviceInputs {
   baselineGrade?: number; // 0-100 grade; the worker converts to the DP's gemValue threshold
@@ -126,7 +130,11 @@ export class AdvisorController {
         cb(
           d.error
             ? null
-            : { parsed: d.result as ParsedAdvisorState, advice: (d.advice ?? null) as AdvisorAdvice | null }
+            : {
+                parsed: d.result as ParsedAdvisorState,
+                advice: (d.advice ?? null) as AdvisorAdvice | null,
+                fusion: d.fusion as AdvisorResult['fusion'],
+              }
         );
       }
     }
@@ -164,6 +172,10 @@ export class AdvisorController {
   private video: HTMLVideoElement | null = null;
   private watching = false;
   private watchInputs: AdviceInputs = {};
+  // The cut in progress, as of the last committed watch-loop parse (or manual correction).
+  // Null until the first read of a session; cleared on start/stop so one gem's memory can
+  // never leak into another session. See docs spec: temporal fusion.
+  private tracker: FusionPrior | null = null;
   private sigCanvas: OffscreenCanvas | null = null;
   onAdvice: ((r: AdvisorResult | null) => void) | null = null;
   onShareEnded: (() => void) | null = null;
@@ -182,6 +194,7 @@ export class AdvisorController {
   async startWatching(inputs: AdviceInputs): Promise<MediaStream> {
     if (this.stream) return this.stream;
     this.watchInputs = inputs;
+    this.tracker = null;
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 10 },
       audio: false,
@@ -221,6 +234,7 @@ export class AdvisorController {
       this.video.srcObject = null;
       this.video = null;
     }
+    this.tracker = null;
   }
 
   /**
@@ -234,7 +248,8 @@ export class AdvisorController {
     try {
       const bitmap = await this.grabFrame();
       if (!bitmap) return;
-      const res = await this.parseImage(bitmap, this.watchInputs);
+      const res = await this.parseImage(bitmap, this.watchInputs, this.tracker);
+      if (res?.fusion) this.tracker = res.fusion.nextPrior;
       this.onAdvice?.(res);
     } finally {
       this.onReading?.(false);
@@ -389,7 +404,8 @@ export class AdvisorController {
           const t0 = Date.now();
           const bitmap = await this.grabFrame();
           if (bitmap) {
-            const res = await this.parseImage(bitmap, this.watchInputs);
+            const res = await this.parseImage(bitmap, this.watchInputs, this.tracker);
+            if (res?.fusion) this.tracker = res.fusion.nextPrior;
             if (this.watching) this.onAdvice?.(res);
           }
           if (debug) console.log(`[watch] parse+advise took ${Date.now() - t0}ms`);
@@ -409,7 +425,11 @@ export class AdvisorController {
    * Parse one decoded screenshot into a legal game state plus (if baseline/gpd given) the ranked
    * DP advice, or null on failure.
    */
-  async parseImage(bitmap: ImageBitmap, inputs: AdviceInputs = {}): Promise<AdvisorResult | null> {
+  async parseImage(
+    bitmap: ImageBitmap,
+    inputs: AdviceInputs = {},
+    prior: FusionPrior | null = null
+  ): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
       if (!this.initialized) {
@@ -423,7 +443,15 @@ export class AdvisorController {
         this.pending.set(id, resolve);
         this.captureDebugFrame(bitmap); // debug-only: stash the exact frame the OCR is about to read
         this.worker!.postMessage(
-          { type: 'parse', id, bitmap, baselineGrade: inputs.baselineGrade, gpd: inputs.gpd, axis: inputs.axis },
+          {
+            type: 'parse',
+            id,
+            bitmap,
+            baselineGrade: inputs.baselineGrade,
+            gpd: inputs.gpd,
+            axis: inputs.axis,
+            prior,
+          },
           [bitmap]
         );
       });
@@ -452,7 +480,7 @@ export class AdvisorController {
         });
       }
       const id = ++this.seq;
-      return await new Promise<AdvisorResult | null>((resolve) => {
+      const res = await new Promise<AdvisorResult | null>((resolve) => {
         this.pending.set(id, resolve);
         this.worker!.postMessage({
           type: 'advise',
@@ -466,6 +494,8 @@ export class AdvisorController {
           axis: inputs.axis,
         });
       });
+      if (this.watching && res?.fusion) this.tracker = res.fusion.nextPrior;
+      return res;
     } catch {
       return null;
     }

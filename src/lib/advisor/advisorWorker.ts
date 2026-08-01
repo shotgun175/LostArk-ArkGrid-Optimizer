@@ -24,6 +24,8 @@ import levelRefsSrc from './vendor/ocr/level-refs.js?raw';
 import structuralSrc from './vendor/ocr/structural-engine.js?raw';
 import tessEngineSrc from './vendor/ocr/tesseract-engine.js?raw';
 import { isGreyCharge, type PanelRect } from './chargeDetect';
+import { fuse, seedFromParse, type ApplyOutcomeFn, type FusionPrior } from './fusion';
+import type { ParsedAdvisorState } from './advisorController';
 
 const globalEval: (src: string) => void = eval; // indirect eval -> global scope
 // astrogem first (Astrogem), then nested + dp (the decision engine reads Astrogem + AstrogemNested),
@@ -85,6 +87,7 @@ const g = self as unknown as {
     gradeToScore: (grade: number, baseCost?: number) => number;
     supportGradeToScore: (grade: number) => number;
   };
+  AstrogemNested?: { applyOutcome: ApplyOutcomeFn };
 };
 // Resolved lazily (on first use) so it never matters whether the side-effect imports finished
 // attaching to `self` before this module's top-level ran.
@@ -226,8 +229,23 @@ self.onmessage = async (ev: MessageEvent) => {
       const snapped = constraintSnap(raw) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
       applyGreyChargeRescue(raster, raw as Record<string, unknown>, snapped.state);
       attachPanelSize(raster, snapped as Record<string, unknown>);
-      const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
-      self.postMessage({ type: 'parse:done', id: msg.id, result: snapped, advice });
+      const applyOutcomeFn = g.AstrogemNested?.applyOutcome;
+      const fusion = applyOutcomeFn
+        ? fuse(
+            (msg.prior as FusionPrior | null) ?? null,
+            snapped as unknown as ParsedAdvisorState,
+            applyOutcomeFn
+          )
+        : null;
+      const finalResult = (fusion ? fusion.result : snapped) as typeof snapped;
+      const advice = adviseFrom(finalResult, msg.baselineGrade, msg.gpd, msg.axis);
+      self.postMessage({
+        type: 'parse:done',
+        id: msg.id,
+        result: finalResult,
+        advice,
+        fusion: fusion ? { status: fusion.status, nextPrior: fusion.nextPrior } : undefined,
+      });
     } catch (e) {
       console.error('[advisor] parse failed:', (e as Error)?.stack ?? e);
       self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });
@@ -247,7 +265,16 @@ self.onmessage = async (ev: MessageEvent) => {
         rarity: msg.rarity,
       }) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
       const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
-      self.postMessage({ type: 'parse:done', id: msg.id, result: snapped, advice });
+      self.postMessage({
+        type: 'parse:done',
+        id: msg.id,
+        result: snapped,
+        advice,
+        fusion: {
+          status: 'seeded' as const,
+          nextPrior: seedFromParse(snapped as unknown as ParsedAdvisorState),
+        },
+      });
     } catch (e) {
       console.error('[advisor] advise failed:', (e as Error)?.stack ?? e);
       self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });
