@@ -24,6 +24,10 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
   cut / reset / fuse / don't-cut action and pipeline outlook (weeks-to-complete, gold/week, projected cp% gain)
   per gem archetype, driven by your gold-per-1%-damage budget and binding mode. For Support it shows a
   sim-backed relative ranking of which archetypes are best to chase.
+- **Cut Advisor** (work in progress): watches the Processing window live via screen share and
+  recommends the best cutting move each turn. While watching, it remembers the cut in progress and
+  checks each new frame against the game's legal moves, so misreads get caught and confirmed values
+  stay put.
 - **Multiple character profiles** with local persistence.
 
 ## Tech stack

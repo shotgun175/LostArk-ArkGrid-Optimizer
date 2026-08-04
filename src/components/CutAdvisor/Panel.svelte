@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
-    AdvisorController,
     type AdviceInputs,
     type AdvisorAdvice,
+    AdvisorController,
     type AdvisorResult,
     type EditedAdvisorState,
     type ParsedAdvisorState,
@@ -11,6 +11,7 @@
   } from '../../lib/advisor/advisorController';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
+  import type { ArkGridGem } from '../../lib/models/arkGridGems';
   import { type GemRole } from '../../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../../lib/state/appConfig.state.svelte';
@@ -19,7 +20,6 @@
     activeBuildState,
     updateGoldPer1Pct,
   } from '../../lib/state/profile.state.svelte';
-  import type { ArkGridGem } from '../../lib/models/arkGridGems';
   import BaselineControl from '../BaselineControl.svelte';
   import BuildViewSwitch from '../BuildViewSwitch.svelte';
   import ProcessingWindow from './ProcessingWindow.svelte';
@@ -61,10 +61,30 @@
         engaged = true; // a live read counts as engaging, so market changes re-rank it afterwards
       }
     };
+    // The read is done but the DP is still running (it is the large majority of a re-read's wall
+    // time). Repaint the window from the fresh state now so the move is visibly confirmed, and leave
+    // the ranked actions showing "Updating advice…" until onAdvice lands. Deliberately does NOT touch
+    // liveAdvice: stale numbers next to a fresh gem would be worse than an honest pending state.
+    controller.onPartial = (res) => {
+      result = res;
+      lastEdited = parsedToEdited(res.parsed);
+      error = null;
+      engaged = true;
+      stateLanded = true; // the screen is read; what remains is the DP
+      // A gem the reader has no history for — a new cut, or one it lost track of. Its ranked actions
+      // are still several seconds away (a fresh gem is turn 1 of 9, the DEEPEST and slowest search),
+      // and leaving the previous cut's numbers on screen next to it reads as the advisor being stuck
+      // on the old gem. Clear them so the panel shows an honest pending state instead. A normal
+      // in-cut step keeps its numbers: they are one action stale, not a different gem entirely.
+      if (res.fusion?.status === 'desync' || res.fusion?.status === 'seeded') liveAdvice = null;
+    };
     controller.onShareEnded = () => {
       watching = false;
     };
-    controller.onReading = (b) => (reading = b);
+    controller.onReading = (b) => {
+      reading = b;
+      if (b) stateLanded = false; // a new read starts: back to "Reading screen…"
+    };
     return controller;
   }
 
@@ -81,13 +101,32 @@
       effect2: 'Boss Damage',
       effect2Level: 1,
     },
-    state: { currentTurn: 1, maxTurns: 9, rerollsRemaining: 3, processCost: 900, processCostMultiplier: 0, rosterBound: false },
-    outcomes: [{ type: 'do_nothing' }, { type: 'do_nothing' }, { type: 'do_nothing' }, { type: 'do_nothing' }],
+    state: {
+      currentTurn: 1,
+      maxTurns: 9,
+      rerollsRemaining: 3,
+      processCost: 900,
+      processCostMultiplier: 0,
+      rosterBound: false,
+    },
+    outcomes: [
+      { type: 'do_nothing' },
+      { type: 'do_nothing' },
+      { type: 'do_nothing' },
+      { type: 'do_nothing' },
+    ],
     rarity: 'epic',
   };
   const DEFAULT_EDITED: EditedAdvisorState = {
     config: DEFAULT_PARSED.config,
-    state: { currentTurn: 1, maxTurns: 9, rerollsShownFree: 2, resetsRemaining: 1, processCostMultiplier: 0, rosterBound: false },
+    state: {
+      currentTurn: 1,
+      maxTurns: 9,
+      rerollsShownFree: 2,
+      resetsRemaining: 1,
+      processCostMultiplier: 0,
+      rosterBound: false,
+    },
     outcomes: DEFAULT_PARSED.outcomes,
     rarity: 'epic',
   };
@@ -99,7 +138,10 @@
   let advisePending = $state(0);
   let advising = $derived(advisePending > 0);
   let reading = $state(false); // a live re-read / manual re-parse is in flight (set by the controller)
-  let readingScreen = $derived(reading || parsing); // a NEW screen is being read (live watch or upload)
+  // Set once a re-read's OCR half has landed (the window is already repainted) while its DP half is
+  // still running, so the status line can stop claiming the screen is being read.
+  let stateLanded = $state(false);
+  let readingScreen = $derived((reading && !stateLanded) || parsing); // a NEW screen is being read
   let computing = $derived(reading || parsing || advising); // any advice recompute in flight
   let error = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
@@ -134,7 +176,8 @@
     const snapshot = inputs; // capture the FRESH inputs here (a $derived read in a detached macrotask
     if (!engaged) return; //    can come back stale), and pass it into the deferred re-advise.
     clearTimeout(reAdviseTimer);
-    reAdviseTimer = setTimeout(() => void onManualEdit(lastEdited, snapshot), 200);
+    // adoptMemory: false — this replays the last-seen gem, it is not a new user correction.
+    reAdviseTimer = setTimeout(() => void onManualEdit(lastEdited, snapshot, false), 200);
   });
 
   const fmtGold = (g: number) =>
@@ -149,7 +192,9 @@
     } catch (e) {
       const name = (e as DOMException)?.name;
       error =
-        name === 'NotAllowedError' ? 'Screen sharing was denied.' : String((e as Error)?.message ?? e);
+        name === 'NotAllowedError'
+          ? 'Screen sharing was denied.'
+          : String((e as Error)?.message ?? e);
       watching = false;
     }
   }
@@ -202,14 +247,27 @@
   // Manual edit on the Processing window: re-rank from the hand-set state (no image). Update ONLY the
   // advice, the window already repainted from its own local state, so we never touch `result.parsed`
   // (that would reseed the window and stomp the edit). The DP is ~0.5-2s; the visual doesn't wait on it.
-  async function onManualEdit(edited: EditedAdvisorState, adviceInputs: AdviceInputs = inputs) {
+  //
+  // `adoptMemory` defaults true because ProcessingWindow's `onEdit` calls this with just `edited` — a
+  // genuine hand correction should update the watch tracker. The market-recalc effect below is the one
+  // other caller, and it replays the SAME `lastEdited` on every gold-bracket / role / baseline change
+  // (not a real edit), so it passes false explicitly to keep that re-rank from adopting the frame.
+  async function onManualEdit(
+    edited: EditedAdvisorState,
+    adviceInputs: AdviceInputs = inputs,
+    adoptMemory = true
+  ) {
     engaged = true; // an edit (or a market change on an already-read gem) counts as engaging
     lastEdited = edited;
     advisePending++;
     try {
       // $state.snapshot strips Svelte reactive proxies; a raw proxy throws DataCloneError in the
       // worker's postMessage (structured clone can't clone it), which silently killed the re-advise.
-      const res = await getController().advise($state.snapshot(edited) as EditedAdvisorState, adviceInputs);
+      const res = await getController().advise(
+        $state.snapshot(edited) as EditedAdvisorState,
+        adviceInputs,
+        adoptMemory
+      );
       if (res) {
         liveAdvice = res.advice;
         error = null;
@@ -241,12 +299,16 @@
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
+  // Fusion lost the thread of the cut (gem switch, missed frames, an off-screen action):
+  // this frame was read fresh, so it may carry more amber flags than usual.
+  let fusionDesync = $derived(watching && result?.fusion?.status === 'desync');
   function naReason(name: string): string {
     const st = lastEdited.state;
     const turn = st.currentTurn ?? 1;
     const attemptsLeft = (st.maxTurns ?? 9) - turn + 1;
     const free = st.rerollsShownFree ?? 0;
-    if (name === 'Reroll') return turn <= 1 ? 'process once first' : free <= 0 ? 'no rerolls left' : 'not ranked here';
+    if (name === 'Reroll')
+      return turn <= 1 ? 'process once first' : free <= 0 ? 'no rerolls left' : 'not ranked here';
     if (name === 'Complete') return turn <= 1 ? 'process once first' : 'not ranked here';
     if (name === 'Reset') return attemptsLeft > 1 ? 'last turn only' : 'not worth it';
     return 'not ranked here';
@@ -256,7 +318,10 @@
 <div class="panel advisor-panel">
   <div class="title section-title">
     Cut Advisor
-    <span class="wip-badge" title="Screen-reading is best-effort on smaller monitors; double-check highlighted values.">
+    <span
+      class="wip-badge"
+      title="Screen-reading is best-effort on smaller monitors; double-check highlighted values."
+    >
       Work in progress
     </span>
     <button
@@ -314,9 +379,9 @@
             {/if}
             {#if hasAdvice && unconfirmed > 0}
               <div class="rec-unconfirmed" role="status">
-                Based on {unconfirmed} value{unconfirmed > 1 ? 's' : ''} the reader wasn't sure of.
-                Check the highlighted field{unconfirmed > 1 ? 's' : ''} on the gem first — correcting
-                one can change which action wins.
+                Based on {unconfirmed} value{unconfirmed > 1 ? 's' : ''} the reader wasn't sure of. Check
+                the highlighted field{unconfirmed > 1 ? 's' : ''} on the gem first — correcting one can
+                change which action wins.
               </div>
             {/if}
             {#if hasAdvice}
@@ -369,7 +434,10 @@
                   </button>
                 {:else}
                   <button class="primary active" onclick={stopWatch}>⏹ Stop watching</button>
-                  <button onclick={() => void getController().reparseNow()} title="Force a re-read of the current screen">
+                  <button
+                    onclick={() => void getController().reparseNow()}
+                    title="Force a re-read of the current screen"
+                  >
                     🔄 Re-read now
                   </button>
                   <button
@@ -388,8 +456,15 @@
             {#if smallPanel}
               <div class="small-panel-note">
                 The Processing window is only {smallPanel}px wide in this capture, which makes the
-                small level digits harder to read. If your game has <strong>Force 21:9 Aspect Ratio</strong>
+                small level digits harder to read. If your game has
+                <strong>Force 21:9 Aspect Ratio</strong>
                 turned on, switching it off makes the window noticeably bigger and reads more accurate.
+              </div>
+            {/if}
+            {#if fusionDesync}
+              <div class="small-panel-note" role="status">
+                Lost track of the cut, reading this frame fresh. If a value looks off, correct it on
+                the gem and the reader re-syncs from there.
               </div>
             {/if}
             {#if watching}
@@ -411,7 +486,11 @@
                 onclick={() => fileInput?.click()}
                 onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInput?.click()}
               >
-                {parsing ? 'Reading…' : dragOver ? 'Drop to read this gem' : 'Drop a Processing screenshot here'}
+                {parsing
+                  ? 'Reading…'
+                  : dragOver
+                    ? 'Drop to read this gem'
+                    : 'Drop a Processing screenshot here'}
               </div>
             {/if}
             <p class="advisor-intro">
@@ -420,9 +499,9 @@
               by hand on the left.
             </p>
             <p class="advisor-intro advisor-note">
-              Screen-reading is best-effort: on smaller monitors the tiny level and point digits can be
-              misread, so double-check any highlighted values before acting. A dropped screenshot reads
-              more reliably than a live share.
+              Screen-reading is best-effort: on smaller monitors the tiny level and point digits can
+              be misread, so double-check any highlighted values before acting. A dropped screenshot
+              reads more reliably than a live share.
             </p>
           </div>
         </div>
@@ -549,7 +628,10 @@
     cursor: pointer;
     color: #b9c2d0;
     background: rgba(255, 255, 255, 0.02);
-    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+    transition:
+      border-color 0.12s ease,
+      background 0.12s ease,
+      color 0.12s ease;
   }
   .drop:hover {
     border-color: #c9a24a;
@@ -654,7 +736,9 @@
   .rec-card.best {
     border-color: #e6c266;
     background: linear-gradient(180deg, #3a3320, #241d0e);
-    box-shadow: 0 0 0 1px rgba(230, 194, 102, 0.5), 0 3px 12px rgba(0, 0, 0, 0.45);
+    box-shadow:
+      0 0 0 1px rgba(230, 194, 102, 0.5),
+      0 3px 12px rgba(0, 0, 0, 0.45);
   }
   .rc-name {
     display: flex;
@@ -717,7 +801,7 @@
     padding: 7px 9px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--accent, #6aa9e9) 10%, transparent);
-    color: var(--muted, #9aa7b8);
+    color: color-mix(in srgb, var(--text) 80%, transparent);
     font-size: 0.78rem;
     line-height: 1.4;
   }

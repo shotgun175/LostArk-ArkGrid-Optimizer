@@ -20,7 +20,72 @@
  * of seven corpora, at a cost of ~0.3 extra confirm-me prompts per capture. Patch 5 ("EFFECT TILE
  * WITH NO AMOUNT AND NO ARROW") reads an unlabelled effect tile as the effect-swap it structurally is
  * rather than defaulting it to a +1 raise: outcomes 45/48 -> 48/48 and 21/24 -> 24/24 on two of our
- * cuts, and upstream IMPROVES too (97.39% -> 98.51%, whole-parse 58 -> 61/67). Under Node the
+ * cuts, and upstream IMPROVES too (97.39% -> 98.51%, whole-parse 58 -> 61/67).
+ * Patch 6 ("A FUZZY NAME WIN NEEDS EVIDENCE THE RUNNER-UP LACKS")
+ * stops the gem-name fuzzy pass committing a wrong
+ * subtype at 0.85 on evidence shared by both candidates: scoring each name by the fraction of its
+ * own 5-grams lets the SHORTER word win a head-damaged read ("immutability" -> "tability") on grams
+ * both words contain, setting baseCost 8 instead of 10, which then picks the wrong effect pool.
+ * Enumerating realistic OCR damage (head/tail loss, dropped and visually-confused glyphs) over all
+ * six names: 17 confident-wrong commits -> 0, every one of them Immutability read as Stability. The
+ * same reads cost 7 of 119 confident-correct commits, downgraded to flag-for-confirmation, and that
+ * is the honest outcome: "tability" appears in BOTH lists, so upstream is committing at 0.85 on
+ * evidence that cannot separate the two names. All corpora unchanged.
+ * Patches 7-9 are one story, from two live frames where a gem was misidentified wholesale.
+ * Patch 7 ("ATTACK POWER MUST NOT WIN ON THE ATTACK INSIDE ALLY ATTACK ENH.")
+ * makes the trailing y of "Ally" optional (it is the glyph most often lost: a true "Ally Attack
+ * Enh." OCR'd as "...ad attack i je" and "...all attack h rth") and stops the generic /atk|attack/
+ * rung claiming a caption when the Ally effect is a live candidate, since that effect's own name
+ * contains the word.
+ * Patch 8 ("THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE")
+ * gates the pair->cost cross-check. It exists to rescue an occluded gem NAME using two good effect
+ * reads, but it never asked which side was stronger, so it fired in reverse too: one unreadable
+ * caption lexed to Attack Power, and {Attack Power, Boss Damage} implies cost 9 alone, so a clean
+ * 0.85 "Chaos Astrogem: Destruction" was rewritten to cost 9 - wrong cost, wrong effect pool,
+ * wrong DP.
+ * Patch 9 ("INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE")
+ * recovers the caption afterwards: a pool holds four effects, so if exactly one of them contains
+ * the single word that survived OCR, that word names it (pool 10 has one effect containing
+ * "attack"; pool 9 has two and correctly declines). Measured: both live frames go from a wrong
+ * baseCost AND a wrong effect name to fully correct identity; jrun 98.53% -> 99.27%; the other
+ * seven corpora and upstream's 67 samples unchanged, zero silent errors throughout.
+ * Patch 10 ("A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT")
+ * closes what 7-9 cannot: on a cost-9 gem the pool holds BOTH Attack Power and Ally Attack Enh., so
+ * a caption reduced to the bare word "attack" is undecidable from the wheel alone. But the outcome
+ * tiles render the same effect names elsewhere at another size, and OCR does not fail identically
+ * twice - on advisor-frame-1785858982255 the wheel lost "Ally" ("...ad attack 2 pe") while the tile
+ * pointing at that node kept it ("ally altace bor"). The tile is consulted only for a slot the wheel
+ * left below the flag bar, ignored when the tile's own target is a hue near-tie, and what it adopts
+ * is published below the bar (0.7), so it can never manufacture a confident wrong answer.
+ * Patch 11 ("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN")
+ * fixes a cost that could not be read at all. segmentDigitBoxes drops boxes outside 0.55-1.7x the
+ * LINE's median height, on the stated assumption that the "Processing Cost" label fails the
+ * dimBtnWhite mask so the median is the number's own. On 1440p captures the label survives that mask
+ * (brightest pixel s=0.262, v=0.749), so the median becomes its x-height and the cap-height value
+ * sits at ~1.77x - deleted before any rung sees it, leaving the rungs to chew on label letters.
+ * cval then stays null and the snap silently substitutes the 900 base, which is what the owner saw
+ * as "the gold reverts to 900" for BOTH a free process (0) and a doubled one (1,800). The four
+ * zero-cost corpus frames only read correctly by accident: with the true digit deleted, what fires
+ * their ZERO rung is a 5x5 specular fleck off the gold coin. Raising the ceiling globally therefore
+ * REGRESSES them (fleck and digit merge into a run of 2 that no rung accepts), so instead the raw
+ * boxes are re-split here, the trailing group's tall members kept, and the two rungs re-run on those.
+ * Reached only when every rung above abstained; can only yield 0 or a whitelisted 450/900/1800.
+ * Patch 12 ("THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS")
+ * stops one wrong level read from silencing the points header entirely. The anchored template rung
+ * matches each header digit only against values keeping the total feasible, and with a single free
+ * node the S hint collapses that range to ONE value, so a wrong level empties the candidate set and
+ * the rung bails before iouDigit is ever called - the header's pixels are never consulted. On
+ * advisor-frame-1785857193265 that pinned the range to [8,8] against a true total of 10 whose two
+ * digits both read cleanly. When the set comes back empty the run is now re-read against DOMAIN-only
+ * candidates (2 boxes = 10..20, 1 box = 4..9), same narrow-'1' rule and same 0.36 IoU floor. This
+ * REMOVES a level->header veto and adds no header->level inference, so it stays on the legal side of
+ * the Force-21:9 dead end. Adopted only after every other rung returned null and published SOFT, so
+ * it can only turn a null into a flagged value. Measured: all nine labelled corpora and upstream's 67
+ * samples byte-identical, zero silent errors; on the loose advisor-fixtures set exactly two frames
+ * change, both null -> soft value (the frame above -> 10, pairZ-shot -> 11), taking the header's null
+ * rate there from 5/124 to 3/124. Publishing it hard, and taking it unconditionally, were both
+ * measured and rejected (see the adoption site).
+ * Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -586,6 +651,52 @@
               cval = 0; costConf = zOk ? 0.85 : 0.6;   // structure-only reads stay checkable
             }
           }
+          // LOCAL PATCH - THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN (see file header).
+          // segmentDigitBoxes (line ~174) drops any box outside 0.55-1.7x the LINE's median height,
+          // and the note above assumes the "Processing Cost" label fails dimBtnWhite so the median IS
+          // the number's. On 1440p captures the label survives the mask (brightest pixel rgb(141,172,
+          // 191): s=0.262 < 0.3, v=0.749 > 0.6), so the median becomes the label's x-height and the
+          // full cap-height value sits at ~1.77x of it - just past the ceiling, deleted before any
+          // rung above can see it. Measured: live frame medH 13 vs value box 17x23 (ceiling 22.1);
+          // cecorpus medH 9 vs 12x16 (ceiling 15.3). What the rungs then chew on is the label's own
+          // letters. Raising the ceiling globally is NOT the fix: it makes cecorpus keep both the
+          // real digit and a specular fleck off the coin, which merge into a run of 2 that no rung
+          // accepts, regressing four frames that read correctly today (by accident - that fleck is
+          // what fires their ZERO rung). So re-split the RAW boxes here, keep the trailing group's
+          // tall members, and re-run the two rungs on those. Only reached when every rung above
+          // abstained, and it can only ever produce 0 or a whitelisted 450/900/1800.
+          if (cval == null && tgC2.mask) {
+            var rawC3 = L.segmentGlyphs(tgC2.mask, { minColPx: 1, gapCols: 1 });
+            var rs3 = rawC3.length - 1;
+            while (rs3 > 0 && (rawC3[rs3].x - (rawC3[rs3 - 1].x + rawC3[rs3 - 1].w)) < cmedH2 * 1.5) rs3--;
+            if (rs3 > 0) {
+              var tail3 = rawC3.slice(rs3), maxH3 = 0;
+              for (var t3 = 0; t3 < tail3.length; t3++) if (tail3[t3].h > maxH3) maxH3 = tail3[t3].h;
+              // keep only the tall members: this is what stops the coin fleck joining the digit
+              tail3 = tail3.filter(function (b) { return b.w >= 2 && b.h >= maxH3 * 0.5; });
+              if (tail3.length === 1) {
+                var zb3 = tail3[0], zd3 = iouDigit(tgC2.mask, zb3);
+                var z3Ok = zd3 && zd3.ch === "0" && zd3.score >= 0.7;
+                if ((z3Ok || !zd3 || zd3.score < 0.5) &&
+                    zb3.h >= cmedH2 * 0.5 && zb3.w >= zb3.h * 0.45 && zb3.w <= zb3.h * 1.15) {
+                  cval = 0; costConf = z3Ok ? 0.85 : 0.6;
+                }
+              } else if (tail3.length >= 3 && tail3.length <= 5) {
+                // the +100% case the owner hit: "1,800" shown, read as the 900 default
+                var digs3 = "";
+                for (var q3 = 0; q3 < tail3.length; q3++) {
+                  if (tail3[q3].w <= 4 && tail3[q3].h <= maxH3 * 0.4) continue;   // thousands comma
+                  var dm3 = iouDigit(tgC2.mask, tail3[q3]);
+                  if (!dm3 || dm3.score < 0.3) { digs3 = null; break; }
+                  digs3 += dm3.ch;
+                }
+                var cv3 = digs3 ? parseInt(digs3, 10) : null;
+                if (cv3 === 450 || cv3 === 900 || cv3 === 1800) { cval = cv3; costConf = 0.85; }
+              }
+              if (out._debug) out._debug.costTall =
+                tail3.length + " boxes -> " + (cval == null ? "abstain" : cval);
+            }
+          }
         }
       }
     }
@@ -871,21 +982,38 @@
       // that then poisoned the effect pool. Prefix grams get a bonus: the START of
       // the word ("immut" vs "stab") is the discriminative part.
       var letters = nameText.replace(/[^a-z]/g, "");
-      var bestS = null, secondS = 0;
+      var bestS = null, secondS = 0, secondSfx = null;
       Object.keys(GEM_NAME_COST).forEach(function (sfx) {
-        var hits = 0, total = 0;
+        var hits = 0, total = 0, grams = [];
         for (var k = 0; k + 5 <= sfx.length; k++) {
           total++;
-          if (letters.indexOf(sfx.slice(k, k + 5)) !== -1) hits++;
+          var g = sfx.slice(k, k + 5);
+          if (letters.indexOf(g) !== -1) { hits++; grams.push(g); }
         }
         var score = total ? hits / total : 0;
         if (letters.indexOf(sfx.slice(0, 5)) !== -1) score += 0.25;   // prefix bonus
-        if (!bestS || score > bestS.score) { secondS = bestS ? bestS.score : 0; bestS = { sfx: sfx, score: score }; }
-        else if (score > secondS) secondS = score;
+        if (!bestS || score > bestS.score) {
+          secondS = bestS ? bestS.score : 0;
+          secondSfx = bestS ? bestS.sfx : null;
+          bestS = { sfx: sfx, score: score, grams: grams };
+        }
+        else if (score > secondS) { secondS = score; secondSfx = sfx; }
       });
       if (bestS && bestS.score >= 0.5) {
         suffixHit = bestS.sfx;
         suffixAmbig = (bestS.score - secondS) < 0.15;   // two suffixes nearly tied
+        // LOCAL PATCH - A FUZZY NAME WIN NEEDS EVIDENCE THE RUNNER-UP LACKS (see file header).
+        // Each candidate is scored on the fraction of ITS OWN grams that appear, so a read that
+        // lost the head of the word ("immutability" -> "tability", the pet sprite or Force-21:9
+        // starving the first glyphs) scores stability 4/5 = 0.80 and immutability 4/8 = 0.50 on
+        // grams that are IDENTICAL in both words, then commits stability at 0.85 because the gap
+        // clears the tie margin. The win came from stability being the SHORTER word, not from the
+        // pixels: "tability" is equally consistent with either name. So require the winner to
+        // match at least one gram the runner-up does not contain; with shared-only evidence this
+        // is a guess and must flag (0.6) so the user can correct it and the correction can stick.
+        if (!suffixAmbig && secondSfx &&
+            !bestS.grams.some(function (g) { return secondSfx.indexOf(g) === -1; }))
+          suffixAmbig = true;
       }
     }
     if (suffixHit) { out.config.baseCost = GEM_NAME_COST[suffixHit]; confidence.config.baseCost = suffixAmbig ? 0.6 : 0.85; }
@@ -1540,7 +1668,7 @@
     var ptsSub = L.crop(raster, ptsRect);
     // template rung first: leading digit run before the first letter-matched box
     // ("Astrogem" letters are distractor classes)
-    var ptsT = null;
+    var ptsT = null, ptsTFallback = null;
     var tgP = templateGlyphs(ptsRect, dimBtnWhite);
     if (out._debug) out._debug.ptsTG = tgP ? tgP.map(function (g) {
       return (g.ch || "?") + ":" + (g.score != null ? g.score.toFixed(2) : "-") + "/" + (g.margin != null ? g.margin.toFixed(2) : "-");
@@ -1589,7 +1717,7 @@
             // and a wrong hint only yields a wrong-but-SOFT pts the solve flags.
             if (sHint != null && nUnk > 0) { kSum += sHint; nUnk--; }
             var loP = Math.max(4, kSum + nUnk), hiP = Math.min(20, kSum + 5 * nUnk);
-            var digs = "", minSc = 1, constrained = false;
+            var digs = "", minSc = 1, constrained = false, emptyAllowed = false;
             for (var di = 0; di < aIdx; di++) {
               var dbox = tgP[di].box, dch = null, dsc = 0;
               var allowed = null;
@@ -1604,7 +1732,9 @@
                 allowed = [];
                 for (var d1 = 4; d1 <= 9; d1++) { if (d1 >= loP && d1 <= hiP) allowed.push(String(d1)); }
               }
-              if (!allowed.length) { digs = null; break; }
+              // LOCAL PATCH (see "THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS" below):
+              // remember that the bail was an EMPTY candidate set, not a failed pixel match.
+              if (!allowed.length) { digs = null; emptyAllowed = true; break; }
               if (allowed.length < (aIdx === 2 && di === 0 ? 2 : 6)) constrained = true;
               if (dbox.w / Math.max(1, dbox.h) < 0.45) {
                 // the ONLY narrow digit is '1' — aspect alone identifies it (dim thin
@@ -1643,6 +1773,45 @@
                 var rv2 = parseInt(runM[1], 10);
                 if (rv2 >= Math.max(4, loP) && rv2 <= Math.min(20, hiP)) { ptsT = rv2; ptsTSoft = true; }
               }
+            }
+            // LOCAL PATCH - THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS (see file header).
+            // Constraint propagation above is a good tie-breaker but a bad gatekeeper. With one free
+            // node the S hint closes `[loP,hiP]` to a SINGLE value, so one wrong level read empties
+            // `allowed` and the loop bails at the line above without ever calling iouDigit - the
+            // header's own pixels are never consulted. Measured on advisor-frame-1785857193265 (a
+            // 678px panel, the documented reduced-accuracy tier): blue node E committed 1 where the
+            // truth is 3, which with the hint pinned the range to [8,8] while the true total is 10,
+            // and the two digit boxes read a clean unconstrained 1 (narrow, aspect 0.35) and 0 (IoU
+            // 0.67, margin 0.085). So when and ONLY when the set came back empty, re-read the same
+            // run against DOMAIN-only candidates: a 2-box run is 10..20 and a 1-box run is 4..9, both
+            // facts about the field itself, never about the levels. Same narrow-'1' aspect rule and
+            // same 0.36 IoU floor as the constrained pass, so nothing weaker is being accepted.
+            // This REMOVES a level->header veto; it adds no header->level inference, which is the
+            // arbitration the Force-21:9 dead end forbids. The recovered value is adopted only after
+            // every other rung has returned null and is published SOFT (see the adoption site below),
+            // so it can only ever turn a null into a flagged value.
+            if (ptsT == null && emptyAllowed) {
+              var dl = "";
+              for (var dq = 0; dq < aIdx; dq++) {
+                var qb = tgP[dq].box, qc = null;
+                var qall = aIdx === 2
+                  ? (dq === 0 ? ["1", "2"] : ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+                  : ["4", "5", "6", "7", "8", "9"];
+                if (qb.w / Math.max(1, qb.h) < 0.45) {
+                  if (qall.indexOf("1") === -1) { dl = null; break; }
+                  qc = "1";
+                } else {
+                  var qm = iouDigit(tgP.mask, qb, qall);
+                  if (qm && qm.score >= 0.36) qc = qm.ch;
+                }
+                if (!qc) { dl = null; break; }
+                dl += qc;
+              }
+              if (dl && dl.length >= 1 && dl.length <= 2) {
+                var pvf = parseInt(dl, 10);
+                if (pvf >= 4 && pvf <= 20) ptsTFallback = pvf;
+              }
+              if (out._debug) out._debug.ptsFallback = ptsTFallback;
             }
           }
         }
@@ -1702,6 +1871,17 @@
         if (rv >= 4 && rv <= 20) { pts = rv; ptsSoft = true; }
       }
     }
+    // LOCAL PATCH (adoption site for "THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS"):
+    // strictly additive, and that is the whole safety argument. Every rung above - template, the
+    // three OCR passes, the last-resort regex - has already returned null by the time this runs, so
+    // the fallback can only turn a null into a value; it can never change one or raise anyone's
+    // authority. It is published SOFT so the joint solve treats it as "confirm me" evidence.
+    // Publishing it HARD was measured and REJECTED: on the target frame a hard 10 with one free node
+    // forces orderLevel = 4, turning a correct order 2 at 0.48 into a wrong 4 at 0.40. Taking it
+    // unconditionally (rather than only after every rung missed) was also measured and REJECTED: it
+    // demotes four frames whose header already read correctly and HARD via the OCR rung, trading one
+    // corpus for another.
+    if (pts == null && ptsTFallback != null) { pts = ptsTFallback; ptsSoft = true; }
     // TWO OR MORE synth commits mean the frame sits at the degraded tier where
     // the header read is junk-prone too (live: "18" on a 15-point board arrived
     // as a HARD read and bulldozed a correct gold hint) — demote pts to soft
@@ -1935,14 +2115,29 @@
     // Most-specific patterns FIRST: "Enh." appears only in the two Ally effects, so an
     // occluded read like "Damage Enh." (a pet covering "Ally" — real case, 2026-07-16)
     // must hit Ally Damage Enh. before the generic /damage|attack/ effects get a shot.
+    // LOCAL PATCH - "ATTACK POWER" MUST NOT WIN ON THE "ATTACK" INSIDE "ALLY ATTACK ENH."
+    // (see file header). Two changes, both from one live frame (advisor-frame-1785857193265,
+    // 727px panel) where a true "Ally Attack Enh. Lv. 3" OCR'd as "no hl - ~all attack h rth":
+    //   1. the trailing y of "Ally" is the glyph most often lost, and `a[li1|]{2}y` REQUIRES it,
+    //      so "all attack" missed both Ally rungs; y is now optional.
+    //   2. it then fell through to the generic /atk|attack/ rung, which cannot tell the two
+    //      effects apart because "Ally Attack Enh." CONTAINS the word "attack" — the same
+    //      non-discriminative win as the gem-name pass. A bare-attack match now defers when the
+    //      text carries Ally evidence AND the Ally effect is actually a candidate (4th element:
+    //      the rival to check against the pool). That last condition matters: on a cost-8 gem
+    //      the Ally effect is not in the pool, so the veto stays out of the way.
+    // Untreated, the wrong name propagated: the pair->cost cross-check below reads the RAW
+    // (pool-unconstrained) names, so {Additional Damage, Attack Power} implied cost 8 and
+    // overwrote a correctly-read Immutability with Stability, which is the misidentified gem the
+    // owner reported.
     var EFFECT_LEX = [
       // "Ally" OCRs as Aliy/AIly/A11y — accept fuzzed leading tokens too
-      ["Ally Damage Enh.", /a[li1|]{2}y\s*dam|ally\s*dam|damage\s*enh|dmg\s*enh/],
-      ["Ally Attack Enh.", /a[li1|]{2}y\s*at|ally\s*at|attack\s*enh|atk\s*enh/],
+      ["Ally Damage Enh.", /a[li1|]{2}y?\s*dam|ally\s*dam|damage\s*enh|dmg\s*enh/],
+      ["Ally Attack Enh.", /a[li1|]{2}y?\s*at|ally\s*at|attack\s*enh|atk\s*enh/],
       ["Additional Damage", /additional|addit/],
       ["Boss Damage", /boss/],
       ["Brand Power", /brand/],
-      ["Attack Power", /atk|attack/]
+      ["Attack Power", /atk|attack/, /a[li1|]{2}y?\s|ally|enh/, "Ally Attack Enh."]
     ];
     // Only effects legal for the gem's base cost are candidates (the cost-9 pool has no
     // Additional Damage/Brand Power — kills a whole class of misreads); `avoid` keeps
@@ -1953,11 +2148,36 @@
         var name = EFFECT_LEX[i][0];
         if (pool && pool.indexOf(name) === -1) continue;
         if (avoid && name === avoid) continue;
+        // LOCAL PATCH (see EFFECT_LEX above): skip a rung whose match would rest on a token the
+        // rival effect's own name also contains, when that rival is a legal candidate here.
+        var veto = EFFECT_LEX[i][2], rival = EFFECT_LEX[i][3];
+        if (veto && veto.test(t) && rival !== avoid && (!pool || pool.indexOf(rival) !== -1)) continue;
         if (EFFECT_LEX[i][1].test(t)) return name;
       }
       return null;
     }
-    function lexEffect(t, avoid) { return lexIn(t, poolNames, avoid); }
+    // LOCAL PATCH - INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE (see file header).
+    // The rungs above are keyed on whole effect names, so a caption that survived OCR as one bare
+    // word ("...ad attack i je...", the Ally token destroyed) lexes to nothing once the generic
+    // Attack Power rung is ruled out by the pool. But a pool is only four effects: if exactly ONE
+    // of them contains the word that did survive, that word identifies it. Pool 10 has a single
+    // effect containing "attack" (Ally Attack Enh.), so this recovers the read; pool 9 has two, so
+    // it correctly declines. Runs only after the ordered rungs fail, so clean frames are unaffected.
+    var LEX_WORDS = ["attack", "damage", "power", "boss", "brand", "enh", "additional", "ally"];
+    function lexPoolWord(t, pool, avoid) {
+      if (!pool) return null;
+      for (var w = 0; w < LEX_WORDS.length; w++) {
+        if (t.indexOf(LEX_WORDS[w]) === -1) continue;
+        var cand = pool.filter(function (n) {
+          return n !== avoid && n.toLowerCase().indexOf(LEX_WORDS[w]) !== -1;
+        });
+        if (cand.length === 1) return cand[0];
+      }
+      return null;
+    }
+    function lexEffect(t, avoid) {
+      return lexIn(t, poolNames, avoid) || lexPoolWord(t, poolNames, avoid);
+    }
     // Name-read rescue ladder (the FIRST live flywheel record, 2026-07-19: a
     // share-canvas frame OCR'd "Atk. Power" as "Abo Fo" — under the Tesseract
     // floor — so both names came back null and the snap filled pool-order
@@ -1992,7 +2212,16 @@
       // fires on a WRONG suffix read and also on a NULL one (first flywheel
       // record: cost unreadable → snap defaulted to 10 → pool-10 canonicalization
       // rewrote two correctly-read names, which presented as a W/E "swap")
-      if (costsWithPair.length === 1 && costsWithPair[0] !== out.config.baseCost) {
+      // LOCAL PATCH - THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE (file header).
+      // This rescue is aimed at an occluded/mangled NAME being corrected by two good effect reads,
+      // but it never checked which side was actually the stronger evidence, so it fired just as
+      // readily in reverse: on advisor-frame-1785857801605 a clean "Chaos Astrogem: Destruction"
+      // (cost 10, read at 0.85) was overruled to cost 9 because one node's caption OCR'd to
+      // garbage ("ad attack i je") and lexed to Attack Power, and {Attack Power, Boss Damage}
+      // implies cost 9 alone. One unreadable caption should not redefine the gem, so the override
+      // now requires the name read to be the weaker evidence (below the clean-suffix 0.85).
+      var nameSuffixWasClean = (confidence.config.baseCost || 0) >= 0.85;
+      if (costsWithPair.length === 1 && costsWithPair[0] !== out.config.baseCost && !nameSuffixWasClean) {
         out.config.baseCost = costsWithPair[0];
         confidence.config.baseCost = Math.min(confidence.config.baseCost, 0.75);   // below the flag threshold
         poolNames = (ENGINE_API.EFFECT_POOLS && ENGINE_API.EFFECT_POOLS[out.config.baseCost]) || null;
@@ -2099,6 +2328,9 @@
     // the four cells are data-independent — read them CONCURRENTLY (the OCR pool
     // overlaps them; serialized backends preserve old order via their queues);
     // every write below is oi-indexed, so completion order cannot matter
+    // LOCAL PATCH (TILE AS A SECOND READ, see file header): caption text of the tiles that point at
+    // each wheel effect, collected here and reconciled against the wheel read once all four are in.
+    var effCap = { effect1: "", effect2: "" };
     async function readOutcomeCell(oi) {
       var icol = L.medianPatch(raster, iconXs[oi], iconY, patchHalf);
       var icls = L.hueClass(icol[0], icol[1], icol[2]);
@@ -2119,6 +2351,9 @@
         var dW = hueDist(ihue, hueW), dE = hueDist(ihue, hueE);
         target = dW <= dE ? "effect1" : "effect2";
         if (Math.abs(dW - dE) < 12) oconf -= 0.35;   // near-tie: same-family effects
+        // LOCAL PATCH: keep this tile's caption for the wheel-vs-tile reconciliation below. A
+        // near-tie means we cannot tell WHICH effect the tile points at, so it is not evidence.
+        if (target && Math.abs(dW - dE) >= 12) effCap[target] += " " + cap;
       }
 
       // GREY cells are exactly two candidates: "Processing Cost ±100%" and
@@ -2398,6 +2633,29 @@
     // panel-quality attenuation on the art-region fields
     ["willpowerLevel", "orderLevel", "effect1Level", "effect2Level", "effect1", "effect2"].forEach(function (k) {
       confidence.config[k] = (confidence.config[k] || 0) * panelConf;
+    });
+
+    // LOCAL PATCH - A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT (file header).
+    // The wheel caption and the outcome-tile caption render the SAME effect name in two places at
+    // two sizes, and OCR does not fail identically in both. On advisor-frame-1785858982255 the west
+    // node lost "Ally" outright ("...ad attack 2 pe") while the tile pointing at that same node kept
+    // it ("ally altace bor"). Cost-9 pools hold BOTH Attack Power and Ally Attack Enh., so the node
+    // text alone cannot choose and the generic rung takes it; the tile settles it. Consulted only for
+    // a slot the wheel left BELOW the flag bar, and what it adopts is published below that bar too,
+    // so this can never manufacture a confident wrong answer - at worst one flagged name replaces
+    // another. Slot-addressed, so renaming a slot cannot invalidate the outcomes just parsed.
+    ["effect1", "effect2"].forEach(function (slot) {
+      if ((confidence.config[slot] || 0) >= 0.8) return;
+      var capT = effCap[slot];
+      if (!capT) return;
+      var other = slot === "effect1" ? out.config.effect2 : out.config.effect1;
+      var alt = lexIn(capT, poolNames, other) || lexPoolWord(capT, poolNames, other);
+      if (alt && alt !== out.config[slot]) {
+        if (out._debug) out._debug.tileEffectFix = (out._debug.tileEffectFix || "") +
+          slot + ":" + out.config[slot] + "->" + alt + " ";
+        out.config[slot] = alt;
+        confidence.config[slot] = 0.7;
+      }
     });
 
     // ---- HONESTY GUARD: degraded OCR must never look confident ----

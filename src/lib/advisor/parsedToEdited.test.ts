@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { countUnconfirmed, type ParsedAdvisorState, parsedToEdited } from './advisorController';
+
+import { type ParsedAdvisorState, countUnconfirmed, parsedToEdited } from './advisorController';
 
 /**
  * `rerollsRemaining` is in MODEL units: the free rerolls the game shows PLUS the one paid "Charge"
@@ -67,7 +68,10 @@ describe('countUnconfirmed', () => {
   it('counts config fields and outcomes below the flag bar', () => {
     expect(
       countUnconfirmed(
-        withConf({ config: { willpowerLevel: 0.54, effect1Level: 0.9 }, outcomes: [0.4, 0.95, null] })
+        withConf({
+          config: { willpowerLevel: 0.54, effect1Level: 0.9 },
+          outcomes: [0.4, 0.95, null],
+        })
       )
     ).toBe(2); // one config field + one outcome
   });
@@ -81,8 +85,28 @@ describe('countUnconfirmed', () => {
     expect(countUnconfirmed(withConf({ config: { willpowerLevel: 0.8 }, outcomes: [] }))).toBe(0);
   });
 
-  it('ignores state fields, which the window does not highlight', () => {
+  it('ignores state fields the window does not highlight', () => {
     // counting them would print a number that disagrees with the highlighted fields on screen
-    expect(countUnconfirmed(withConf({ config: {}, state: { currentTurn: 0.1 }, outcomes: [] }))).toBe(0);
+    expect(
+      countUnconfirmed(withConf({ config: {}, state: { currentTurn: 0.1 }, outcomes: [] }))
+    ).toBe(0);
+  });
+
+  it('counts an unconfirmed processing cost, which the window does highlight', () => {
+    // an unread cost is not left blank: the snap substitutes the 900 base, so it looks identical to a
+    // confident one while every gold figure in the advice is computed from it
+    expect(
+      countUnconfirmed(
+        withConf({ config: {}, state: { processCostMultiplier: 0.3 }, outcomes: [] })
+      )
+    ).toBe(1);
+  });
+
+  it('does not count a processing cost the reader was sure of', () => {
+    expect(
+      countUnconfirmed(
+        withConf({ config: {}, state: { processCostMultiplier: 0.85 }, outcomes: [] })
+      )
+    ).toBe(0);
   });
 });

@@ -2,6 +2,8 @@
 // init, and exposes a single-image parse (upload / paste / one screen-share frame). The parser stack
 // lives entirely in the worker; this class is the main-thread message shell with a worker-crash
 // backstop, mirroring CaptureController and SolverController.
+import type { FusionPrior, FusionStatus } from './fusion';
+
 export interface AdvisorConfig {
   baseCost: number;
   gemType: string;
@@ -90,11 +92,87 @@ export interface AdvisorAdvice {
 export interface AdvisorResult {
   parsed: ParsedAdvisorState;
   advice: AdvisorAdvice | null; // null when no baseline/gpd was supplied
+  /** Present on watch-loop parses (and manual advises): the fusion status and the memory
+   * to carry into the next frame. Uploads ignore it. */
+  fusion?: { status: FusionStatus; nextPrior: FusionPrior };
 }
 export interface AdviceInputs {
   baselineGrade?: number; // 0-100 grade; the worker converts to the DP's gemValue threshold
   gpd?: number; // gold per 1% damage
   axis?: 'dps' | 'support';
+}
+
+// --- Watch-loop re-read gate --------------------------------------------------------------------
+// The in-game process animation flashes in TWO phases (the process flash, then the outcome reveal)
+// about 700ms apart, dipping to ~38 motion in the lull between. So we wait for no fresh spike for a
+// good beat AND require this exact frame to be calm before parsing; otherwise we read a mid-
+// animation state and advise on it, which made the recommendation jump then correct itself on the
+// next read.
+const STABLE_MS = 900; // no fresh spike for this long means the whole animation has finished
+const QUIET = 22; // and this exact frame must be calm, not a still-settling ~38-motion frame
+// The shared game window animates constantly (the spinning dial, the gem shimmer), moving ~15-35
+// downscaled pixels every frame even when nothing happened. A real process / reroll always jumps
+// far past that noise floor. Measured live over ~100 idle frames and 14 real events: ambient tops
+// out around 35, while a genuine event starts around 41. So we re-read only when a real motion
+// spike has fired since the last read (SPIKE) AND the settled frame differs from what we last read
+// by more than the ambient ceiling (CONTENT). Ambient trips neither, so a static screen spends zero
+// parses.
+const SPIKE = 40; // changed pixels vs the previous frame above this = a real in-window event
+const CONTENT = 36; // changed pixels vs the last read above this = the gem state actually changed
+// ...except 40 was measured on ONE screen. Ambient depends on how much of the share the animated
+// game world occupies, and it varies hugely between setups: the owner's 677px window idles at 0-7,
+// nowhere near the 15-35 the constant was tuned against. On that screen a reroll peaking at 33 never
+// latched (captured live 2026-08-04) while a process at 87-179 did, which is exactly the reported
+// "the reroll works most of the time" - the flash straddles a bar sitting in the middle of its
+// spread. So the bar tracks the screen instead: it sits a clear margin above recently observed
+// ambient, which keeps a static screen at zero parses on a noisy setup while still catching the
+// weaker flashes on a quiet one.
+const SPIKE_WINDOW = 30; // polls of motion history (~9s at POLL_MS) used to characterise ambient
+const SPIKE_MIN_SAMPLES = 10; // below this, keep the field-measured constant rather than guess
+const SPIKE_FLOOR = 12; // never let a perfectly still screen drop the bar into compression flicker
+// A real event's flash reliably trips SPIKE, but its SETTLED frame can sit under CONTENT when only a
+// few small digits (or same-layout text) changed. Measured live on a 677px Force-21:9 window
+// (2026-08-04): a full gem swap flashed motion=87 yet settled at content 13-26, and a process step
+// flashed 90 and settled at 20-33, so the latched spike never converted and the app sat stale for
+// 26s until a manual re-read. A latched spike that stays calm this long is therefore read anyway:
+// at worst a transient (a tooltip crossing the share, spike-then-revert) costs one redundant parse,
+// which fusion absorbs as a confirmation of the unchanged state. The manual "Re-read now" button
+// remains the escape hatch for a change whose flash never trips SPIKE at all.
+const SPIKE_SETTLED_MS = 2500; // a spike calm this long re-reads even below the CONTENT bar
+
+/**
+ * The motion a frame must exceed to count as a real in-window event, given what this screen's
+ * ambient motion has recently looked like. Pure and exported so tests can replay captured sequences.
+ *
+ * The 90th percentile is the ambient ceiling (robust to the odd stray frame), and the margin above it
+ * is whichever is larger of a fixed 10 or half the ambient, so a quiet screen gets an absolute margin
+ * and a noisy one gets a proportional one.
+ */
+export function spikeBarFor(recentMotion: number[]): number {
+  if (recentMotion.length < SPIKE_MIN_SAMPLES) return SPIKE;
+  const sorted = [...recentMotion].sort((a, b) => a - b);
+  const ambient = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+  return Math.max(SPIKE_FLOOR, ambient + Math.max(10, ambient * 0.5));
+}
+
+/** One polled, downscale-compared frame in the shape {@link watchReadGate} decides on. */
+export interface WatchGateFrame {
+  busy: boolean; // a parse is already in flight
+  motion: number; // changed pixels vs the previous poll's frame
+  content: number; // changed pixels vs the last-parsed frame (Infinity before the first read)
+  stableFor: number; // ms since the last motion spike
+  firstRead: boolean; // nothing parsed yet this watch session
+  spikeSeen: boolean; // a spike has fired since the last read
+}
+
+/** The watch loop's re-read decision for one polled frame. Pure and exported so tests can replay
+ * real captured motion/content sequences against it. */
+export function watchReadGate(f: WatchGateFrame): boolean {
+  if (f.busy || f.motion > QUIET) return false; // parse only a calm frame, never one still settling
+  if (f.stableFor < STABLE_MS) return false;
+  if (f.firstRead) return true;
+  if (!f.spikeSeen) return false; // ambient alone: a static screen must spend zero parses
+  return f.content > CONTENT || f.stableFor >= SPIKE_SETTLED_MS;
 }
 
 export class AdvisorController {
@@ -119,6 +197,17 @@ export class AdvisorController {
       this.awaitInit = null;
       return;
     }
+    // The read landed but the DP is still running (it is 85-90% of a re-read's wall time). Surface
+    // the state now so the window can confirm the move; the advice follows on parse:done.
+    if (d.type === 'parse:state') {
+      if (this.pending.has(d.id))
+        this.onPartial?.({
+          parsed: d.result as ParsedAdvisorState,
+          advice: null,
+          fusion: d.fusion as AdvisorResult['fusion'],
+        });
+      return;
+    }
     if (d.type === 'parse:done') {
       const cb = this.pending.get(d.id);
       if (cb) {
@@ -126,7 +215,11 @@ export class AdvisorController {
         cb(
           d.error
             ? null
-            : { parsed: d.result as ParsedAdvisorState, advice: (d.advice ?? null) as AdvisorAdvice | null }
+            : {
+                parsed: d.result as ParsedAdvisorState,
+                advice: (d.advice ?? null) as AdvisorAdvice | null,
+                fusion: d.fusion as AdvisorResult['fusion'],
+              }
         );
       }
     }
@@ -164,8 +257,22 @@ export class AdvisorController {
   private video: HTMLVideoElement | null = null;
   private watching = false;
   private watchInputs: AdviceInputs = {};
+  // The cut in progress, as of the last committed watch-loop parse (or manual correction).
+  // Null until the first read of a session; cleared on start/stop so one gem's memory can
+  // never leak into another session. See docs spec: temporal fusion.
+  private tracker: FusionPrior | null = null;
+  // Bumped on every start/stop; invalidates fusion adoption from a parse still in flight from a
+  // previous watch session.
+  private watchGen = 0;
   private sigCanvas: OffscreenCanvas | null = null;
   onAdvice: ((r: AdvisorResult | null) => void) | null = null;
+  /**
+   * Fired with the parsed state as soon as the OCR finishes, while the DP is still running, so the
+   * Processing window can confirm what was read without waiting for the ranked actions. Its `advice`
+   * is always null; the same result arrives again on {@link onAdvice} once the DP lands. Purely a
+   * latency affordance: a caller that ignores it still sees everything, just later.
+   */
+  onPartial: ((r: AdvisorResult) => void) | null = null;
   onShareEnded: (() => void) | null = null;
   // Fired true when a live re-read / manual re-parse starts and false when it finishes, so the UI can
   // show a "reading screen" indicator instead of leaving stale advice looking final.
@@ -182,6 +289,8 @@ export class AdvisorController {
   async startWatching(inputs: AdviceInputs): Promise<MediaStream> {
     if (this.stream) return this.stream;
     this.watchInputs = inputs;
+    this.tracker = null;
+    this.watchGen++;
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 10 },
       audio: false,
@@ -221,12 +330,25 @@ export class AdvisorController {
       this.video.srcObject = null;
       this.video = null;
     }
+    this.tracker = null;
+    this.watchGen++;
+  }
+
+  // Only adopt fusion memory from a resolution that still belongs to the current watch session:
+  // gen must match watchGen (a stop/restart since this parse was issued invalidates it) and we
+  // must still be watching (a manual edit while not watching must not seed the tracker).
+  private adoptTracker(gen: number, res: AdvisorResult | null) {
+    if (this.watching && gen === this.watchGen && res?.fusion) this.tracker = res.fusion.nextPrior;
   }
 
   /**
    * Grab the current shared frame and re-parse it right now, bypassing the change-gate. Lets the user
    * force a refresh when the auto-detector didn't notice a subtle in-window change (e.g. one process
    * step barely moved the pixels of a small on-screen window).
+   *
+   * This cannot reach the watch loop's local spike latch, so a press while a spike is latched may be
+   * followed by one redundant auto re-read when the settled-spike fallback matures. Accepted: it is
+   * bounded to one (the auto read clears the latch) and fusion absorbs it as a confirmation.
    */
   async reparseNow(): Promise<void> {
     if (!this.stream) return;
@@ -234,7 +356,9 @@ export class AdvisorController {
     try {
       const bitmap = await this.grabFrame();
       if (!bitmap) return;
-      const res = await this.parseImage(bitmap, this.watchInputs);
+      const gen = this.watchGen;
+      const res = await this.parseImage(bitmap, this.watchInputs, this.tracker);
+      this.adoptTracker(gen, res);
       this.onAdvice?.(res);
     } finally {
       this.onReading?.(false);
@@ -266,7 +390,11 @@ export class AdvisorController {
   private static changedPixels(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
     let n = 0;
     for (let i = 0; i < a.length; i += 4) {
-      if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 45) n++;
+      if (
+        Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) >
+        45
+      )
+        n++;
     }
     return n;
   }
@@ -301,7 +429,10 @@ export class AdvisorController {
           a.click();
           return `downloading ${a.download}`;
         };
-        if (typeof localStorage !== 'undefined' && localStorage.getItem('advisorWatchDebug') === '1')
+        if (
+          typeof localStorage !== 'undefined' &&
+          localStorage.getItem('advisorWatchDebug') === '1'
+        )
           console.log(
             '[watch] frame dump armed; run __dumpAdvisorFrame() in the console to save the last parsed frame'
           );
@@ -336,22 +467,8 @@ export class AdvisorController {
 
   private async watchLoop() {
     const POLL_MS = 300;
-    // The in-game process animation flashes in TWO phases (the process flash, then the outcome reveal)
-    // about 700ms apart, dipping to ~38 motion in the lull between. So we wait for no fresh spike for a
-    // good beat AND require this exact frame to be calm before parsing; otherwise we read a mid-
-    // animation state and advise on it, which made the recommendation jump then correct itself on the
-    // next read.
-    const STABLE_MS = 900; // no fresh spike for this long means the whole animation has finished
-    const QUIET = 22; // and this exact frame must be calm, not a still-settling ~38-motion frame
-    // The shared game window animates constantly (the spinning dial, the gem shimmer), moving ~15-35
-    // downscaled pixels every frame even when nothing happened. A real process / reroll always jumps
-    // far past that noise floor. Measured live over ~100 idle frames and 14 real events: ambient tops
-    // out around 35, while a genuine event starts around 41. So we re-read only when a real motion
-    // spike has fired since the last read (SPIKE) AND the settled frame differs from what we last read
-    // by more than the ambient ceiling (CONTENT). Ambient trips neither, so a static screen spends zero
-    // parses; the manual "Re-read now" button covers any atypically small change.
-    const SPIKE = 40; // changed pixels vs the previous frame above this = a real in-window event
-    const CONTENT = 36; // changed pixels vs the last read above this = the gem state actually changed
+    // The thresholds and the parse decision live in watchReadGate (module scope above), so tests can
+    // replay real captured motion/content sequences against the exact logic this loop runs.
     // Flip on in the console (`localStorage.advisorWatchDebug = '1'` then reload) to log the live
     // change-detection metrics; used to tune the thresholds against a real screen share.
     const debug =
@@ -361,25 +478,29 @@ export class AdvisorController {
     let stableSince = 0;
     let spikeSeen = false;
     let busy = false;
+    // Recent motion, oldest first, used to size the spike bar to this screen. Only CALM frames go in:
+    // an event's own flash (and the settling frames after it) would otherwise raise the very bar it
+    // has to clear, so a run of activity would progressively deafen the detector.
+    const ambientWindow: number[] = [];
     while (this.watching) {
       const sig = this.frameSignature();
       if (sig) {
         const motion = prevSig ? AdvisorController.changedPixels(sig, prevSig) : Infinity;
-        if (motion > SPIKE) {
+        const spikeBar = spikeBarFor(ambientWindow);
+        if (motion > spikeBar) {
           spikeSeen = true; // latch the event; only an actual re-read clears it
           stableSince = Date.now(); // and restart the settle clock so we parse the settled state
+        } else if (isFinite(motion)) {
+          ambientWindow.push(motion);
+          if (ambientWindow.length > SPIKE_WINDOW) ambientWindow.shift();
         }
         const stableFor = Date.now() - stableSince;
         const content = parsedSig ? AdvisorController.changedPixels(sig, parsedSig) : Infinity;
         const firstRead = parsedSig === null;
-        const willParse =
-          !busy &&
-          motion <= QUIET && // parse only a calm frame, never one still settling
-          stableFor >= STABLE_MS &&
-          (firstRead || (spikeSeen && content > CONTENT));
+        const willParse = watchReadGate({ busy, motion, content, stableFor, firstRead, spikeSeen });
         if (debug)
           console.log(
-            `[watch] motion=${motion} content=${content} stableFor=${stableFor} spike=${spikeSeen}${willParse ? ' -> RE-READ' : ''}`
+            `[watch] motion=${motion} bar=${spikeBar} content=${content} stableFor=${stableFor} spike=${spikeSeen}${willParse ? ' -> RE-READ' : ''}`
           );
         if (willParse) {
           busy = true;
@@ -389,14 +510,35 @@ export class AdvisorController {
           const t0 = Date.now();
           const bitmap = await this.grabFrame();
           if (bitmap) {
-            const res = await this.parseImage(bitmap, this.watchInputs);
+            const gen = this.watchGen;
+            const res = await this.parseImage(bitmap, this.watchInputs, this.tracker);
+            this.adoptTracker(gen, res);
             if (this.watching) this.onAdvice?.(res);
           }
           if (debug) console.log(`[watch] parse+advise took ${Date.now() - t0}ms`);
           this.onReading?.(false);
           busy = false;
+          // The parse took seconds, so `sig` is now stale and the next poll's motion would span the
+          // whole gap. SPIKE is calibrated for 300ms deltas; ambient drift across a multi-second gap
+          // can exceed it, and a falsely latched spike no longer stays inert (the settled-spike
+          // fallback would convert it into a redundant parse, recreating the gap, a self-sustaining
+          // loop). Resync to a fresh frame, and re-arm the latch only when that frame shows a real
+          // mid-parse change against the state just read.
+          //
+          // That re-arm compares against the ambient bar, NOT the CONTENT bar: a parse takes seconds,
+          // so anything the user does during one has to be caught here or not at all, and real events
+          // measure 28-51 changed pixels against a CONTENT of 36 — it would miss about half of them.
+          // The looser bar can cost one redundant parse when ambient drifts across a long parse, which
+          // is now cheap: the state is unchanged, so the DP cache returns the previous answer.
+          const fresh = this.frameSignature();
+          if (fresh && AdvisorController.changedPixels(fresh, parsedSig) > spikeBarFor(ambientWindow)) {
+            spikeSeen = true; // a change landed while we were reading; settle, then read it too
+            stableSince = Date.now();
+          }
+          prevSig = fresh ?? sig;
+        } else {
+          prevSig = sig;
         }
-        prevSig = sig;
       }
       await AdvisorController.sleep(POLL_MS);
     }
@@ -409,7 +551,11 @@ export class AdvisorController {
    * Parse one decoded screenshot into a legal game state plus (if baseline/gpd given) the ranked
    * DP advice, or null on failure.
    */
-  async parseImage(bitmap: ImageBitmap, inputs: AdviceInputs = {}): Promise<AdvisorResult | null> {
+  async parseImage(
+    bitmap: ImageBitmap,
+    inputs: AdviceInputs = {},
+    prior: FusionPrior | null = null
+  ): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
       if (!this.initialized) {
@@ -423,7 +569,15 @@ export class AdvisorController {
         this.pending.set(id, resolve);
         this.captureDebugFrame(bitmap); // debug-only: stash the exact frame the OCR is about to read
         this.worker!.postMessage(
-          { type: 'parse', id, bitmap, baselineGrade: inputs.baselineGrade, gpd: inputs.gpd, axis: inputs.axis },
+          {
+            type: 'parse',
+            id,
+            bitmap,
+            baselineGrade: inputs.baselineGrade,
+            gpd: inputs.gpd,
+            axis: inputs.axis,
+            prior,
+          },
           [bitmap]
         );
       });
@@ -441,8 +595,18 @@ export class AdvisorController {
    * Re-rank from a manually-entered / corrected state (the dropdown backup on the Processing window).
    * No image: the worker runs the edit through his constraintSnap + DP and returns the snapped state
    * plus fresh advice, exactly as a parse would.
+   *
+   * `adoptMemory` gates whether this call's fusion result becomes the watch tracker's next prior.
+   * constraintSnap treats every field it's handed as authoritative (confidence 1.0), so it must default
+   * to false: a market-only re-rank replays the SAME last-seen state (Panel's `lastEdited`) through this
+   * path on every gold-bracket / role / baseline change, and adopting that would silently promote all of
+   * that frame's sub-0.8 OCR fields to hard memory. Only a genuine user correction should adopt.
    */
-  async advise(edited: EditedAdvisorState, inputs: AdviceInputs = {}): Promise<AdvisorResult | null> {
+  async advise(
+    edited: EditedAdvisorState,
+    inputs: AdviceInputs = {},
+    adoptMemory = false
+  ): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
       if (!this.initialized) {
@@ -452,7 +616,8 @@ export class AdvisorController {
         });
       }
       const id = ++this.seq;
-      return await new Promise<AdvisorResult | null>((resolve) => {
+      const gen = this.watchGen;
+      const res = await new Promise<AdvisorResult | null>((resolve) => {
         this.pending.set(id, resolve);
         this.worker!.postMessage({
           type: 'advise',
@@ -466,6 +631,8 @@ export class AdvisorController {
           axis: inputs.axis,
         });
       });
+      if (adoptMemory) this.adoptTracker(gen, res);
+      return res;
     } catch {
       return null;
     }
@@ -494,7 +661,8 @@ export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
       rosterBound: p.state.rosterBound ?? false,
     },
     outcomes: p.outcomes.map((o) => ({ ...o })),
-    rarity: p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
+    rarity:
+      p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
   };
 }
 
@@ -503,17 +671,26 @@ export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
  * Processing window uses to glow a field amber).
  *
  * These are the fields the user is being asked to confirm, so ranking actions off them without
- * saying so presents a guess as a finding. Counts config fields and outcomes, matching what the
- * window actually highlights; state fields are excluded because they are not highlighted there and a
- * mismatched count would just look like a bug.
+ * saying so presents a guess as a finding. Counts config fields, outcomes, and the processing cost,
+ * matching exactly what the window highlights; the remaining state fields are excluded because they
+ * have no highlight target there and a count that exceeds what is highlighted looks like a bug.
+ *
+ * The cost earns its place: when it cannot be read the snap does not leave a hole, it substitutes the
+ * 900 base, so an unread cost looks identical to a confident one while every gold figure in the
+ * advice is computed from it.
  */
 export function countUnconfirmed(parsed: ParsedAdvisorState | undefined): number {
   const cf = parsed?.confidence as
-    | { config?: Record<string, number>; outcomes?: (number | null)[] }
+    | {
+        config?: Record<string, number>;
+        state?: Record<string, number>;
+        outcomes?: (number | null)[];
+      }
     | undefined;
   if (!cf) return 0;
   let n = 0;
   for (const v of Object.values(cf.config ?? {})) if ((v ?? 1) < 0.8) n++;
   for (const v of cf.outcomes ?? []) if (v != null && v < 0.8) n++;
+  if ((cf.state?.processCostMultiplier ?? 1) < 0.8) n++;
   return n;
 }
