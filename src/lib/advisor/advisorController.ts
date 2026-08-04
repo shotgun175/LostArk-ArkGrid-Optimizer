@@ -524,8 +524,14 @@ export class AdvisorController {
           // fallback would convert it into a redundant parse, recreating the gap, a self-sustaining
           // loop). Resync to a fresh frame, and re-arm the latch only when that frame shows a real
           // mid-parse change against the state just read.
+          //
+          // That re-arm compares against the ambient bar, NOT the CONTENT bar: a parse takes seconds,
+          // so anything the user does during one has to be caught here or not at all, and real events
+          // measure 28-51 changed pixels against a CONTENT of 36 — it would miss about half of them.
+          // The looser bar can cost one redundant parse when ambient drifts across a long parse, which
+          // is now cheap: the state is unchanged, so the DP cache returns the previous answer.
           const fresh = this.frameSignature();
-          if (fresh && AdvisorController.changedPixels(fresh, parsedSig) > CONTENT) {
+          if (fresh && AdvisorController.changedPixels(fresh, parsedSig) > spikeBarFor(ambientWindow)) {
             spikeSeen = true; // a change landed while we were reading; settle, then read it too
             stableSince = Date.now();
           }
