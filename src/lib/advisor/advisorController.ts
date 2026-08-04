@@ -665,17 +665,26 @@ export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
  * Processing window uses to glow a field amber).
  *
  * These are the fields the user is being asked to confirm, so ranking actions off them without
- * saying so presents a guess as a finding. Counts config fields and outcomes, matching what the
- * window actually highlights; state fields are excluded because they are not highlighted there and a
- * mismatched count would just look like a bug.
+ * saying so presents a guess as a finding. Counts config fields, outcomes, and the processing cost,
+ * matching exactly what the window highlights; the remaining state fields are excluded because they
+ * have no highlight target there and a count that exceeds what is highlighted looks like a bug.
+ *
+ * The cost earns its place: when it cannot be read the snap does not leave a hole, it substitutes the
+ * 900 base, so an unread cost looks identical to a confident one while every gold figure in the
+ * advice is computed from it.
  */
 export function countUnconfirmed(parsed: ParsedAdvisorState | undefined): number {
   const cf = parsed?.confidence as
-    | { config?: Record<string, number>; outcomes?: (number | null)[] }
+    | {
+        config?: Record<string, number>;
+        state?: Record<string, number>;
+        outcomes?: (number | null)[];
+      }
     | undefined;
   if (!cf) return 0;
   let n = 0;
   for (const v of Object.values(cf.config ?? {})) if ((v ?? 1) < 0.8) n++;
   for (const v of cf.outcomes ?? []) if (v != null && v < 0.8) n++;
+  if ((cf.state?.processCostMultiplier ?? 1) < 0.8) n++;
   return n;
 }

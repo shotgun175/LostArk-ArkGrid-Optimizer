@@ -126,11 +126,18 @@
     if (cf?.config)
       for (const k of Object.keys(cf.config)) if ((cf.config[k] ?? 1) < 0.8) u['config.' + k] = true;
     if (cf?.outcomes) cf.outcomes.forEach((v, i) => (v != null && v < 0.8 ? (u['outcomes.' + i] = true) : 0));
+    // The processing cost is the one STATE field worth flagging like a config field. When the reader
+    // cannot find it the snap does not leave a hole, it substitutes the 900 base, so an unread cost is
+    // indistinguishable on screen from a confident one — and it is not cosmetic, every gold figure in
+    // the advice is computed from it. The other state fields stay out: they have no highlight target
+    // here, and a count that exceeds what is highlighted just looks like a bug.
+    if ((cf?.state?.processCostMultiplier ?? 1) < 0.8) u['state.cost'] = true;
     return u;
   }
   let unconfirmed = $state<Record<string, true>>(seedUnconfirmed(parsed));
   const lowConfig = (f: string) => !!unconfirmed['config.' + f];
   const lowOutcome = (i: number) => !!unconfirmed['outcomes.' + i];
+  const lowCost = () => !!unconfirmed['state.cost'];
 
   // A fresh parse (upload / live frame / default) reseeds; an advice echo does NOT, the Panel keeps
   // the `parsed` prop stable across manual edits, so hand-set values are never stomped.
@@ -193,6 +200,7 @@
       lowConfig('effect2Level'),
       lowConfig('baseCost'),
       lowConfig('gemType'),
+      lowCost(),
       ...parsed.outcomes.map((_, i) => lowOutcome(i)),
     ].filter(Boolean).length
   );
@@ -588,7 +596,7 @@
         <!-- cost; click = 0 / 900 / 1,800 -->
         <div class="pw-costrow">
           <span>Processing Cost</span>
-          <button type="button" class="pw-cost-val pw-edit" title="Click to set the processing cost" onclick={(e) => openPop({ kind: 'cost' }, e)}>
+          <button type="button" class="pw-cost-val pw-edit" class:flag={lowCost()} title={lowCost() ? "The reader couldn't confirm the processing cost — check it, every gold figure in the advice depends on it" : 'Click to set the processing cost'} onclick={(e) => openPop({ kind: 'cost' }, e)}>
             {processCost.toLocaleString()}<span class="pw-coin"></span>
           </button>
         </div>
@@ -1479,7 +1487,8 @@
     }
   }
   .pw-points.flag,
-  .pw-name.flag {
+  .pw-name.flag,
+  .pw-cost-val.flag {
     outline: 2px solid #f0b429;
     outline-offset: 3px;
     border-radius: 4px;
