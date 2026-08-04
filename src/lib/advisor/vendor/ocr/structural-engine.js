@@ -48,7 +48,15 @@
  * the single word that survived OCR, that word names it (pool 10 has one effect containing
  * "attack"; pool 9 has two and correctly declines). Measured: both live frames go from a wrong
  * baseCost AND a wrong effect name to fully correct identity; jrun 98.53% -> 99.27%; the other
- * seven corpora and upstream's 67 samples unchanged, zero silent errors throughout. Under Node the
+ * seven corpora and upstream's 67 samples unchanged, zero silent errors throughout.
+ * Patch 10 ("A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT")
+ * closes what 7-9 cannot: on a cost-9 gem the pool holds BOTH Attack Power and Ally Attack Enh., so
+ * a caption reduced to the bare word "attack" is undecidable from the wheel alone. But the outcome
+ * tiles render the same effect names elsewhere at another size, and OCR does not fail identically
+ * twice - on advisor-frame-1785858982255 the wheel lost "Ally" ("...ad attack 2 pe") while the tile
+ * pointing at that node kept it ("ally altace bor"). The tile is consulted only for a slot the wheel
+ * left below the flag bar, ignored when the tile's own target is a hue near-tie, and what it adopts
+ * is published below the bar (0.7), so it can never manufacture a confident wrong answer. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -2028,7 +2036,7 @@
     // of them contains the word that did survive, that word identifies it. Pool 10 has a single
     // effect containing "attack" (Ally Attack Enh.), so this recovers the read; pool 9 has two, so
     // it correctly declines. Runs only after the ordered rungs fail, so clean frames are unaffected.
-    var LEX_WORDS = ["attack", "damage", "power", "boss", "brand", "enh", "additional"];
+    var LEX_WORDS = ["attack", "damage", "power", "boss", "brand", "enh", "additional", "ally"];
     function lexPoolWord(t, pool, avoid) {
       if (!pool) return null;
       for (var w = 0; w < LEX_WORDS.length; w++) {
@@ -2193,6 +2201,9 @@
     // the four cells are data-independent — read them CONCURRENTLY (the OCR pool
     // overlaps them; serialized backends preserve old order via their queues);
     // every write below is oi-indexed, so completion order cannot matter
+    // LOCAL PATCH (TILE AS A SECOND READ, see file header): caption text of the tiles that point at
+    // each wheel effect, collected here and reconciled against the wheel read once all four are in.
+    var effCap = { effect1: "", effect2: "" };
     async function readOutcomeCell(oi) {
       var icol = L.medianPatch(raster, iconXs[oi], iconY, patchHalf);
       var icls = L.hueClass(icol[0], icol[1], icol[2]);
@@ -2213,6 +2224,9 @@
         var dW = hueDist(ihue, hueW), dE = hueDist(ihue, hueE);
         target = dW <= dE ? "effect1" : "effect2";
         if (Math.abs(dW - dE) < 12) oconf -= 0.35;   // near-tie: same-family effects
+        // LOCAL PATCH: keep this tile's caption for the wheel-vs-tile reconciliation below. A
+        // near-tie means we cannot tell WHICH effect the tile points at, so it is not evidence.
+        if (target && Math.abs(dW - dE) >= 12) effCap[target] += " " + cap;
       }
 
       // GREY cells are exactly two candidates: "Processing Cost ±100%" and
@@ -2492,6 +2506,29 @@
     // panel-quality attenuation on the art-region fields
     ["willpowerLevel", "orderLevel", "effect1Level", "effect2Level", "effect1", "effect2"].forEach(function (k) {
       confidence.config[k] = (confidence.config[k] || 0) * panelConf;
+    });
+
+    // LOCAL PATCH - A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT (file header).
+    // The wheel caption and the outcome-tile caption render the SAME effect name in two places at
+    // two sizes, and OCR does not fail identically in both. On advisor-frame-1785858982255 the west
+    // node lost "Ally" outright ("...ad attack 2 pe") while the tile pointing at that same node kept
+    // it ("ally altace bor"). Cost-9 pools hold BOTH Attack Power and Ally Attack Enh., so the node
+    // text alone cannot choose and the generic rung takes it; the tile settles it. Consulted only for
+    // a slot the wheel left BELOW the flag bar, and what it adopts is published below that bar too,
+    // so this can never manufacture a confident wrong answer - at worst one flagged name replaces
+    // another. Slot-addressed, so renaming a slot cannot invalidate the outcomes just parsed.
+    ["effect1", "effect2"].forEach(function (slot) {
+      if ((confidence.config[slot] || 0) >= 0.8) return;
+      var capT = effCap[slot];
+      if (!capT) return;
+      var other = slot === "effect1" ? out.config.effect2 : out.config.effect1;
+      var alt = lexIn(capT, poolNames, other) || lexPoolWord(capT, poolNames, other);
+      if (alt && alt !== out.config[slot]) {
+        if (out._debug) out._debug.tileEffectFix = (out._debug.tileEffectFix || "") +
+          slot + ":" + out.config[slot] + "->" + alt + " ";
+        out.config[slot] = alt;
+        confidence.config[slot] = 0.7;
+      }
     });
 
     // ---- HONESTY GUARD: degraded OCR must never look confident ----

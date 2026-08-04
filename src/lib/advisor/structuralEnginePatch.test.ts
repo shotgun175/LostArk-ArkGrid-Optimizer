@@ -97,6 +97,21 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).toMatch(/return lexIn\(t, poolNames, avoid\) \|\| lexPoolWord\(t, poolNames, avoid\);/);
   });
 
+  it('still reconciles a low-confidence wheel effect against the tile that names it', () => {
+    expect(SRC).toContain('LOCAL PATCH - A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT');
+    // a tile whose target is a near-tie between the two effect hues is not evidence for either
+    expect(SRC).toMatch(/if \(target && Math\.abs\(dW - dE\) >= 12\) effCap\[target\] \+= " " \+ cap;/);
+    // only a slot the wheel left below the flag bar may be revisited...
+    expect(SRC).toMatch(/if \(\(confidence\.config\[slot\] \|\| 0\) >= 0\.8\) return;/);
+    // ...and what it adopts must itself stay below that bar, so this cannot create a silent error
+    expect(SRC).toMatch(/confidence\.config\[slot\] = 0\.7;/);
+    // the guard reads the PUBLISHED confidence, so it has to run after the panel attenuation
+    const atten = SRC.indexOf('panel-quality attenuation on the art-region fields');
+    const tile = SRC.indexOf('LOCAL PATCH - A TILE THAT NAMES AN EFFECT IS A SECOND READ');
+    expect(atten).toBeGreaterThan(-1);
+    expect(tile).toBeGreaterThan(atten);
+  });
+
   it('documents the divergence in the file header', () => {
     const header = SRC.slice(0, 6000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
@@ -108,5 +123,6 @@ describe('vendored structural-engine local patch', () => {
     expect(header).toContain('ATTACK POWER MUST NOT WIN ON THE ATTACK INSIDE ALLY ATTACK ENH.');
     expect(header).toContain('THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE');
     expect(header).toContain('INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE');
+    expect(header).toContain('A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT');
   });
 });
