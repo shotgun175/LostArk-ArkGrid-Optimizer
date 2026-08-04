@@ -166,8 +166,28 @@ describe('vendored structural-engine local patch', () => {
     );
   });
 
+  it('still points the level OCR ladder at the mask that kept the glyph', () => {
+    expect(SRC).toContain('LOCAL PATCH - THE LADDER MUST FOLLOW THE MASK THAT KEPT THE GLYPH');
+    // all three rungs have to consult ladderPred, or the rescue mask is chosen and never read
+    expect(SRC).toMatch(
+      /var read = await maskedOcr\(lineX, ladderPred, \{ whitelist: "Lv\.12345 ", psm: 7 \}\);/
+    );
+    expect(SRC).toMatch(/read = await maskedOcr\(lineX, ladderPred, \{ whitelist: "12345", psm: 10 \}\)/);
+    expect(SRC).toMatch(/read = await dilatedOcr\(L\.crop\(raster, lineX\), ladderPred,/);
+    // the flood gate is load-bearing, not decoration: without it the loosened mask swallows a green
+    // node face whole, the ladder reads nothing, the node drops to synthesis, and two synth commits
+    // demote the points header to soft - which cost 5 correct orderLevel fields on c10corpus.
+    expect(SRC).toMatch(/if \(bR\.w < bR\.h && bR\.h <= goldMaxH \* 1\.35\) wideBox = bR;/);
+    // ...measured against the tallest box the GOLD mask found, which is the line's own text height
+    expect(SRC).toMatch(/goldMaxH = Math\.max\(goldMaxH, boxes\[gh\]\.h\);/);
+    // and a read taken off the loosened mask may never publish above the flag bar on its own
+    expect(SRC).toMatch(/if \(ladderRelaxed\) conf = Math\.min\(conf, 0\.75\);/);
+  });
+
   it('documents the divergence in the file header', () => {
-    const header = SRC.slice(0, 12000);
+    // the header block ends well inside this window and the first INLINE repeat of any patch name
+    // is far below it, so a name found here is genuinely the header paragraph
+    const header = SRC.slice(0, 16000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
@@ -181,5 +201,6 @@ describe('vendored structural-engine local patch', () => {
     expect(header).toContain("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN");
     expect(header).toContain("THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS");
     expect(header).toContain('THE SEARCH ZONE ENDED INSIDE THE COST ROW');
+    expect(header).toContain('THE LADDER MUST FOLLOW THE MASK THAT KEPT THE GLYPH');
   });
 });

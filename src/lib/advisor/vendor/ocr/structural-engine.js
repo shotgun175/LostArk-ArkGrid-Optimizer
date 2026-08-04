@@ -107,6 +107,35 @@
  * 0.80 bar on a value the labels contradict. On the loose advisor-fixtures set the null rate falls
  * 68/124 -> 1/124 while exactly one published value changes: the owner's frame, 900 -> 1800. What
  * the remaining nulls do is unchanged - the snap still fills 900 and publishes it at 0.30 to flag.
+ * Patch 14 ("THE LADDER MUST FOLLOW THE MASK THAT KEPT THE GLYPH")
+ * finishes what patch 1 starts. Patch 1 stops an eroded fragment COMMITTING as a digit, but every
+ * rung below it still reads the SAME eroded mask, so the fragment's value comes back anyway. On
+ * advisor-frame-1785857193265 (corpus lvfix/lv_1, a 678px panel - the documented reduced-accuracy
+ * tier) the blue "Lv. 3" sits on the bright cyan node face, where gold over cyan blends to h~90
+ * s~0.25 and isGoldText drops it, so the mask keeps a 3x12 shard of the digit's middle bar and
+ * nothing else. The relaxed re-mask puts the whole 12x22 glyph back, but the matcher will not name
+ * it (bitmapSim ranks 3 first at 0.72 with 5 at 0.69, ink-IoU 0.36 against 0.35, and the two metrics
+ * swap order under a small change of predicate), so patch 1 abstains - and the ladder then reads the
+ * shard: tesseract finds no digit on it at all, the synthesis rescue correlates a background-
+ * dominated luminance patch and says 1, and 1 is published. Point the ladder at the mask that still
+ * holds the glyph and the SAME tesseract recipe reads "Lv 3" at 0.61. This is a within-channel fix:
+ * the header is never consulted and the node reads 3 before the points checksum runs, so it stays on
+ * the legal side of the Force-21:9 dead end. Two gates keep it from being a licence to loosen masks
+ * generally. The relaxed box must sit at the same right edge as the shard, and it must still be
+ * glyph-shaped - taller than it is wide, and no more than 1.35x the tallest box the GOLD mask found
+ * on that line, which is the line's own text height measured from the "L" and "v" the mask did not
+ * erode. The second gate is load-bearing: on green faces the relaxed predicate floods and segments
+ * the whole line as one 46x39 blob against a 13px text height, after which the ladder reads nothing,
+ * the node falls to synthesis, and two synth commits demote the points header to soft - which cost 5
+ * correct orderLevel fields on c10corpus before the gate went in. The rescue read is capped at 0.75
+ * so it can never be silent on its own. Measured: lvfix 92.31% -> 100.00% (effect2Level 1 -> 3,
+ * whole-parse 0/1 -> 1/1), the other nine labelled corpora and upstream's 67 samples byte-identical
+ * field for field, zero silent errors throughout. On the loose advisor-fixtures set 58 of 124 frames
+ * reach the sliver abstain, the rescue fires on 10 of them, and exactly ONE published value changes
+ * (the frame above). The other nine are the same capture series and already had the right value from
+ * synthesis: the rescue agrees with all nine and lifts effect2Level from 0.44/0.45 to 0.56/0.57, so
+ * across ten firings there is not one disagreement and nothing lands within 0.2 of the flag bar. No
+ * frame's points-header string changes anywhere in the 124.
  * Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
@@ -1514,6 +1543,7 @@
 
       // template pass: rightmost digit-classified box → value + score vector
       var vec = null, tmVal = null, tmConf = 0;
+      var ladderPred = pred, ladderRelaxed = false;   // LOCAL PATCH (LADDER FOLLOWS THE MASK THAT KEPT THE GLYPH)
       if (GLYPHS) {
         var mask = L.chromaMask(L.crop(raster, lineX), pred);
         var boxes = segmentDigitBoxes(mask);
@@ -1569,11 +1599,19 @@
           };
           var maskR = L.chromaMask(L.crop(raster, lineX), lvPredRelaxed);
           var boxesR = segmentDigitBoxes(maskR);
-          var re = null, reBox = null;
+          // LOCAL PATCH (LADDER FOLLOWS THE MASK THAT KEPT THE GLYPH): the tallest box the GOLD
+          // mask found on this line is the line's own text height, measured from glyphs the mask
+          // did NOT erode ("L", "v"). A restored digit stands on that same baseline; anything
+          // taller is the loosened mask swallowing the node face, not a glyph.
+          var goldMaxH = 0;
+          for (var gh = 0; gh < boxes.length; gh++) goldMaxH = Math.max(goldMaxH, boxes[gh].h);
+          var re = null, reBox = null, wideBox = null;
           for (var rj = 0; rj < boxesR.length; rj++) {
             var bR = boxesR[rj];
             if (Math.abs((bR.x + bR.w) - (dbBox.x + dbBox.w)) > 4) continue;   // same glyph only
             if (bR.w / Math.max(1, bR.h) < 0.45) continue;                     // still a sliver — no gain
+            // LOCAL PATCH (LADDER FOLLOWS THE MASK THAT KEPT THE GLYPH): still glyph-shaped?
+            if (bR.w < bR.h && bR.h <= goldMaxH * 1.35) wideBox = bR;
             var svR = digitScoreVec(maskR, bR);
             if (svR.isDigit) { re = svR; reBox = bR; }
           }
@@ -1590,6 +1628,17 @@
             sliverUnrescued = true;
             if (out._debug) (out._debug.lvSliver = out._debug.lvSliver || {})[nodeKind] =
               Math.round(dbBox.w) + "x" + Math.round(dbBox.h);
+            // LOCAL PATCH - THE LADDER MUST FOLLOW THE MASK THAT KEPT THE GLYPH. Reaching here
+            // means the gold mask eroded this digit to a fragment. When the relaxed re-mask put a
+            // FULL-WIDTH box back at the same right edge, the glyph survives - the matcher just
+            // could not name it. Upstream then runs the OCR ladder against the gold mask anyway,
+            // so every rung re-reads the same fragment and duly returns the fragment's value.
+            // Point the ladder at the mask that still holds the glyph instead.
+            if (wideBox) {
+              ladderPred = lvPredRelaxed; ladderRelaxed = true;
+              if (out._debug) (out._debug.lvLadderRelax = out._debug.lvLadderRelax || {})[nodeKind] =
+                Math.round(wideBox.w) + "x" + Math.round(wideBox.h);
+            }
           }
         }
         if (db) {
@@ -1634,15 +1683,20 @@
         return { value: tmVal, conf: isGoldFace ? Math.min(tmConf, 0.6) : tmConf, vec: vec, src: "tm" };
       }
       // OCR ladder (proven on "Lv. N"): plain → single-char → dilate
-      var read = await maskedOcr(lineX, pred, { whitelist: "Lv.12345 ", psm: 7 });
+      var read = await maskedOcr(lineX, ladderPred, { whitelist: "Lv.12345 ", psm: 7 });
       var m = read.text.match(/([1-5])\s*$/) || read.text.match(/([1-5])/);
-      if (!m) { read = await maskedOcr(lineX, pred, { whitelist: "12345", psm: 10 }); m = read.text.match(/([1-5])/); }
+      if (!m) { read = await maskedOcr(lineX, ladderPred, { whitelist: "12345", psm: 10 }); m = read.text.match(/([1-5])/); }
       if (!m) {
-        read = await dilatedOcr(L.crop(raster, lineX), pred, { scale: "auto", maxAuto: 5, whitelist: "Lv.12345 ", psm: 7 });
+        read = await dilatedOcr(L.crop(raster, lineX), ladderPred, { scale: "auto", maxAuto: 5, whitelist: "Lv.12345 ", psm: 7 });
         m = read.text.match(/([1-5])\s*$/) || read.text.match(/([1-5])/);
       }
       var conf = m ? Math.min(0.9, read.conf + 0.2) : 0;
       if (isGoldFace) conf = Math.min(conf, 0.45);
+      // LOCAL PATCH (LADDER FOLLOWS THE MASK THAT KEPT THE GLYPH, part 2). A read taken off the
+      // loosened mask is a rescue, not an authority: cap it below the 0.80 flag bar so it can
+      // never be silent on its own. 0.75 is above every gate this function tests, so the cap
+      // changes no control flow - only what gets published.
+      if (ladderRelaxed) conf = Math.min(conf, 0.75);
       if (LREFS && nodeKind && (!m || conf < 0.5)) {
         // last rung: analysis-by-synthesis vs the pristine reference patches —
         // agreement-gated, modest conf; the checksum arbitrates from here (and
