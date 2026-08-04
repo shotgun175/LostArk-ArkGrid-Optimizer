@@ -56,7 +56,21 @@
  * twice - on advisor-frame-1785858982255 the wheel lost "Ally" ("...ad attack 2 pe") while the tile
  * pointing at that node kept it ("ally altace bor"). The tile is consulted only for a slot the wheel
  * left below the flag bar, ignored when the tile's own target is a hue near-tie, and what it adopts
- * is published below the bar (0.7), so it can never manufacture a confident wrong answer. Under Node the
+ * is published below the bar (0.7), so it can never manufacture a confident wrong answer.
+ * Patch 11 ("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN")
+ * fixes a cost that could not be read at all. segmentDigitBoxes drops boxes outside 0.55-1.7x the
+ * LINE's median height, on the stated assumption that the "Processing Cost" label fails the
+ * dimBtnWhite mask so the median is the number's own. On 1440p captures the label survives that mask
+ * (brightest pixel s=0.262, v=0.749), so the median becomes its x-height and the cap-height value
+ * sits at ~1.77x - deleted before any rung sees it, leaving the rungs to chew on label letters.
+ * cval then stays null and the snap silently substitutes the 900 base, which is what the owner saw
+ * as "the gold reverts to 900" for BOTH a free process (0) and a doubled one (1,800). The four
+ * zero-cost corpus frames only read correctly by accident: with the true digit deleted, what fires
+ * their ZERO rung is a 5x5 specular fleck off the gold coin. Raising the ceiling globally therefore
+ * REGRESSES them (fleck and digit merge into a run of 2 that no rung accepts), so instead the raw
+ * boxes are re-split here, the trailing group's tall members kept, and the two rungs re-run on those.
+ * Reached only when every rung above abstained; can only yield 0 or a whitelisted 450/900/1800.
+ * Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -620,6 +634,52 @@
             if ((zOk || zInconclusive) &&
                 zb.h >= cmedH2 * 0.5 && zb.w >= zb.h * 0.45 && zb.w <= zb.h * 1.15) {
               cval = 0; costConf = zOk ? 0.85 : 0.6;   // structure-only reads stay checkable
+            }
+          }
+          // LOCAL PATCH - THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN (see file header).
+          // segmentDigitBoxes (line ~174) drops any box outside 0.55-1.7x the LINE's median height,
+          // and the note above assumes the "Processing Cost" label fails dimBtnWhite so the median IS
+          // the number's. On 1440p captures the label survives the mask (brightest pixel rgb(141,172,
+          // 191): s=0.262 < 0.3, v=0.749 > 0.6), so the median becomes the label's x-height and the
+          // full cap-height value sits at ~1.77x of it - just past the ceiling, deleted before any
+          // rung above can see it. Measured: live frame medH 13 vs value box 17x23 (ceiling 22.1);
+          // cecorpus medH 9 vs 12x16 (ceiling 15.3). What the rungs then chew on is the label's own
+          // letters. Raising the ceiling globally is NOT the fix: it makes cecorpus keep both the
+          // real digit and a specular fleck off the coin, which merge into a run of 2 that no rung
+          // accepts, regressing four frames that read correctly today (by accident - that fleck is
+          // what fires their ZERO rung). So re-split the RAW boxes here, keep the trailing group's
+          // tall members, and re-run the two rungs on those. Only reached when every rung above
+          // abstained, and it can only ever produce 0 or a whitelisted 450/900/1800.
+          if (cval == null && tgC2.mask) {
+            var rawC3 = L.segmentGlyphs(tgC2.mask, { minColPx: 1, gapCols: 1 });
+            var rs3 = rawC3.length - 1;
+            while (rs3 > 0 && (rawC3[rs3].x - (rawC3[rs3 - 1].x + rawC3[rs3 - 1].w)) < cmedH2 * 1.5) rs3--;
+            if (rs3 > 0) {
+              var tail3 = rawC3.slice(rs3), maxH3 = 0;
+              for (var t3 = 0; t3 < tail3.length; t3++) if (tail3[t3].h > maxH3) maxH3 = tail3[t3].h;
+              // keep only the tall members: this is what stops the coin fleck joining the digit
+              tail3 = tail3.filter(function (b) { return b.w >= 2 && b.h >= maxH3 * 0.5; });
+              if (tail3.length === 1) {
+                var zb3 = tail3[0], zd3 = iouDigit(tgC2.mask, zb3);
+                var z3Ok = zd3 && zd3.ch === "0" && zd3.score >= 0.7;
+                if ((z3Ok || !zd3 || zd3.score < 0.5) &&
+                    zb3.h >= cmedH2 * 0.5 && zb3.w >= zb3.h * 0.45 && zb3.w <= zb3.h * 1.15) {
+                  cval = 0; costConf = z3Ok ? 0.85 : 0.6;
+                }
+              } else if (tail3.length >= 3 && tail3.length <= 5) {
+                // the +100% case the owner hit: "1,800" shown, read as the 900 default
+                var digs3 = "";
+                for (var q3 = 0; q3 < tail3.length; q3++) {
+                  if (tail3[q3].w <= 4 && tail3[q3].h <= maxH3 * 0.4) continue;   // thousands comma
+                  var dm3 = iouDigit(tgC2.mask, tail3[q3]);
+                  if (!dm3 || dm3.score < 0.3) { digs3 = null; break; }
+                  digs3 += dm3.ch;
+                }
+                var cv3 = digs3 ? parseInt(digs3, 10) : null;
+                if (cv3 === 450 || cv3 === 900 || cv3 === 1800) { cval = cv3; costConf = 0.85; }
+              }
+              if (out._debug) out._debug.costTall =
+                tail3.length + " boxes -> " + (cval == null ? "abstain" : cval);
             }
           }
         }

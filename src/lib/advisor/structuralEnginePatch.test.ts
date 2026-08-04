@@ -112,6 +112,18 @@ describe('vendored structural-engine local patch', () => {
     expect(tile).toBeGreaterThan(atten);
   });
 
+  it('still rescues a cost value the line-median height filter deleted', () => {
+    expect(SRC).toContain("LOCAL PATCH - THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN");
+    // it may only run once every rung above has abstained
+    expect(SRC).toMatch(/if \(cval == null && tgC2\.mask\) \{/);
+    // the tall-member filter is what keeps the coin's specular fleck out of the digit group;
+    // without it cecorpus merges fleck+digit into a run no rung accepts
+    expect(SRC).toMatch(/return b\.w >= 2 && b\.h >= maxH3 \* 0\.5;/);
+    // a single survivor may only ever yield 0, and multi-digit only a whitelisted cost
+    expect(SRC).toMatch(/cval = 0; costConf = z3Ok \? 0\.85 : 0\.6;/);
+    expect(SRC).toMatch(/if \(cv3 === 450 \|\| cv3 === 900 \|\| cv3 === 1800\) \{ cval = cv3; costConf = 0\.85; \}/);
+  });
+
   it('documents the divergence in the file header', () => {
     const header = SRC.slice(0, 6000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
@@ -124,5 +136,6 @@ describe('vendored structural-engine local patch', () => {
     expect(header).toContain('THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE');
     expect(header).toContain('INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE');
     expect(header).toContain('A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT');
+    expect(header).toContain("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN");
   });
 });
