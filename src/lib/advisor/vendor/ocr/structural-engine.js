@@ -70,6 +70,21 @@
  * REGRESSES them (fleck and digit merge into a run of 2 that no rung accepts), so instead the raw
  * boxes are re-split here, the trailing group's tall members kept, and the two rungs re-run on those.
  * Reached only when every rung above abstained; can only yield 0 or a whitelisted 450/900/1800.
+ * Patch 12 ("THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS")
+ * stops one wrong level read from silencing the points header entirely. The anchored template rung
+ * matches each header digit only against values keeping the total feasible, and with a single free
+ * node the S hint collapses that range to ONE value, so a wrong level empties the candidate set and
+ * the rung bails before iouDigit is ever called - the header's pixels are never consulted. On
+ * advisor-frame-1785857193265 that pinned the range to [8,8] against a true total of 10 whose two
+ * digits both read cleanly. When the set comes back empty the run is now re-read against DOMAIN-only
+ * candidates (2 boxes = 10..20, 1 box = 4..9), same narrow-'1' rule and same 0.36 IoU floor. This
+ * REMOVES a level->header veto and adds no header->level inference, so it stays on the legal side of
+ * the Force-21:9 dead end. Adopted only after every other rung returned null and published SOFT, so
+ * it can only turn a null into a flagged value. Measured: all nine labelled corpora and upstream's 67
+ * samples byte-identical, zero silent errors; on the loose advisor-fixtures set exactly two frames
+ * change, both null -> soft value (the frame above -> 10, pairZ-shot -> 11), taking the header's null
+ * rate there from 5/124 to 3/124. Publishing it hard, and taking it unconditionally, were both
+ * measured and rejected (see the adoption site).
  * Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
@@ -1653,7 +1668,7 @@
     var ptsSub = L.crop(raster, ptsRect);
     // template rung first: leading digit run before the first letter-matched box
     // ("Astrogem" letters are distractor classes)
-    var ptsT = null;
+    var ptsT = null, ptsTFallback = null;
     var tgP = templateGlyphs(ptsRect, dimBtnWhite);
     if (out._debug) out._debug.ptsTG = tgP ? tgP.map(function (g) {
       return (g.ch || "?") + ":" + (g.score != null ? g.score.toFixed(2) : "-") + "/" + (g.margin != null ? g.margin.toFixed(2) : "-");
@@ -1702,7 +1717,7 @@
             // and a wrong hint only yields a wrong-but-SOFT pts the solve flags.
             if (sHint != null && nUnk > 0) { kSum += sHint; nUnk--; }
             var loP = Math.max(4, kSum + nUnk), hiP = Math.min(20, kSum + 5 * nUnk);
-            var digs = "", minSc = 1, constrained = false;
+            var digs = "", minSc = 1, constrained = false, emptyAllowed = false;
             for (var di = 0; di < aIdx; di++) {
               var dbox = tgP[di].box, dch = null, dsc = 0;
               var allowed = null;
@@ -1717,7 +1732,9 @@
                 allowed = [];
                 for (var d1 = 4; d1 <= 9; d1++) { if (d1 >= loP && d1 <= hiP) allowed.push(String(d1)); }
               }
-              if (!allowed.length) { digs = null; break; }
+              // LOCAL PATCH (see "THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS" below):
+              // remember that the bail was an EMPTY candidate set, not a failed pixel match.
+              if (!allowed.length) { digs = null; emptyAllowed = true; break; }
               if (allowed.length < (aIdx === 2 && di === 0 ? 2 : 6)) constrained = true;
               if (dbox.w / Math.max(1, dbox.h) < 0.45) {
                 // the ONLY narrow digit is '1' — aspect alone identifies it (dim thin
@@ -1756,6 +1773,45 @@
                 var rv2 = parseInt(runM[1], 10);
                 if (rv2 >= Math.max(4, loP) && rv2 <= Math.min(20, hiP)) { ptsT = rv2; ptsTSoft = true; }
               }
+            }
+            // LOCAL PATCH - THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS (see file header).
+            // Constraint propagation above is a good tie-breaker but a bad gatekeeper. With one free
+            // node the S hint closes `[loP,hiP]` to a SINGLE value, so one wrong level read empties
+            // `allowed` and the loop bails at the line above without ever calling iouDigit - the
+            // header's own pixels are never consulted. Measured on advisor-frame-1785857193265 (a
+            // 678px panel, the documented reduced-accuracy tier): blue node E committed 1 where the
+            // truth is 3, which with the hint pinned the range to [8,8] while the true total is 10,
+            // and the two digit boxes read a clean unconstrained 1 (narrow, aspect 0.35) and 0 (IoU
+            // 0.67, margin 0.085). So when and ONLY when the set came back empty, re-read the same
+            // run against DOMAIN-only candidates: a 2-box run is 10..20 and a 1-box run is 4..9, both
+            // facts about the field itself, never about the levels. Same narrow-'1' aspect rule and
+            // same 0.36 IoU floor as the constrained pass, so nothing weaker is being accepted.
+            // This REMOVES a level->header veto; it adds no header->level inference, which is the
+            // arbitration the Force-21:9 dead end forbids. The recovered value is adopted only after
+            // every other rung has returned null and is published SOFT (see the adoption site below),
+            // so it can only ever turn a null into a flagged value.
+            if (ptsT == null && emptyAllowed) {
+              var dl = "";
+              for (var dq = 0; dq < aIdx; dq++) {
+                var qb = tgP[dq].box, qc = null;
+                var qall = aIdx === 2
+                  ? (dq === 0 ? ["1", "2"] : ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+                  : ["4", "5", "6", "7", "8", "9"];
+                if (qb.w / Math.max(1, qb.h) < 0.45) {
+                  if (qall.indexOf("1") === -1) { dl = null; break; }
+                  qc = "1";
+                } else {
+                  var qm = iouDigit(tgP.mask, qb, qall);
+                  if (qm && qm.score >= 0.36) qc = qm.ch;
+                }
+                if (!qc) { dl = null; break; }
+                dl += qc;
+              }
+              if (dl && dl.length >= 1 && dl.length <= 2) {
+                var pvf = parseInt(dl, 10);
+                if (pvf >= 4 && pvf <= 20) ptsTFallback = pvf;
+              }
+              if (out._debug) out._debug.ptsFallback = ptsTFallback;
             }
           }
         }
@@ -1815,6 +1871,17 @@
         if (rv >= 4 && rv <= 20) { pts = rv; ptsSoft = true; }
       }
     }
+    // LOCAL PATCH (adoption site for "THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS"):
+    // strictly additive, and that is the whole safety argument. Every rung above - template, the
+    // three OCR passes, the last-resort regex - has already returned null by the time this runs, so
+    // the fallback can only turn a null into a value; it can never change one or raise anyone's
+    // authority. It is published SOFT so the joint solve treats it as "confirm me" evidence.
+    // Publishing it HARD was measured and REJECTED: on the target frame a hard 10 with one free node
+    // forces orderLevel = 4, turning a correct order 2 at 0.48 into a wrong 4 at 0.40. Taking it
+    // unconditionally (rather than only after every rung missed) was also measured and REJECTED: it
+    // demotes four frames whose header already read correctly and HARD via the OCR rung, trading one
+    // corpus for another.
+    if (pts == null && ptsTFallback != null) { pts = ptsTFallback; ptsSoft = true; }
     // TWO OR MORE synth commits mean the frame sits at the degraded tier where
     // the header read is junk-prone too (live: "18" on a 15-point board arrived
     // as a HARD read and bulldozed a correct gold hint) — demote pts to soft

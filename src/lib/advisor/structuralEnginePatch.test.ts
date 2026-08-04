@@ -124,8 +124,34 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).toMatch(/if \(cv3 === 450 \|\| cv3 === 900 \|\| cv3 === 1800\) \{ cval = cv3; costConf = 0\.85; \}/);
   });
 
+  it('still reads the points header when the level bounds leave no candidate', () => {
+    expect(SRC).toContain("LOCAL PATCH - THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS");
+    // the empty-candidate bail has to record WHY it bailed: a vetoed digit and one the pixels
+    // genuinely could not match are the same `digs = null` without this flag
+    expect(SRC).toMatch(/if \(!allowed\.length\) \{ digs = null; emptyAllowed = true; break; \}/);
+    // the re-read fires only on that bail...
+    expect(SRC).toMatch(/if \(ptsT == null && emptyAllowed\) \{/);
+    // ...against DOMAIN-only candidates (2 boxes = 10..20, 1 box = 4..9). Reintroducing loP/hiP
+    // here would restore the veto this patch exists to remove.
+    expect(SRC).toMatch(
+      /\? \(dq === 0 \? \["1", "2"\] : \["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"\]\)\s*\n\s*: \["4", "5", "6", "7", "8", "9"\];/
+    );
+    // and with the same evidence bar as the constrained pass, not a looser one
+    expect(SRC).toMatch(/if \(qm && qm\.score >= 0\.36\) qc = qm\.ch;/);
+    // the safety property: adopted ONLY when every other rung returned null, and always SOFT.
+    // Publishing it hard was measured to turn a correct orderLevel into a wrong one.
+    expect(SRC).toMatch(
+      /if \(pts == null && ptsTFallback != null\) \{ pts = ptsTFallback; ptsSoft = true; \}/
+    );
+    // adoption has to sit below the last-resort regex rung, or "every other rung" is not true
+    const lastRung = SRC.indexOf('last resort on the (cleanest) masked text');
+    const adopt = SRC.indexOf('if (pts == null && ptsTFallback != null)');
+    expect(lastRung).toBeGreaterThan(-1);
+    expect(adopt).toBeGreaterThan(lastRung);
+  });
+
   it('documents the divergence in the file header', () => {
-    const header = SRC.slice(0, 6000);
+    const header = SRC.slice(0, 9000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
@@ -137,5 +163,6 @@ describe('vendored structural-engine local patch', () => {
     expect(header).toContain('INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE');
     expect(header).toContain('A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT');
     expect(header).toContain("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN");
+    expect(header).toContain("THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS");
   });
 });
