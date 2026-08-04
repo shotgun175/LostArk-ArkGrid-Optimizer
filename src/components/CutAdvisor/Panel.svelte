@@ -71,6 +71,12 @@
       error = null;
       engaged = true;
       stateLanded = true; // the screen is read; what remains is the DP
+      // A gem the reader has no history for — a new cut, or one it lost track of. Its ranked actions
+      // are still several seconds away (a fresh gem is turn 1 of 9, the DEEPEST and slowest search),
+      // and leaving the previous cut's numbers on screen next to it reads as the advisor being stuck
+      // on the old gem. Clear them so the panel shows an honest pending state instead. A normal
+      // in-cut step keeps its numbers: they are one action stale, not a different gem entirely.
+      if (res.fusion?.status === 'desync' || res.fusion?.status === 'seeded') liveAdvice = null;
     };
     controller.onShareEnded = () => {
       watching = false;
