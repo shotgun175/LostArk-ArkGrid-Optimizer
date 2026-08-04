@@ -57,12 +57,56 @@ describe('vendored structural-engine local patch', () => {
     expect(SRC).toMatch(/if \(!hadAmt && !dirUp && !dirDown && \(target === "effect1" \|\| target === "effect2"\)\)/);
   });
 
+  it('still refuses a fuzzy gem-name win supported only by grams the runner-up shares', () => {
+    expect(SRC).toContain('LOCAL PATCH - A FUZZY NAME WIN NEEDS EVIDENCE THE RUNNER-UP LACKS');
+    // the check needs all three pieces: the matched grams per candidate, the runner-up's identity,
+    // and the flag actually being raised when no matched gram separates them
+    expect(SRC).toMatch(/if \(letters\.indexOf\(g\) !== -1\) \{ hits\+\+; grams\.push\(g\); \}/);
+    expect(SRC).toMatch(/secondSfx = bestS \? bestS\.sfx : null;/);
+    expect(SRC).toMatch(
+      /!bestS\.grams\.some\(function \(g\) \{ return secondSfx\.indexOf\(g\) === -1; \}\)\)\s*suffixAmbig = true;/
+    );
+  });
+
+  it('still refuses "Attack Power" on the "attack" inside "Ally Attack Enh."', () => {
+    expect(SRC).toContain('LOCAL PATCH - "ATTACK POWER" MUST NOT WIN ON THE "ATTACK" INSIDE "ALLY ATTACK ENH."');
+    // the trailing y of "Ally" is the glyph most often lost, so both Ally rungs must tolerate it
+    expect(SRC).toMatch(/\["Ally Attack Enh\.", \/a\[li1\|\]\{2\}y\?\\s\*at/);
+    expect(SRC).toMatch(/\["Ally Damage Enh\.", \/a\[li1\|\]\{2\}y\?\\s\*dam/);
+    // the generic rung carries its veto pattern AND the rival it defers to
+    expect(SRC).toMatch(/\["Attack Power", \/atk\|attack\/, \/[^/]+\/, "Ally Attack Enh\."\]/);
+    // the veto only applies where the rival is a legal candidate, else cost-8 gems lose the read
+    expect(SRC).toMatch(
+      /if \(veto && veto\.test\(t\) && rival !== avoid && \(!pool \|\| pool\.indexOf\(rival\) !== -1\)\) continue;/
+    );
+  });
+
+  it('still refuses to let the effect pair overrule a cleanly-read gem name', () => {
+    expect(SRC).toContain('LOCAL PATCH - THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE');
+    expect(SRC).toMatch(/var nameSuffixWasClean = \(confidence\.config\.baseCost \|\| 0\) >= 0\.85;/);
+    // defining the flag is not enough - the override condition has to consult it
+    expect(SRC).toMatch(/costsWithPair\[0\] !== out\.config\.baseCost && !nameSuffixWasClean\)/);
+  });
+
+  it('still recovers a one-word caption that only one pool effect can match', () => {
+    expect(SRC).toContain('LOCAL PATCH - INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE');
+    expect(SRC).toMatch(/function lexPoolWord\(t, pool, avoid\)/);
+    // uniqueness within the pool is the whole safeguard: two candidates must decline
+    expect(SRC).toMatch(/if \(cand\.length === 1\) return cand\[0\];/);
+    // and it must run only as a fallback, after the ordered rungs
+    expect(SRC).toMatch(/return lexIn\(t, poolNames, avoid\) \|\| lexPoolWord\(t, poolNames, avoid\);/);
+  });
+
   it('documents the divergence in the file header', () => {
-    const header = SRC.slice(0, 2000);
+    const header = SRC.slice(0, 6000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
     expect(header).toContain('DECLINED DIGIT SLOT');
     expect(header).toContain('EFFECT TILE');
+    expect(header).toContain('A FUZZY NAME WIN NEEDS EVIDENCE THE RUNNER-UP LACKS');
+    expect(header).toContain('ATTACK POWER MUST NOT WIN ON THE ATTACK INSIDE ALLY ATTACK ENH.');
+    expect(header).toContain('THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE');
+    expect(header).toContain('INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE');
   });
 });

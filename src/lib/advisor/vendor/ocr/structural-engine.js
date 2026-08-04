@@ -20,7 +20,35 @@
  * of seven corpora, at a cost of ~0.3 extra confirm-me prompts per capture. Patch 5 ("EFFECT TILE
  * WITH NO AMOUNT AND NO ARROW") reads an unlabelled effect tile as the effect-swap it structurally is
  * rather than defaulting it to a +1 raise: outcomes 45/48 -> 48/48 and 21/24 -> 24/24 on two of our
- * cuts, and upstream IMPROVES too (97.39% -> 98.51%, whole-parse 58 -> 61/67). Under Node the
+ * cuts, and upstream IMPROVES too (97.39% -> 98.51%, whole-parse 58 -> 61/67).
+ * Patch 6 ("A FUZZY NAME WIN NEEDS EVIDENCE THE RUNNER-UP LACKS")
+ * stops the gem-name fuzzy pass committing a wrong
+ * subtype at 0.85 on evidence shared by both candidates: scoring each name by the fraction of its
+ * own 5-grams lets the SHORTER word win a head-damaged read ("immutability" -> "tability") on grams
+ * both words contain, setting baseCost 8 instead of 10, which then picks the wrong effect pool.
+ * Enumerating realistic OCR damage (head/tail loss, dropped and visually-confused glyphs) over all
+ * six names: 17 confident-wrong commits -> 0, every one of them Immutability read as Stability. The
+ * same reads cost 7 of 119 confident-correct commits, downgraded to flag-for-confirmation, and that
+ * is the honest outcome: "tability" appears in BOTH lists, so upstream is committing at 0.85 on
+ * evidence that cannot separate the two names. All corpora unchanged.
+ * Patches 7-9 are one story, from two live frames where a gem was misidentified wholesale.
+ * Patch 7 ("ATTACK POWER MUST NOT WIN ON THE ATTACK INSIDE ALLY ATTACK ENH.")
+ * makes the trailing y of "Ally" optional (it is the glyph most often lost: a true "Ally Attack
+ * Enh." OCR'd as "...ad attack i je" and "...all attack h rth") and stops the generic /atk|attack/
+ * rung claiming a caption when the Ally effect is a live candidate, since that effect's own name
+ * contains the word.
+ * Patch 8 ("THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE")
+ * gates the pair->cost cross-check. It exists to rescue an occluded gem NAME using two good effect
+ * reads, but it never asked which side was stronger, so it fired in reverse too: one unreadable
+ * caption lexed to Attack Power, and {Attack Power, Boss Damage} implies cost 9 alone, so a clean
+ * 0.85 "Chaos Astrogem: Destruction" was rewritten to cost 9 - wrong cost, wrong effect pool,
+ * wrong DP.
+ * Patch 9 ("INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE")
+ * recovers the caption afterwards: a pool holds four effects, so if exactly one of them contains
+ * the single word that survived OCR, that word names it (pool 10 has one effect containing
+ * "attack"; pool 9 has two and correctly declines). Measured: both live frames go from a wrong
+ * baseCost AND a wrong effect name to fully correct identity; jrun 98.53% -> 99.27%; the other
+ * seven corpora and upstream's 67 samples unchanged, zero silent errors throughout. Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
 /**
@@ -871,21 +899,38 @@
       // that then poisoned the effect pool. Prefix grams get a bonus: the START of
       // the word ("immut" vs "stab") is the discriminative part.
       var letters = nameText.replace(/[^a-z]/g, "");
-      var bestS = null, secondS = 0;
+      var bestS = null, secondS = 0, secondSfx = null;
       Object.keys(GEM_NAME_COST).forEach(function (sfx) {
-        var hits = 0, total = 0;
+        var hits = 0, total = 0, grams = [];
         for (var k = 0; k + 5 <= sfx.length; k++) {
           total++;
-          if (letters.indexOf(sfx.slice(k, k + 5)) !== -1) hits++;
+          var g = sfx.slice(k, k + 5);
+          if (letters.indexOf(g) !== -1) { hits++; grams.push(g); }
         }
         var score = total ? hits / total : 0;
         if (letters.indexOf(sfx.slice(0, 5)) !== -1) score += 0.25;   // prefix bonus
-        if (!bestS || score > bestS.score) { secondS = bestS ? bestS.score : 0; bestS = { sfx: sfx, score: score }; }
-        else if (score > secondS) secondS = score;
+        if (!bestS || score > bestS.score) {
+          secondS = bestS ? bestS.score : 0;
+          secondSfx = bestS ? bestS.sfx : null;
+          bestS = { sfx: sfx, score: score, grams: grams };
+        }
+        else if (score > secondS) { secondS = score; secondSfx = sfx; }
       });
       if (bestS && bestS.score >= 0.5) {
         suffixHit = bestS.sfx;
         suffixAmbig = (bestS.score - secondS) < 0.15;   // two suffixes nearly tied
+        // LOCAL PATCH - A FUZZY NAME WIN NEEDS EVIDENCE THE RUNNER-UP LACKS (see file header).
+        // Each candidate is scored on the fraction of ITS OWN grams that appear, so a read that
+        // lost the head of the word ("immutability" -> "tability", the pet sprite or Force-21:9
+        // starving the first glyphs) scores stability 4/5 = 0.80 and immutability 4/8 = 0.50 on
+        // grams that are IDENTICAL in both words, then commits stability at 0.85 because the gap
+        // clears the tie margin. The win came from stability being the SHORTER word, not from the
+        // pixels: "tability" is equally consistent with either name. So require the winner to
+        // match at least one gram the runner-up does not contain; with shared-only evidence this
+        // is a guess and must flag (0.6) so the user can correct it and the correction can stick.
+        if (!suffixAmbig && secondSfx &&
+            !bestS.grams.some(function (g) { return secondSfx.indexOf(g) === -1; }))
+          suffixAmbig = true;
       }
     }
     if (suffixHit) { out.config.baseCost = GEM_NAME_COST[suffixHit]; confidence.config.baseCost = suffixAmbig ? 0.6 : 0.85; }
@@ -1935,14 +1980,29 @@
     // Most-specific patterns FIRST: "Enh." appears only in the two Ally effects, so an
     // occluded read like "Damage Enh." (a pet covering "Ally" — real case, 2026-07-16)
     // must hit Ally Damage Enh. before the generic /damage|attack/ effects get a shot.
+    // LOCAL PATCH - "ATTACK POWER" MUST NOT WIN ON THE "ATTACK" INSIDE "ALLY ATTACK ENH."
+    // (see file header). Two changes, both from one live frame (advisor-frame-1785857193265,
+    // 727px panel) where a true "Ally Attack Enh. Lv. 3" OCR'd as "no hl - ~all attack h rth":
+    //   1. the trailing y of "Ally" is the glyph most often lost, and `a[li1|]{2}y` REQUIRES it,
+    //      so "all attack" missed both Ally rungs; y is now optional.
+    //   2. it then fell through to the generic /atk|attack/ rung, which cannot tell the two
+    //      effects apart because "Ally Attack Enh." CONTAINS the word "attack" — the same
+    //      non-discriminative win as the gem-name pass. A bare-attack match now defers when the
+    //      text carries Ally evidence AND the Ally effect is actually a candidate (4th element:
+    //      the rival to check against the pool). That last condition matters: on a cost-8 gem
+    //      the Ally effect is not in the pool, so the veto stays out of the way.
+    // Untreated, the wrong name propagated: the pair->cost cross-check below reads the RAW
+    // (pool-unconstrained) names, so {Additional Damage, Attack Power} implied cost 8 and
+    // overwrote a correctly-read Immutability with Stability, which is the misidentified gem the
+    // owner reported.
     var EFFECT_LEX = [
       // "Ally" OCRs as Aliy/AIly/A11y — accept fuzzed leading tokens too
-      ["Ally Damage Enh.", /a[li1|]{2}y\s*dam|ally\s*dam|damage\s*enh|dmg\s*enh/],
-      ["Ally Attack Enh.", /a[li1|]{2}y\s*at|ally\s*at|attack\s*enh|atk\s*enh/],
+      ["Ally Damage Enh.", /a[li1|]{2}y?\s*dam|ally\s*dam|damage\s*enh|dmg\s*enh/],
+      ["Ally Attack Enh.", /a[li1|]{2}y?\s*at|ally\s*at|attack\s*enh|atk\s*enh/],
       ["Additional Damage", /additional|addit/],
       ["Boss Damage", /boss/],
       ["Brand Power", /brand/],
-      ["Attack Power", /atk|attack/]
+      ["Attack Power", /atk|attack/, /a[li1|]{2}y?\s|ally|enh/, "Ally Attack Enh."]
     ];
     // Only effects legal for the gem's base cost are candidates (the cost-9 pool has no
     // Additional Damage/Brand Power — kills a whole class of misreads); `avoid` keeps
@@ -1953,11 +2013,36 @@
         var name = EFFECT_LEX[i][0];
         if (pool && pool.indexOf(name) === -1) continue;
         if (avoid && name === avoid) continue;
+        // LOCAL PATCH (see EFFECT_LEX above): skip a rung whose match would rest on a token the
+        // rival effect's own name also contains, when that rival is a legal candidate here.
+        var veto = EFFECT_LEX[i][2], rival = EFFECT_LEX[i][3];
+        if (veto && veto.test(t) && rival !== avoid && (!pool || pool.indexOf(rival) !== -1)) continue;
         if (EFFECT_LEX[i][1].test(t)) return name;
       }
       return null;
     }
-    function lexEffect(t, avoid) { return lexIn(t, poolNames, avoid); }
+    // LOCAL PATCH - INSIDE A POOL, A SHARED WORD BECOMES DISCRIMINATIVE (see file header).
+    // The rungs above are keyed on whole effect names, so a caption that survived OCR as one bare
+    // word ("...ad attack i je...", the Ally token destroyed) lexes to nothing once the generic
+    // Attack Power rung is ruled out by the pool. But a pool is only four effects: if exactly ONE
+    // of them contains the word that did survive, that word identifies it. Pool 10 has a single
+    // effect containing "attack" (Ally Attack Enh.), so this recovers the read; pool 9 has two, so
+    // it correctly declines. Runs only after the ordered rungs fail, so clean frames are unaffected.
+    var LEX_WORDS = ["attack", "damage", "power", "boss", "brand", "enh", "additional"];
+    function lexPoolWord(t, pool, avoid) {
+      if (!pool) return null;
+      for (var w = 0; w < LEX_WORDS.length; w++) {
+        if (t.indexOf(LEX_WORDS[w]) === -1) continue;
+        var cand = pool.filter(function (n) {
+          return n !== avoid && n.toLowerCase().indexOf(LEX_WORDS[w]) !== -1;
+        });
+        if (cand.length === 1) return cand[0];
+      }
+      return null;
+    }
+    function lexEffect(t, avoid) {
+      return lexIn(t, poolNames, avoid) || lexPoolWord(t, poolNames, avoid);
+    }
     // Name-read rescue ladder (the FIRST live flywheel record, 2026-07-19: a
     // share-canvas frame OCR'd "Atk. Power" as "Abo Fo" — under the Tesseract
     // floor — so both names came back null and the snap filled pool-order
@@ -1992,7 +2077,16 @@
       // fires on a WRONG suffix read and also on a NULL one (first flywheel
       // record: cost unreadable → snap defaulted to 10 → pool-10 canonicalization
       // rewrote two correctly-read names, which presented as a W/E "swap")
-      if (costsWithPair.length === 1 && costsWithPair[0] !== out.config.baseCost) {
+      // LOCAL PATCH - THE PAIR MAY ONLY OVERRULE A GEM NAME THAT WAS ITSELF UNSURE (file header).
+      // This rescue is aimed at an occluded/mangled NAME being corrected by two good effect reads,
+      // but it never checked which side was actually the stronger evidence, so it fired just as
+      // readily in reverse: on advisor-frame-1785857801605 a clean "Chaos Astrogem: Destruction"
+      // (cost 10, read at 0.85) was overruled to cost 9 because one node's caption OCR'd to
+      // garbage ("ad attack i je") and lexed to Attack Power, and {Attack Power, Boss Damage}
+      // implies cost 9 alone. One unreadable caption should not redefine the gem, so the override
+      // now requires the name read to be the weaker evidence (below the clean-suffix 0.85).
+      var nameSuffixWasClean = (confidence.config.baseCost || 0) >= 0.85;
+      if (costsWithPair.length === 1 && costsWithPair[0] !== out.config.baseCost && !nameSuffixWasClean) {
         out.config.baseCost = costsWithPair[0];
         confidence.config.baseCost = Math.min(confidence.config.baseCost, 0.75);   // below the flag threshold
         poolNames = (ENGINE_API.EFFECT_POOLS && ENGINE_API.EFFECT_POOLS[out.config.baseCost]) || null;
