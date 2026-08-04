@@ -119,6 +119,17 @@ const QUIET = 22; // and this exact frame must be calm, not a still-settling ~38
 // parses.
 const SPIKE = 40; // changed pixels vs the previous frame above this = a real in-window event
 const CONTENT = 36; // changed pixels vs the last read above this = the gem state actually changed
+// ...except 40 was measured on ONE screen. Ambient depends on how much of the share the animated
+// game world occupies, and it varies hugely between setups: the owner's 677px window idles at 0-7,
+// nowhere near the 15-35 the constant was tuned against. On that screen a reroll peaking at 33 never
+// latched (captured live 2026-08-04) while a process at 87-179 did, which is exactly the reported
+// "the reroll works most of the time" - the flash straddles a bar sitting in the middle of its
+// spread. So the bar tracks the screen instead: it sits a clear margin above recently observed
+// ambient, which keeps a static screen at zero parses on a noisy setup while still catching the
+// weaker flashes on a quiet one.
+const SPIKE_WINDOW = 30; // polls of motion history (~9s at POLL_MS) used to characterise ambient
+const SPIKE_MIN_SAMPLES = 10; // below this, keep the field-measured constant rather than guess
+const SPIKE_FLOOR = 12; // never let a perfectly still screen drop the bar into compression flicker
 // A real event's flash reliably trips SPIKE, but its SETTLED frame can sit under CONTENT when only a
 // few small digits (or same-layout text) changed. Measured live on a 677px Force-21:9 window
 // (2026-08-04): a full gem swap flashed motion=87 yet settled at content 13-26, and a process step
@@ -128,6 +139,21 @@ const CONTENT = 36; // changed pixels vs the last read above this = the gem stat
 // which fusion absorbs as a confirmation of the unchanged state. The manual "Re-read now" button
 // remains the escape hatch for a change whose flash never trips SPIKE at all.
 const SPIKE_SETTLED_MS = 2500; // a spike calm this long re-reads even below the CONTENT bar
+
+/**
+ * The motion a frame must exceed to count as a real in-window event, given what this screen's
+ * ambient motion has recently looked like. Pure and exported so tests can replay captured sequences.
+ *
+ * The 90th percentile is the ambient ceiling (robust to the odd stray frame), and the margin above it
+ * is whichever is larger of a fixed 10 or half the ambient, so a quiet screen gets an absolute margin
+ * and a noisy one gets a proportional one.
+ */
+export function spikeBarFor(recentMotion: number[]): number {
+  if (recentMotion.length < SPIKE_MIN_SAMPLES) return SPIKE;
+  const sorted = [...recentMotion].sort((a, b) => a - b);
+  const ambient = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+  return Math.max(SPIKE_FLOOR, ambient + Math.max(10, ambient * 0.5));
+}
 
 /** One polled, downscale-compared frame in the shape {@link watchReadGate} decides on. */
 export interface WatchGateFrame {
@@ -434,13 +460,21 @@ export class AdvisorController {
     let stableSince = 0;
     let spikeSeen = false;
     let busy = false;
+    // Recent motion, oldest first, used to size the spike bar to this screen. Only CALM frames go in:
+    // an event's own flash (and the settling frames after it) would otherwise raise the very bar it
+    // has to clear, so a run of activity would progressively deafen the detector.
+    const ambientWindow: number[] = [];
     while (this.watching) {
       const sig = this.frameSignature();
       if (sig) {
         const motion = prevSig ? AdvisorController.changedPixels(sig, prevSig) : Infinity;
-        if (motion > SPIKE) {
+        const spikeBar = spikeBarFor(ambientWindow);
+        if (motion > spikeBar) {
           spikeSeen = true; // latch the event; only an actual re-read clears it
           stableSince = Date.now(); // and restart the settle clock so we parse the settled state
+        } else if (isFinite(motion)) {
+          ambientWindow.push(motion);
+          if (ambientWindow.length > SPIKE_WINDOW) ambientWindow.shift();
         }
         const stableFor = Date.now() - stableSince;
         const content = parsedSig ? AdvisorController.changedPixels(sig, parsedSig) : Infinity;
@@ -448,7 +482,7 @@ export class AdvisorController {
         const willParse = watchReadGate({ busy, motion, content, stableFor, firstRead, spikeSeen });
         if (debug)
           console.log(
-            `[watch] motion=${motion} content=${content} stableFor=${stableFor} spike=${spikeSeen}${willParse ? ' -> RE-READ' : ''}`
+            `[watch] motion=${motion} bar=${spikeBar} content=${content} stableFor=${stableFor} spike=${spikeSeen}${willParse ? ' -> RE-READ' : ''}`
           );
         if (willParse) {
           busy = true;
