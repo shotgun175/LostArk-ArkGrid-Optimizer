@@ -35,6 +35,7 @@
   import ArkGridGemDetail from './ArkGridGemDetail.svelte';
   import BaselineControl from './BaselineControl.svelte';
   import BuildViewSwitch from './BuildViewSwitch.svelte';
+  import GridProgress from './GridProgress/GridProgress.svelte';
 
   interface Props {
     profile: CharacterProfile;
@@ -193,6 +194,7 @@
   </div>
 
   {#if sectionUI.showGemTriage}
+    <GridProgress {profile} />
     {#if showHelp}
       <div class="score-help">
         <div class="sh-title">How the score is calculated</div>
