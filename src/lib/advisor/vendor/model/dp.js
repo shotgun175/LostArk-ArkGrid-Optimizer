@@ -3,9 +3,49 @@
 /*
  * VENDORED from shizukaziye/astrogem-calculator (model/dp.js), re-synced 2026-07-20.
  * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream and re-running
- * the drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require()
+ * Third-party code, kept as close to upstream as possible. Re-sync by re-copying from upstream and
+ * re-running the drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require()
  * astrogem.js relatively, so all three stay co-located.
+ *
+ * It carries FIVE local patches, each marked "LOCAL PATCH n - ..." below and guarded by
+ * src/lib/advisor/dpPatch.test.ts. RE-APPLY THEM AFTER ANY RE-SYNC (the test fails if you forget).
+ * They are held to a harder bar than the parser patches: this is the DECISION engine, so a mistake
+ * changes what the advisor recommends rather than a displayed value, and no corpus would catch it.
+ * All five are therefore pure allocation/lookup changes - none touches the search, the arithmetic,
+ * the draw model or the decision logic - and the guard test proves it by re-running a 21-state
+ * battery (all three rarities, both axes, all three base costs, roster-bound on and off, cost
+ * multiplier -100/0/+100, every turn of every rarity, resets both spent and available) and comparing
+ * every returned float against a golden dumped from PRISTINE upstream as raw IEEE-754 bit patterns.
+ * Measured byte-identical, and again on a wider 48-state battery (82.5 s -> 30.9 s, same bytes).
+ * Together they take DP wall time down ~57%: the guard battery 10.34 s -> 4.45 s, and alternating
+ * A/B in one process, a single epic solve 7.2-7.6 s -> 3.1 s (-56% to -59%), rare and uncommon -50%.
+ *
+ * Patch 1 ("EFFECT-CLASS MAP ON A NUMERIC CACHE KEY") stops the per-effect-class lookup rebuilding
+ * its `baseCost + "_" + axis` cache key on every call; configKey calls it twice per memo probe, so
+ * one epic solve was allocating ~11M throwaway strings to find a map it already had.
+ * Patch 2 ("MAP MEMO") holds the node memo in a Map rather than a null-prototype object. Same
+ * get/set semantics, but it does not megamorphise at 288k entries and it accepts patch 5's keys.
+ * Patch 3 ("OUTCOME POSSIBILITY LIST MEMO") memoises outcomeProbabilities on its true signature.
+ * It ran 287,688 times per epic solve for 3,750 distinct results; every excludeIf in OUTCOME_RATES
+ * reads only the four levels, the costMult class and the turnsRemaining class. Proved exhaustively
+ * over 1,215,000 states: 3,750 keys, zero differing lists.
+ * Patch 4 ("HOISTED DRAW SCRATCH BUFFERS") reuses expectedMaxOfDrawWoR's twelve scratch arrays
+ * instead of allocating them per node. It was 34% of self time. Non-reentrancy was instrumented
+ * (287,688 calls, max nesting depth 1) rather than assumed, an oversized draw still allocates, and
+ * the four suffix-sum sentinels the allocation used to supply for free are now written explicitly.
+ * Patch 5 ("INTEGER MEMO KEY") replaces the concatenated string memo key with a packed integer.
+ * The memo is probed ~5.7M times per epic solve for ~288k nodes, so upstream rebuilt that string
+ * 5.7M times. Effect classes become ordinals in ascending class-value order, which preserves
+ * configKey's canonical slot-swap exactly; the bijection is PER SOLVER (base cost is not in either
+ * key, and upstream already relies on a Solver never spanning base costs) and was instrumented both
+ * ways over the battery: 290,108 distinct integer keys, zero violations. Anything out of range
+ * falls back to the vendored string key.
+ *
+ * NOT taken, for the record: reusing one Solver across topLevelAdvice calls would make turns 2-9 of
+ * a cut free, but it CHANGES published numbers (aboveBaselineOdds by up to 28% relative). configKey
+ * collapses effects into value classes, so class-equivalent configs share a memo record and agree
+ * only to within floating point; those 1-ULP differences land on the discrete `val > K` test and
+ * flip diagnostic branches. Under the zero-silent-error rule, it stays out.
  */
 /**
  * dp.js — EXACT Bellman dynamic-program for optimal astrogem-cutting decisions.
@@ -97,23 +137,30 @@
   // levels, and effectScore is all that distinguishes effect identity in the
   // terminal value). All zero-score support effects collapse to one class. This +
   // the effect-slot swap symmetry below shrinks the reachable state space a lot.
-  var _effClassCache = {};
-  function effectClass(baseCost, effectName, axis) {
-    var support = (axis === "support");
-    var ck = baseCost + "_" + (support ? "support" : "dps");
-    var map = _effClassCache[ck];
+  // LOCAL PATCH 1 - EFFECT-CLASS MAP ON A NUMERIC CACHE KEY.
+  // Upstream rebuilds the cache key `baseCost + "_" + axis` on EVERY call, and configKey calls this
+  // twice per memo probe, so a single epic solve allocates ~11M throwaway strings just to find a
+  // map it already has. (baseCost << 1) | isSupport indexes a plain array instead. The map contents
+  // and the returned class value are untouched, so every memo key this feeds is byte-identical.
+  var _effMapCache = [];
+  function effectMapFor(baseCost, axis) {
+    var ck = (baseCost << 1) | (axis === "support" ? 1 : 0);
+    var map = _effMapCache[ck];
     if (!map) {
       map = {};
       var pool = A.EFFECT_POOLS[baseCost] || [];
       // class id = the per-level VALUE on the active axis, rounded; effects with no
       // value on this axis -> 0 (DPS: support effects=0; support: DPS effects=0).
-      var esFn = support ? A.supportEffectScore : A.effectScore;
+      var esFn = (axis === "support") ? A.supportEffectScore : A.effectScore;
       for (var i = 0; i < pool.length; i++) {
         map[pool[i]] = Math.round(esFn(pool[i], 1) * 1e6);
       }
-      _effClassCache[ck] = map;
+      _effMapCache[ck] = map;
     }
-    var v = map[effectName];
+    return map;
+  }
+  function effectClass(baseCost, effectName, axis) {
+    var v = effectMapFor(baseCost, axis)[effectName];
     return v == null ? 0 : v;
   }
 
@@ -132,6 +179,62 @@
     return c.willpowerLevel + "|" + c.orderLevel + "|" + aKey + "|" + bKey;
   }
 
+  // LOCAL PATCH 5 - INTEGER MEMO KEY.
+  // The memo is probed ~5.7M times per epic solve for ~288k distinct nodes (95% hits), and upstream
+  // rebuilds `configKey(...) + "#" + t + "#" + r + "#" + cm` for every one of them. This packs the
+  // same information into a single integer. Effect CLASSES are replaced by ordinals assigned in
+  // ASCENDING class-value order, so `o1 < o2` is equivalent to `c1 < c2` and the canonical
+  // slot-swap ordering above is preserved exactly; effects sharing a class share an ordinal, which
+  // is the same collapse configKey already performs. Every component is range-guarded and anything
+  // out of range falls back to the string key, which a Map can never confuse with a number.
+  //   key = ((((((wp*6 + order)*5 + o1)*6 + l1)*5 + o2)*6 + l2)*16 + t)*32 + r)*8 + cmId  <= 1.33e8.
+  // SOUNDNESS IS PER SOLVER, NOT GLOBAL. Base cost and axis are not in the key (upstream's own
+  // comment above: a Solver is never shared across base costs), so the same integer is legitimately
+  // reused by a different Solver with a different pool - exactly as the string key already is. The
+  // bijection was instrumented both ways over a 48-state battery: 290,108 distinct integer keys,
+  // zero violations when scoped per Solver.
+  var _ordMapCache = [];
+  function ordinalMapFor(baseCost, axis) {
+    var ck = (baseCost << 1) | (axis === "support" ? 1 : 0);
+    var om = _ordMapCache[ck];
+    if (!om) {
+      var m = effectMapFor(baseCost, axis);
+      var vals = [0], k;   // class 0 is always reachable (an effect off this axis, or unknown)
+      for (k in m) if (vals.indexOf(m[k]) === -1) vals.push(m[k]);
+      vals.sort(function (a, b) { return a - b; });
+      var byVal = {};
+      for (var i = 0; i < vals.length; i++) byVal[vals[i]] = i;
+      om = { byName: {}, fallback: byVal[0], n: vals.length };
+      for (k in m) om.byName[k] = byVal[m[k]];
+      _ordMapCache[ck] = om;
+    }
+    return om;
+  }
+  // cm takes only a handful of values (clampCm keeps it in -100..100 and the only mutation is
+  // +/-100), so intern them rather than reserving 201 slots in the key.
+  var _cmIds = new Map(), _cmNext = 0;
+  function cmIdOf(cm) {
+    var v = _cmIds.get(cm);
+    if (v === undefined) { v = _cmNext++; _cmIds.set(cm, v); }
+    return v;
+  }
+  function numericKey(c, axis, t, r, cm) {
+    var wp = c.willpowerLevel, od = c.orderLevel, l1 = c.effect1Level, l2 = c.effect2Level;
+    if (!(wp >= 0 && wp <= 5 && od >= 0 && od <= 5 && l1 >= 0 && l1 <= 5 && l2 >= 0 && l2 <= 5)) return null;
+    if (!(t >= 0 && t < 16 && r >= 0 && r < 32)) return null;
+    var om = ordinalMapFor(c.baseCost, axis);
+    if (om.n > 5) return null;
+    var o1 = om.byName[c.effect1]; if (o1 === undefined) o1 = om.fallback;
+    var o2 = om.byName[c.effect2]; if (o2 === undefined) o2 = om.fallback;
+    var ci = cmIdOf(cm);
+    if (ci > 7) return null;
+    // same canonical (class, level) ordering configKey applies, on ordinals
+    var a1, b1, a2, b2;
+    if (o1 < o2 || (o1 === o2 && l1 <= l2)) { a1 = o1; b1 = l1; a2 = o2; b2 = l2; }
+    else { a1 = o2; b1 = l2; a2 = o1; b2 = l1; }
+    return ((((((((wp * 6 + od) * 5 + a1) * 6 + b1) * 5 + a2) * 6 + b2) * 16 + t) * 32 + r) * 8 + ci);
+  }
+
   // ---------------- the deterministic per-outcome transition list ----------------
 
   // For a given (config, t, r, cm) build the list of possible single-outcome
@@ -143,15 +246,46 @@
   // prob is the per-possibility probability from the deterministic core
   // (exclude-if + renormalize). t is passed as turnsRemaining (the exclude-if rules
   // gate `cost` and `reroll` outcomes when turnsRemaining <= 1).
-  function outcomeTransitions(config, t, cm) {
-    var op = A.outcomeProbabilities({
+  // LOCAL PATCH 3 - OUTCOME POSSIBILITY LIST MEMO.
+  // outcomeProbabilities runs once per computed node (287,688 times on an epic solve) for only 3,750
+  // distinct results. Every excludeIf in OUTCOME_RATES reads exactly (willpower, order, effect1,
+  // effect2, costMult, turnsRemaining) and nothing else, and `prob` is base/sumBase over the
+  // survivors - so the list is a pure function of the four levels plus the costMult CLASS
+  // (>=100 / in between / <=-100, the only thing the cost rules test) and the turnsRemaining CLASS
+  // (<=1 or not, likewise). Proved exhaustively over 1,215,000 states (3 base costs x every ordered
+  // effect pair x 5^4 levels x 9 costMult values including out-of-range x 6 turnsRemaining): they
+  // collapse to 3,750 keys with zero differing lists. Sharing the objects is safe because dp.js
+  // reads only .prob/.type/.change off them and never mutates.
+  var _opCache = [];
+  function outcomeProbabilitiesRaw(config, t, cm) {
+    return A.outcomeProbabilities({
       config: config,
-      processCostMultiplier: cm || 0,
+      processCostMultiplier: cm,
       turnsRemaining: t
-    });
+    }).possibilities;
+  }
+  function possibilitiesFor(config, t, cm) {
+    var wp = config.willpowerLevel, od = config.orderLevel;
+    var l1 = config.effect1Level, l2 = config.effect2Level;
+    // an out-of-range level would collide in the packed key; such a state goes uncached
+    if (!(wp >= 0 && wp <= 5 && od >= 0 && od <= 5 && l1 >= 0 && l1 <= 5 && l2 >= 0 && l2 <= 5)) {
+      return outcomeProbabilitiesRaw(config, t, cm);
+    }
+    var cmc = cm >= 100 ? 2 : (cm <= -100 ? 0 : 1);
+    var k = ((((wp * 6 + od) * 6 + l1) * 6 + l2) * 3 + cmc) * 2 + (t <= 1 ? 1 : 0);
+    var poss = _opCache[k];
+    if (poss === undefined) {
+      poss = outcomeProbabilitiesRaw(config, t, cm);
+      _opCache[k] = poss;
+    }
+    return poss;
+  }
+
+  function outcomeTransitions(config, t, cm) {
+    var poss = possibilitiesFor(config, t, cm || 0);
     var out = [];
-    for (var i = 0; i < op.possibilities.length; i++) {
-      var p = op.possibilities[i];
+    for (var i = 0; i < poss.length; i++) {
+      var p = poss[i];
       out.push({ prob: p.prob, branches: transitionBranches(config, p) });
     }
     return out;
@@ -241,7 +375,10 @@
     // that know the gem's starting turn budget pass maxTurns so _node forbids Complete
     // at the fresh node. Default Infinity = no gate (generic W()/self-check back-compat).
     this.maxTurns = (opts && opts.maxTurns != null) ? opts.maxTurns : Infinity;
-    this.memo = Object.create(null);     // key -> node record { v, act, expScore, pAbove, expSpend }
+    // LOCAL PATCH 2 - MAP MEMO. Semantically identical to the null-prototype object upstream uses
+    // (get/set on the same keys, `undefined` still means absent), but a Map does not megamorphise
+    // into a dictionary-mode object at 288k entries and it accepts the integer keys patch 5 mints.
+    this.memo = new Map();               // key -> node record { v, act, expScore, pAbove, expSpend }
     this.nodes = 0;                      // diagnostic: nodes actually computed
   }
 
@@ -407,6 +544,29 @@
   // disjoint-unordered = (1/2)(all-ordered − share-one − share-two[diagonal]). Each
   // piece is a threshold sum computed in O(n^2)/O(|D2|) via sorted suffix sums and
   // monotone two-pointers (validated exact vs brute Πp enumeration, ~1e-12).
+  //
+  // LOCAL PATCH 4 - HOISTED DRAW SCRATCH BUFFERS.
+  // This function is the DP's single hottest frame (34% of self time) and it allocates twelve typed
+  // arrays, a sort comparator and one {P,V} object per pairThresh call on EVERY node - 288k nodes
+  // per epic solve. The arrays below are allocated once at module scope and reused; not one
+  // arithmetic statement, and no statement ORDER, changes below, so the float results are identical.
+  // Two conditions make the reuse safe, both checked rather than assumed:
+  //   * NON-REENTRANCY. The recursion lives in drawDistribution, which has fully returned before
+  //     _emax is called, and the two fallbacks route to expectedMaxOfDraw, which keeps its own
+  //     arrays. Instrumented over an epic solve: 287,688 calls, maximum nesting depth 1.
+  //   * SIZE. n is bounded by OUTCOME_RATES.length = 27 (max observed 23), so NMAX = 32 covers it
+  //     with room; anything larger allocates locally exactly as upstream does.
+  // The reused buffers no longer arrive zero-filled, so the four suffix-sum sentinels the
+  // allocation used to supply for free (QP[n], QV[n], TP[m], TV[m]) are now cleared explicitly.
+  var NMAX = 32, MMAX = (NMAX * (NMAX - 1)) / 2;
+  var _u = new Float64Array(NMAX), _q = new Float64Array(NMAX);
+  var _QP = new Float64Array(NMAX + 1), _QV = new Float64Array(NMAX + 1);
+  var _sv = new Float64Array(MMAX), _sp = new Float64Array(MMAX);
+  var _TP = new Float64Array(MMAX + 1), _TV = new Float64Array(MMAX + 1);
+  var _jp = new Int32Array(NMAX), _dheap = new Int32Array(NMAX), _dkey = new Float64Array(NMAX);
+  var _ord = [], _sortVals = null;
+  function _ordCmp(x, y) { return _sortVals[x] - _sortVals[y]; }
+
   function expectedMaxOfDrawWoR(values, probs, K, proc) {
     var n = values.length;
     if (n === 0) return K;
@@ -417,17 +577,22 @@
       return expectedMaxOfDraw(values, probs, K, proc);
     }
     var T = 4 * (K + proc);
+    var big = n > NMAX;   // LOCAL PATCH 4: oversized draw -> allocate exactly as upstream does
 
     // Sort the 1-draw distribution by value ascending.
-    var ord = new Array(n);
+    var ord = big ? new Array(n) : _ord;
+    ord.length = n;
     for (var z = 0; z < n; z++) ord[z] = z;
-    ord.sort(function (x, y) { return values[x] - values[y]; });
-    var u = new Float64Array(n), q = new Float64Array(n);
+    _sortVals = values;
+    ord.sort(_ordCmp);
+    var u = big ? new Float64Array(n) : _u, q = big ? new Float64Array(n) : _q;
     for (var s0 = 0; s0 < n; s0++) { u[s0] = values[ord[s0]]; q[s0] = probs[ord[s0]]; }
 
     // ---- ordered-pair threshold sums over ALL j != k (full set), at threshold tau:
     //   Gp = Σ_{j!=k} q_j q_k 1{u_j+u_k>tau} ; Gv = Σ_{j!=k} q_j q_k (u_j+u_k) 1{...}
     // Computed as (all ordered incl j==k) minus the diagonal, via a monotone pointer.
+    // LOCAL PATCH 4: publishes into gP/gV instead of returning a fresh {P,V} per call.
+    var gP = 0, gV = 0;
     function pairThresh(tau) {
       var P = 0, V = 0, idx = n, i, jj;
       for (jj = 0; jj < n; jj++) {
@@ -440,11 +605,12 @@
       }
       var dP = 0, dV = 0;
       for (jj = 0; jj < n; jj++) { if (2 * u[jj] > tau) { dP += q[jj] * q[jj]; dV += q[jj] * q[jj] * 2 * u[jj]; } }
-      return { P: P - dP, V: V - dV };
+      gP = P - dP; gV = V - dV;
     }
 
     // suffix sums of the 1-draw (for pairThresh)
-    var QP = new Float64Array(n + 1), QV = new Float64Array(n + 1);
+    var QP = big ? new Float64Array(n + 1) : _QP, QV = big ? new Float64Array(n + 1) : _QV;
+    QP[n] = 0; QV[n] = 0;   // LOCAL PATCH 4: sentinel the allocation used to zero for us
     for (var k1 = n - 1; k1 >= 0; k1--) { QP[k1] = QP[k1 + 1] + q[k1]; QV[k1] = QV[k1 + 1] + q[k1] * u[k1]; }
 
     // ---- D2: distribution of 2-SUBSET sums {i<j}, weight q_i q_j, sorted asc ----
@@ -452,10 +618,10 @@
     // j = i+1..n-1 with sums u[i]+u[j] (ascending since u is sorted). Tiny inlined
     // binary heap, no closure comparator (this runs once per DP node, hot path).
     var m = (n * (n - 1)) / 2;
-    var sv = new Float64Array(m), sp = new Float64Array(m);
-    var jp = new Int32Array(n);            // jp[i] = current j pointer for run i (starts i+1)
+    var sv = big ? new Float64Array(m) : _sv, sp = big ? new Float64Array(m) : _sp;
+    var jp = big ? new Int32Array(n) : _jp;   // jp[i] = current j pointer for run i (starts i+1)
     for (var ri = 0; ri < n; ri++) jp[ri] = ri + 1;
-    var dheap = new Int32Array(n), dkey = new Float64Array(n), dhs = 0, di, dpar, dl, drr, dsm, dtr, dtk;
+    var dheap = big ? new Int32Array(n) : _dheap, dkey = big ? new Float64Array(n) : _dkey, dhs = 0, di, dpar, dl, drr, dsm, dtr, dtk;
     for (var r0 = 0; r0 < n - 1; r0++) { // run r0 is non-empty iff r0+1 <= n-1
       di = dhs++; dheap[di] = r0; dkey[di] = u[r0] + u[r0 + 1];
       while (di > 0) { dpar = (di - 1) >> 1; if (dkey[dpar] <= dkey[di]) break; dtr = dheap[dpar]; dheap[dpar] = dheap[di]; dheap[di] = dtr; dtk = dkey[dpar]; dkey[dpar] = dkey[di]; dkey[di] = dtk; di = dpar; }
@@ -475,7 +641,8 @@
         dtr = dheap[dsm]; dheap[dsm] = dheap[di]; dheap[di] = dtr; dtk = dkey[dsm]; dkey[dsm] = dkey[di]; dkey[di] = dtk; di = dsm;
       }
     }
-    var TP = new Float64Array(m + 1), TV = new Float64Array(m + 1);
+    var TP = big ? new Float64Array(m + 1) : _TP, TV = big ? new Float64Array(m + 1) : _TV;
+    TP[m] = 0; TV[m] = 0;   // LOCAL PATCH 4: sentinel the allocation used to zero for us
     for (var k2 = m - 1; k2 >= 0; k2--) { TP[k2] = TP[k2 + 1] + sp[k2]; TV[k2] = TV[k2 + 1] + sp[k2] * sv[k2]; }
 
     // AllOrdered: Σ_{A,B ordered 2-subsets} w_A w_B 1{s_A+s_B>T} (and *(s_A+s_B))
@@ -494,12 +661,12 @@
     var shP = 0, shV = 0, ii;
     for (ii = 0; ii < n; ii++) {
       var tau = T - 2 * u[ii];
-      var g = pairThresh(tau);            // over ALL j!=k (full set)
+      pairThresh(tau);                    // over ALL j!=k (full set), published into gP/gV
       // remove ordered pairs touching i: (i,k) and (j,i)
       var remP = 0, remV = 0, kk;
       for (kk = 0; kk < n; kk++) { if (kk === ii) continue; if (u[ii] + u[kk] > tau) { remP += q[ii] * q[kk]; remV += q[ii] * q[kk] * (u[ii] + u[kk]); } }
       remP *= 2; remV *= 2;
-      var gjkP = g.P - remP, gjkV = g.V - remV; // over j,k != i
+      var gjkP = gP - remP, gjkV = gV - remV; // over j,k != i
       shP += q[ii] * q[ii] * gjkP;
       shV += q[ii] * q[ii] * (2 * u[ii] * gjkP + gjkV);
     }
@@ -550,8 +717,10 @@
       var scT = this._score(config);
       return { v: this.gemValue(config), act: "complete", expScore: scT, pAbove: scT > this.baseline ? 1 : 0, expSpend: 0 };
     }
-    var key = configKey(config, this.axis) + "#" + t + "#" + r + "#" + cm;
-    var hit = this.memo[key];
+    // LOCAL PATCH 5 - INTEGER MEMO KEY (falls back to upstream's string key out of range).
+    var key = numericKey(config, this.axis, t, r, cm);
+    if (key === null) key = configKey(config, this.axis) + "#" + t + "#" + r + "#" + cm;
+    var hit = this.memo.get(key);
     if (hit !== undefined) return hit;
     this.nodes++;
 
@@ -595,7 +764,7 @@
       // COMPLETE optimal: keep the current gem.
       rec = { v: val, act: "complete", expScore: scTerminal, pAbove: scTerminal > this.baseline ? 1 : 0, expSpend: 0 };
     }
-    this.memo[key] = rec;
+    this.memo.set(key, rec);
     return rec;
   };
 
