@@ -37,9 +37,19 @@
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.7rem 0.85rem;
-    margin-bottom: 0.9rem;
+    margin: 0 auto 0.9rem;
     border-radius: 6px;
     background: color-mix(in srgb, var(--text) 4%, transparent);
+    /* Centred, and capped only so the two columns cannot drift apart on a very wide display.
+       width: 100% is load-bearing: this is a FLEX ITEM, so auto margins with no explicit width make
+       it shrink to its content instead of filling, which collapsed the bar to half its length and
+       read as congested. With the width set, the auto margins only have free space to absorb once
+       the cap actually binds. */
+    width: 100%;
+    max-width: 78rem;
+    /* with width: 100% the horizontal padding would otherwise push the panel past its container and
+       put a scrollbar on the page at phone width */
+    box-sizing: border-box;
   }
   /* Gauge left, options right. Side by side the bar stops stretching the full panel (which was what
      made it hard to read) and the two blocks share the vertical space instead of stacking. minmax(0,
@@ -58,7 +68,7 @@
       gap: 0.6rem;
     }
   }
-  .title { font-weight: 600; font-size: 0.92rem; }
+  .title { font-weight: 600; font-size: 1rem; }
   .empty { font-size: 0.8rem; color: color-mix(in srgb, var(--text) 70%, transparent); }
   .stale {
     padding: 0.3rem 0.5rem;

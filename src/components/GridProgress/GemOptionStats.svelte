@@ -8,13 +8,13 @@
 {#if rows.length}
   <div class="root">
     <div class="title">Astrogem Options</div>
-    <!-- One row per option, name left and level hard right, so the numbers form a column you can
-         scan down. The old wrapped chips put every level at a different x and read as a word jumble. -->
+    <!-- Level sits right next to the name, the way the game itself renders it. Right-aligning it to
+         the column edge left a lake of dead space between the two halves of one fact. -->
     <dl class="list">
       {#each rows as row (row.name)}
         <div class="item">
           <dt>{row.name}</dt>
-          <dd>{row.level}</dd>
+          <dd>Lv. {row.level}</dd>
         </div>
       {/each}
     </dl>
@@ -28,10 +28,12 @@
   .item {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.12rem 0;
-    font-size: 0.88rem;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    padding: 0.14rem 0;
+    /* 1rem is the page's own body size (measured 16px). Below it the list reads as a subtitle rather
+       than as content, which is what it is. */
+    font-size: 1rem;
     line-height: 1.4;
   }
   .item + .item { border-top: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
@@ -43,7 +45,8 @@
   }
   dd {
     margin: 0;
-    font-variant-numeric: tabular-nums; /* keeps the level column straight across rows */
+    color: #f0b429; /* the gold the game itself uses for the level */
     font-weight: 600;
+    white-space: nowrap;
   }
 </style>

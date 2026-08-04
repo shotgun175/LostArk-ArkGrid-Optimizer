@@ -4,18 +4,25 @@
   type Props = { progress: GridProgress; dimmed?: boolean };
   let { progress, dimmed = false }: Props = $props();
   const pct = (n: number) => `${n.toFixed(2)}%`;
+  // The current-CP label rides the head of the fill, so a gain visibly travels along the bar toward
+  // the ceiling. It is centred on that point, so the anchor is held a little inside both ends or half
+  // the label would hang off the track; between those bounds it tracks the fill exactly, and real
+  // grids sit well inside them.
+  let curLeft = $derived(Math.min(90, Math.max(10, progress.fillPos)));
 </script>
 
 <div class="root" class:dimmed>
   <div class="title">Ark Grid Combat Power</div>
-  <div class="bar" role="img"
-       aria-label="Current combat power {pct(progress.current)}, ceiling {pct(progress.ceiling)}, {progress.pctOfCeiling.toFixed(1)} percent of the way there">
-    <div class="beyond" style="left:{progress.ceilingPos}%"></div>
-    <div class="fill" style="width:{progress.fillPos}%"></div>
-    <div class="ceiling" style="left:{progress.ceilingPos}%"></div>
+  <div class="track">
+    <span class="cur" style="left:{curLeft}%">+{pct(progress.current)}</span>
+    <div class="bar" role="img"
+         aria-label="Current combat power {pct(progress.current)}, ceiling {pct(progress.ceiling)}, {progress.pctOfCeiling.toFixed(1)} percent of the way there">
+      <div class="beyond" style="left:{progress.ceilingPos}%"></div>
+      <div class="fill" style="width:{progress.fillPos}%"></div>
+      <div class="ceiling" style="left:{progress.ceilingPos}%"></div>
+    </div>
   </div>
   <div class="ends">
-    <span class="cur">+{pct(progress.current)}</span>
     <span class="ceil">ceiling +{pct(progress.ceiling)}</span>
   </div>
   <!-- The headline is the answer to the question this panel exists to ask, so it is centred under
@@ -64,8 +71,20 @@
     width: 2px;
     background: #f0b429;
   }
-  .ends { display: flex; justify-content: space-between; font-size: 0.86rem; }
-  .cur { color: var(--accent, #6aa9e9); font-weight: 600; }
+  /* padding-top reserves the band the floating label lives IN. The label must sit inside that band
+     (top: 0), not above it: anchoring it to bottom: 100% put it above the track entirely, which drops
+     it onto the title and makes both unreadable whenever the fill is short. */
+  .track { position: relative; padding-top: 1.45rem; }
+  .cur {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    color: var(--accent, #6aa9e9);
+    font-weight: 600;
+    font-size: 0.86rem;
+  }
+  .ends { display: flex; justify-content: flex-end; font-size: 0.86rem; }
   .ceil { color: #f0b429; }
   .headline { font-size: 1.05rem; font-weight: 600; }
   .note { font-size: 0.82rem; color: color-mix(in srgb, var(--text) 65%, transparent); }
