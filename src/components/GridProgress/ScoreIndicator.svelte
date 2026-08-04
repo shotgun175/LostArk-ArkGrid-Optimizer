@@ -18,14 +18,26 @@
     <span class="cur">+{pct(progress.current)}</span>
     <span class="ceil">ceiling +{pct(progress.ceiling)}</span>
   </div>
-  <div class="headline">{progress.pctOfCeiling.toFixed(1)}% of your current ceiling</div>
-  <div class="note">Better gems close the gap. Better cores move the ceiling.</div>
+  <!-- The headline is the answer to the question this panel exists to ask, so it is centred under
+       the bar it summarises, with the explanation on its own line beneath. -->
+  <div class="foot">
+    <div class="headline">{progress.pctOfCeiling.toFixed(1)}% of your current ceiling</div>
+    <div class="note">Gems close the gap, cores move the ceiling.</div>
+  </div>
 </div>
 
 <style>
-  .root { display: flex; flex-direction: column; gap: 0.3rem; }
+  .root { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
   .dimmed { opacity: 0.55; }
-  .title { font-weight: 600; font-size: 0.92rem; }
+  .title { font-weight: 600; font-size: 1rem; }
+  .foot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.1rem;
+    margin-top: 0.15rem;
+  }
   .bar {
     position: relative;
     height: 12px;
@@ -52,9 +64,9 @@
     width: 2px;
     background: #f0b429;
   }
-  .ends { display: flex; justify-content: space-between; font-size: 0.76rem; }
+  .ends { display: flex; justify-content: space-between; font-size: 0.86rem; }
   .cur { color: var(--accent, #6aa9e9); font-weight: 600; }
   .ceil { color: #f0b429; }
-  .headline { font-size: 0.95rem; font-weight: 600; }
-  .note { font-size: 0.72rem; color: color-mix(in srgb, var(--text) 65%, transparent); }
+  .headline { font-size: 1.05rem; font-weight: 600; }
+  .note { font-size: 0.82rem; color: color-mix(in srgb, var(--text) 65%, transparent); }
 </style>

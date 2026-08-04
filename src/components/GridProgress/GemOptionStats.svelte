@@ -8,23 +8,42 @@
 {#if rows.length}
   <div class="root">
     <div class="title">Astrogem Options</div>
-    <div class="container">
+    <!-- One row per option, name left and level hard right, so the numbers form a column you can
+         scan down. The old wrapped chips put every level at a different x and read as a word jumble. -->
+    <dl class="list">
       {#each rows as row (row.name)}
-        <div class="item">{row.name} Lv {row.level}</div>
+        <div class="item">
+          <dt>{row.name}</dt>
+          <dd>{row.level}</dd>
+        </div>
       {/each}
-    </div>
+    </dl>
   </div>
 {/if}
 
 <style>
-  .root { display: flex; flex-direction: column; gap: 0.25rem; }
-  .title { font-weight: 600; font-size: 0.86rem; }
-  .container { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .root { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  .title { font-weight: 600; font-size: 1rem; }
+  .list { display: flex; flex-direction: column; margin: 0; }
   .item {
-    padding: 0.16rem 0.45rem;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--text) 8%, transparent);
-    font-size: 0.76rem;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.12rem 0;
+    font-size: 0.88rem;
+    line-height: 1.4;
+  }
+  .item + .item { border-top: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
+  dt {
+    color: color-mix(in srgb, var(--text) 82%, transparent);
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums; /* keeps the level column straight across rows */
+    font-weight: 600;
   }
 </style>

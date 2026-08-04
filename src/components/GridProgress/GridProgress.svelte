@@ -24,8 +24,10 @@
     {#if stale}
       <div class="stale" role="status">Out of date: your cores or gems changed. Re-run Optimize.</div>
     {/if}
-    <ScoreIndicator {progress} dimmed={stale} />
-    <div class:dimmed={stale}><GemOptionStats {rows} /></div>
+    <div class="cols">
+      <ScoreIndicator {progress} dimmed={stale} />
+      <div class:dimmed={stale}><GemOptionStats {rows} /></div>
+    </div>
   {/if}
 </section>
 
@@ -38,6 +40,23 @@
     margin-bottom: 0.9rem;
     border-radius: 6px;
     background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+  /* Gauge left, options right. Side by side the bar stops stretching the full panel (which was what
+     made it hard to read) and the two blocks share the vertical space instead of stacking. minmax(0,
+     ...) lets both columns actually shrink, otherwise the option names refuse to ellipsis. */
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 0.4rem 1.4rem;
+    align-items: start;
+  }
+  /* One column below the breakpoint: two columns at phone width would leave the bar too short to
+     read a percentage off, which defeats the point of the gauge. */
+  @media (max-width: 640px) {
+    .cols {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.6rem;
+    }
   }
   .title { font-weight: 600; font-size: 0.92rem; }
   .empty { font-size: 0.8rem; color: color-mix(in srgb, var(--text) 70%, transparent); }
