@@ -197,6 +197,17 @@ export class AdvisorController {
       this.awaitInit = null;
       return;
     }
+    // The read landed but the DP is still running (it is 85-90% of a re-read's wall time). Surface
+    // the state now so the window can confirm the move; the advice follows on parse:done.
+    if (d.type === 'parse:state') {
+      if (this.pending.has(d.id))
+        this.onPartial?.({
+          parsed: d.result as ParsedAdvisorState,
+          advice: null,
+          fusion: d.fusion as AdvisorResult['fusion'],
+        });
+      return;
+    }
     if (d.type === 'parse:done') {
       const cb = this.pending.get(d.id);
       if (cb) {
@@ -255,6 +266,13 @@ export class AdvisorController {
   private watchGen = 0;
   private sigCanvas: OffscreenCanvas | null = null;
   onAdvice: ((r: AdvisorResult | null) => void) | null = null;
+  /**
+   * Fired with the parsed state as soon as the OCR finishes, while the DP is still running, so the
+   * Processing window can confirm what was read without waiting for the ranked actions. Its `advice`
+   * is always null; the same result arrives again on {@link onAdvice} once the DP lands. Purely a
+   * latency affordance: a caller that ignores it still sees everything, just later.
+   */
+  onPartial: ((r: AdvisorResult) => void) | null = null;
   onShareEnded: (() => void) | null = null;
   // Fired true when a live re-read / manual re-parse starts and false when it finishes, so the UI can
   // show a "reading screen" indicator instead of leaving stale advice looking final.

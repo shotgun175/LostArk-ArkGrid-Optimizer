@@ -14,6 +14,9 @@
 // OcrEngineAPI, OcrLayout, ...) — no bundler CJS transform, no require path. Load order is
 // load-bearing: astrogem (Astrogem) first, then engine / layout / tesseract-engine / glyphs /
 // level-refs, then structural-engine which reads all of them off `self`.
+import type { ParsedAdvisorState } from './advisorController';
+import { type PanelRect, isGreyCharge } from './chargeDetect';
+import { type ApplyOutcomeFn, type FusionPrior, fuse, seedFromParse } from './fusion';
 import astrogemSrc from './vendor/model/astrogem.js?raw';
 import dpSrc from './vendor/model/dp.js?raw';
 import nestedSrc from './vendor/model/nested.js?raw';
@@ -23,9 +26,6 @@ import layoutSrc from './vendor/ocr/layout.js?raw';
 import levelRefsSrc from './vendor/ocr/level-refs.js?raw';
 import structuralSrc from './vendor/ocr/structural-engine.js?raw';
 import tessEngineSrc from './vendor/ocr/tesseract-engine.js?raw';
-import { isGreyCharge, type PanelRect } from './chargeDetect';
-import { fuse, seedFromParse, type ApplyOutcomeFn, type FusionPrior } from './fusion';
-import type { ParsedAdvisorState } from './advisorController';
 
 const globalEval: (src: string) => void = eval; // indirect eval -> global scope
 // astrogem first (Astrogem), then nested + dp (the decision engine reads Astrogem + AstrogemNested),
@@ -122,7 +122,11 @@ async function ocrFn(raster: Raster, opts: OcrOpts): Promise<{ text: string; con
     // OCR path in captureWorker's BrowserOcrRunner).
     const canvas = new OffscreenCanvas(raster.width, raster.height);
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-    ctx.putImageData(new ImageData(new Uint8ClampedArray(raster.data), raster.width, raster.height), 0, 0);
+    ctx.putImageData(
+      new ImageData(new Uint8ClampedArray(raster.data), raster.width, raster.height),
+      0,
+      0
+    );
     const res = await w.recognize(canvas);
     return { text: res?.data?.text ?? '', conf: (res?.data?.confidence ?? 40) / 100 };
   } catch {
@@ -158,6 +162,15 @@ async function rasterFromBitmap(bitmap: ImageBitmap): Promise<Raster> {
 // GRADE and is converted to the DP's gemValue-scale threshold here via the vendored gradeToScore
 // (single source of truth). Returns null when no baseline grade / gpd was supplied or the engine
 // isn't wired.
+// The DP is 85-90% of a re-read's wall time (measured 2026-08-04: OCR 1.3s warm vs DP 3.9s on a rare
+// gem and 9.1s on an epic), and it is a pure function of the state it is handed plus the market
+// inputs. The watch loop re-reads the SAME state more often than it used to — the settled-spike
+// fallback deliberately re-reads when content cannot confirm a change — and every role or
+// gold-bracket flip replays the last state through the advise path. Both were paying full price for
+// an answer already computed. Keyed on the exact DP input, so a hit is the identical computation.
+const DP_CACHE_MAX = 24;
+const dpCache = new Map<string, DpAdvice | null>();
+
 function adviseFrom(
   snapped: { config: unknown; state: Record<string, unknown>; outcomes: unknown },
   baselineGrade: number | undefined,
@@ -170,7 +183,14 @@ function adviseFrom(
   const isSupport = axis === 'support';
   const baseline = isSupport ? A.supportGradeToScore(baselineGrade) : A.gradeToScore(baselineGrade);
   const dpState = { config: snapped.config, ...snapped.state, outcomes: snapped.outcomes };
-  return evaluate(dpState, baseline, gpd, 1, null, { axis: isSupport ? 'support' : 'dps' });
+  const key = JSON.stringify([dpState, baseline, gpd, isSupport]);
+  if (dpCache.has(key)) return dpCache.get(key) ?? null;
+  const advice = evaluate(dpState, baseline, gpd, 1, null, { axis: isSupport ? 'support' : 'dps' });
+  // Plain FIFO: a cut walks forward through states, so the oldest entry is the least likely to
+  // recur. Bounded because a long session would otherwise hold every state it ever saw.
+  if (dpCache.size >= DP_CACHE_MAX) dpCache.delete(dpCache.keys().next().value as string);
+  dpCache.set(key, advice);
+  return advice;
 }
 
 /**
@@ -226,7 +246,11 @@ self.onmessage = async (ev: MessageEvent) => {
       if (!parseStructural || !constraintSnap) throw new Error('parser stack not wired');
       const raster = await rasterFromBitmap(msg.bitmap as ImageBitmap);
       const raw = await parseStructural(raster, ocrFn);
-      const snapped = constraintSnap(raw) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
+      const snapped = constraintSnap(raw) as {
+        config: unknown;
+        state: Record<string, unknown>;
+        outcomes: unknown;
+      };
       applyGreyChargeRescue(raster, raw as Record<string, unknown>, snapped.state);
       attachPanelSize(raster, snapped as Record<string, unknown>);
       const applyOutcomeFn = g.AstrogemNested?.applyOutcome;
@@ -238,6 +262,16 @@ self.onmessage = async (ev: MessageEvent) => {
           )
         : null;
       const finalResult = (fusion ? fusion.result : snapped) as typeof snapped;
+      // The read is done here; the DP that follows is the long pole. Publish what we can SEE before
+      // spending seconds working out what to DO with it, so the window confirms the move immediately
+      // instead of the whole re-read looking stalled. Advisory only: the controller still settles its
+      // pending promise on parse:done below, so no caller can miss the advice by ignoring this.
+      self.postMessage({
+        type: 'parse:state',
+        id: msg.id,
+        result: finalResult,
+        fusion: fusion ? { status: fusion.status, nextPrior: fusion.nextPrior } : undefined,
+      });
       const advice = adviseFrom(finalResult, msg.baselineGrade, msg.gpd, msg.axis);
       self.postMessage({
         type: 'parse:done',
@@ -248,7 +282,11 @@ self.onmessage = async (ev: MessageEvent) => {
       });
     } catch (e) {
       console.error('[advisor] parse failed:', (e as Error)?.stack ?? e);
-      self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });
+      self.postMessage({
+        type: 'parse:done',
+        id: msg.id,
+        error: String((e as Error)?.message ?? e),
+      });
     }
     return;
   }
@@ -277,7 +315,11 @@ self.onmessage = async (ev: MessageEvent) => {
       });
     } catch (e) {
       console.error('[advisor] advise failed:', (e as Error)?.stack ?? e);
-      self.postMessage({ type: 'parse:done', id: msg.id, error: String((e as Error)?.message ?? e) });
+      self.postMessage({
+        type: 'parse:done',
+        id: msg.id,
+        error: String((e as Error)?.message ?? e),
+      });
     }
     return;
   }
