@@ -85,6 +85,28 @@
  * change, both null -> soft value (the frame above -> 10, pairZ-shot -> 11), taking the header's null
  * rate there from 5/124 to 3/124. Publishing it hard, and taking it unconditionally, were both
  * measured and rejected (see the adoption site).
+ * Patch 13 ("THE SEARCH ZONE ENDED INSIDE THE COST ROW")
+ * fixes the other half of "the gold reverts to 900". Patch 11 covers the cost row being read wrong;
+ * this one covers it not being LOCATED at all, which skips every rung below and leaves cval null for
+ * the snap to fill with the 900 base. The search zone ran goldY+1.13..1.63 gap while the "Processing
+ * Cost" row itself sits at 1.46..1.71 gap, so the zone's bottom edge sliced the row on nearly every
+ * capture and only its top strip reached the band-height floor. The strip usually cleared it (and the
+ * located rect's own padding then covered the rest of the row, which is why this went unnoticed); on
+ * advisor-frame-1785866308214 - corpus costfix/cost_3, a +100% frame - the strip came out 11px
+ * against a 12px floor and the whole read was skipped. Measured over 160 labelled frames: the cost
+ * row's own top never exceeds 1.610 gap and the Balance row's top never falls below 1.727 gap, so the
+ * zone bottom moves to 1.79 gap (the row now fits whole) and accept() takes only a row whose top is
+ * at or above 1.65 gap, the one clean split between the two, with 2.5% and 4.7% of a gap in hand on
+ * either side. The top gate is load-bearing: findMaskedTextLine returns the BOTTOM-most accepted
+ * band, so without it the taller zone hands back the Balance row on low-res captures, and a gold
+ * balance of 450/900/1800 would template-read as a processing cost. Measured: costfix 94.87% ->
+ * 100.00% (cost_3 900 -> 1800), the other nine labelled corpora and upstream's 67 samples
+ * byte-identical field for field, zero silent errors throughout. The read stops defaulting as well
+ * as stops missing: across the 93 labelled corpus frames its null rate falls from 49 to 1, and all
+ * 49 newly-read values match their label (48 of 900, 1 of 1800), so nothing is promoted past the
+ * 0.80 bar on a value the labels contradict. On the loose advisor-fixtures set the null rate falls
+ * 68/124 -> 1/124 while exactly one published value changes: the owner's frame, 900 -> 1800. What
+ * the remaining nulls do is unchanged - the snap still fills 900 and publishes it at 0.30 to flag.
  * Under Node the
  * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
  * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
@@ -592,11 +614,22 @@
       // NOTE: the "Processing Cost" LABEL is blue-grey and fails the white mask —
       // on many shots the masked row is JUST the right-aligned number (~3 glyphs),
       // so the accept is narrow and the {450,900,1800} whitelist is the real guard.
+      // LOCAL PATCH - THE SEARCH ZONE ENDED INSIDE THE COST ROW (see file header).
+      // The zone bottom sat at goldY+1.63·gap while the cost row spans 1.46-1.71·gap,
+      // so on nearly every capture the row was sliced and only its top strip survived
+      // to the band-height gate. Measured over 160 labelled frames: the row's own top
+      // never exceeds 1.610·gap and the Balance row's top never falls below 1.727·gap,
+      // so the bottom moves to 1.79·gap (the row now fits whole) and accept() takes
+      // only a row whose top is at or above 1.65·gap - the one clean split between the
+      // two, with 2.5%/4.7% of a gap in hand on either side. Without the top gate the
+      // taller zone would hand back the Balance row on low-res captures (its bottom-most
+      // accepted band wins), and a 3-digit gold balance would template-read as a cost.
       var costLn = locateLine(
-        { x: cx - gap * 2.3, y: goldY + gap * 1.13, w: gap * 4.6, h: gap * 0.5 },
+        { x: cx - gap * 2.3, y: goldY + gap * 1.13, w: gap * 4.6, h: gap * 0.66 },
         dimBtnWhite,
         { maxRowFill: 0.75, minH: Math.max(4, Math.round(gap * 0.05)), maxH: Math.round(gap * 0.2),
-          minRowPx: Math.max(3, Math.round(gap * 0.03)), accept: function (r) { return r.w >= gap * 0.22; } });
+          minRowPx: Math.max(3, Math.round(gap * 0.03)),
+          accept: function (r) { return r.w >= gap * 0.22 && r.y <= goldY + gap * 1.65; } });
       if (out._debug) out._debug.costLn = costLn ? { y: Math.round(costLn.y), w: Math.round(costLn.w) } : null;
       if (costLn) {
         var tgC2 = templateGlyphs(costLn, dimBtnWhite);

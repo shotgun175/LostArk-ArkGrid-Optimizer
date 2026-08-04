@@ -150,8 +150,24 @@ describe('vendored structural-engine local patch', () => {
     expect(adopt).toBeGreaterThan(lastRung);
   });
 
+  it('still searches a zone tall enough to hold the whole cost row', () => {
+    expect(SRC).toContain('LOCAL PATCH - THE SEARCH ZONE ENDED INSIDE THE COST ROW');
+    // the zone has to outlast the row: 1.13 + 0.66 = 1.79 gap, against a row that ends by 1.71.
+    // At the original 0.5 the bottom edge slices the row and the surviving strip is what has to
+    // clear the band-height floor, which on costfix/cost_3 it misses by one pixel.
+    expect(SRC).toMatch(
+      /\{ x: cx - gap \* 2\.3, y: goldY \+ gap \* 1\.13, w: gap \* 4\.6, h: gap \* 0\.66 \}/
+    );
+    // ...and the top gate is what keeps the taller zone off the Balance row sitting under it.
+    // findMaskedTextLine returns the BOTTOM-most accepted band, so dropping this hands back
+    // Balance on low-res captures and a 450/900/1800 gold balance reads as a cost.
+    expect(SRC).toMatch(
+      /accept: function \(r\) \{ return r\.w >= gap \* 0\.22 && r\.y <= goldY \+ gap \* 1\.65; \}/
+    );
+  });
+
   it('documents the divergence in the file header', () => {
-    const header = SRC.slice(0, 9000);
+    const header = SRC.slice(0, 12000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
@@ -164,5 +180,6 @@ describe('vendored structural-engine local patch', () => {
     expect(header).toContain('A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT');
     expect(header).toContain("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN");
     expect(header).toContain("THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS");
+    expect(header).toContain('THE SEARCH ZONE ENDED INSIDE THE COST ROW');
   });
 });
