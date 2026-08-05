@@ -150,8 +150,44 @@ describe('vendored structural-engine local patch', () => {
     expect(adopt).toBeGreaterThan(lastRung);
   });
 
+  it('still searches a zone tall enough to hold the whole cost row', () => {
+    expect(SRC).toContain('LOCAL PATCH - THE SEARCH ZONE ENDED INSIDE THE COST ROW');
+    // the zone has to outlast the row: 1.13 + 0.66 = 1.79 gap, against a row that ends by 1.71.
+    // At the original 0.5 the bottom edge slices the row and the surviving strip is what has to
+    // clear the band-height floor, which on costfix/cost_3 it misses by one pixel.
+    expect(SRC).toMatch(
+      /\{ x: cx - gap \* 2\.3, y: goldY \+ gap \* 1\.13, w: gap \* 4\.6, h: gap \* 0\.66 \}/
+    );
+    // ...and the top gate is what keeps the taller zone off the Balance row sitting under it.
+    // findMaskedTextLine returns the BOTTOM-most accepted band, so dropping this hands back
+    // Balance on low-res captures and a 450/900/1800 gold balance reads as a cost.
+    expect(SRC).toMatch(
+      /accept: function \(r\) \{ return r\.w >= gap \* 0\.22 && r\.y <= goldY \+ gap \* 1\.65; \}/
+    );
+  });
+
+  it('still points the level OCR ladder at the mask that kept the glyph', () => {
+    expect(SRC).toContain('LOCAL PATCH - THE LADDER MUST FOLLOW THE MASK THAT KEPT THE GLYPH');
+    // all three rungs have to consult ladderPred, or the rescue mask is chosen and never read
+    expect(SRC).toMatch(
+      /var read = await maskedOcr\(lineX, ladderPred, \{ whitelist: "Lv\.12345 ", psm: 7 \}\);/
+    );
+    expect(SRC).toMatch(/read = await maskedOcr\(lineX, ladderPred, \{ whitelist: "12345", psm: 10 \}\)/);
+    expect(SRC).toMatch(/read = await dilatedOcr\(L\.crop\(raster, lineX\), ladderPred,/);
+    // the flood gate is load-bearing, not decoration: without it the loosened mask swallows a green
+    // node face whole, the ladder reads nothing, the node drops to synthesis, and two synth commits
+    // demote the points header to soft - which cost 5 correct orderLevel fields on c10corpus.
+    expect(SRC).toMatch(/if \(bR\.w < bR\.h && bR\.h <= goldMaxH \* 1\.35\) wideBox = bR;/);
+    // ...measured against the tallest box the GOLD mask found, which is the line's own text height
+    expect(SRC).toMatch(/goldMaxH = Math\.max\(goldMaxH, boxes\[gh\]\.h\);/);
+    // and a read taken off the loosened mask may never publish above the flag bar on its own
+    expect(SRC).toMatch(/if \(ladderRelaxed\) conf = Math\.min\(conf, 0\.75\);/);
+  });
+
   it('documents the divergence in the file header', () => {
-    const header = SRC.slice(0, 9000);
+    // the header block ends well inside this window and the first INLINE repeat of any patch name
+    // is far below it, so a name found here is genuinely the header paragraph
+    const header = SRC.slice(0, 16000);
     expect(header).toContain('LOCAL PATCH - SLIVER ABSTAIN');
     expect(header).toContain('FEASIBILITY ON THE OCR FALLBACK');
     expect(header).toContain('ZERO COST');
@@ -164,5 +200,7 @@ describe('vendored structural-engine local patch', () => {
     expect(header).toContain('A TILE THAT NAMES AN EFFECT IS A SECOND READ OF THAT EFFECT');
     expect(header).toContain("THE COST VALUE OUTGROWS THE LABEL'S OWN MEDIAN");
     expect(header).toContain("THE LEVEL BOUNDS MAY NOT VETO THE HEADER'S OWN DIGITS");
+    expect(header).toContain('THE SEARCH ZONE ENDED INSIDE THE COST ROW');
+    expect(header).toContain('THE LADDER MUST FOLLOW THE MASK THAT KEPT THE GLYPH');
   });
 });
