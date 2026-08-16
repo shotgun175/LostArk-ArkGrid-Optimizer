@@ -1,9 +1,9 @@
 import type { ArkGridAttr } from '../constants/enums';
 import { type ArkGridGem, gemFingerprint } from '../models/arkGridGems';
 import {
-  BASELINE_MAX_GRADE,
   BASELINE_MIN_GRADE,
   type GemRole,
+  baselineMaxGrade,
   bumpedBaselineGrade,
   computeGemScore,
   rankFromGrade,
@@ -16,7 +16,7 @@ export interface TriageResult {
   rationale: string;
 }
 
-// The baseline is a 0-100 GRADE on shizukaziye's rank ladder (GRADE_ROWS, ranks C- … S+), shown as a
+// The baseline is a GRADE on shizukaziye's per-axis baseline ladder (gradeRows(role), C- … S+), shown as a
 // letter tier. It is the ONE value both the Gem Triage upgrade/keep/remove split and the Cutting Plan
 // target read, so the two panels stay tied together as the user moves the shared control.
 
@@ -41,7 +41,7 @@ export function autoBaselineFromLoadout(equipped: ArkGridGem[], role: GemRole): 
   const chaos = attrSourceGrade(equipped, 'Chaos', role);
   if (order === null && chaos === null) return null;
   const strongerSource = Math.max(order ?? -Infinity, chaos ?? -Infinity);
-  return bumpedBaselineGrade(strongerSource);
+  return bumpedBaselineGrade(strongerSource, role);
 }
 
 /**
@@ -49,8 +49,16 @@ export function autoBaselineFromLoadout(equipped: ArkGridGem[], role: GemRole): 
  * the floor. An out-of-range override (e.g. a pre-grade-migration % value ≤ 2) is ignored so a stale
  * setting can't drag the baseline down to F.
  */
-export function effectiveBaseline(auto: number | null, override: number | undefined): number {
-  if (override !== undefined && override >= BASELINE_MIN_GRADE && override <= BASELINE_MAX_GRADE) {
+export function effectiveBaseline(
+  auto: number | null,
+  override: number | undefined,
+  role: GemRole = 'dps'
+): number {
+  if (
+    override !== undefined &&
+    override >= BASELINE_MIN_GRADE &&
+    override <= baselineMaxGrade(role)
+  ) {
     return override;
   }
   return auto ?? BASELINE_MIN_GRADE;
@@ -115,15 +123,18 @@ export function triageOwnedGems(
     retainAssignments: (ArkGridGem[][] | undefined)[];
     baseline: number;
     hasEndgameEvidence: boolean;
+    /** Which axis's rank ladder to read tiers on (the two differ only in where S+ starts). */
+    role?: GemRole;
   }
 ): TriageResult[] {
+  const role: GemRole = opts.role ?? 'dps';
   const equippedRemaining = solveKeyCounts(opts.activeCurrent);
   const retainedRemaining = retainedCounts([opts.activeCurrent, ...opts.retainAssignments]);
-  const baseTier = rankFromGrade(opts.baseline);
+  const baseTier = rankFromGrade(opts.baseline, role);
 
   return owned.map(({ gem, grade }) => {
     const key = gemKey(gem);
-    const gemTier = rankFromGrade(grade);
+    const gemTier = rankFromGrade(grade, role);
     const retained = retainedRemaining.get(key) ?? 0;
 
     if (retained > 0) {

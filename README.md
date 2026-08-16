@@ -72,11 +72,12 @@ npm run generate:sprite   # OpenCV template sprites + coordinate maps
 npm run generate:pipeline # Cutting-plan dataset (DPS + Support) -> src/lib/cutplan/pipeline.json
 ```
 
-Note: `generate:pipeline` reads shizukaziye's `astrogem-calculator` pipeline data
-(`data/pipeline.json` + `data/pipeline-support.json`) from under `Reference Projects/`, third-party
-content that is deliberately **not** tracked — the command only runs on a machine that has it. The
-committed `pipeline.json` (his exact Bellman-DP, real % damage, used with attribution) carries a
-`_provenance` block (each source's sha256 + date) so it stays auditable.
+Note: `generate:pipeline` reads shizukaziye's astrogem-calculator pipeline data
+(`loa-astrogem-calc/data/pipeline.json` + `data/pipeline-support.json` from his `loastuff` repo) from
+under `Reference Projects/`, third-party content that is deliberately **not** tracked — the command
+only runs on a machine that has it. The committed `pipeline.json` (his exact Bellman-DP over the
+2026-08 roster-bound grading model, used with attribution) carries a `_provenance` block (each
+source's sha256 + date) so it stays auditable.
 
 ## Deployment
 
@@ -103,6 +104,12 @@ boundaries are.
   base (only the option coefficients differ), which is what lets the Cutting Plan apply one
   EV-based cut/reset/keep rule to both. The exact coefficients are listed in-app under
   **Assumptions / Tuning**.
+- **Grades match shizukaziye's calculator (2026-08 model).** A gem's grade is 0 for the worst legal
+  gem and 100 for the average gem of a perfect Ark Grid, so a perfect 10-cost reads slightly above
+  100 and a perfect 8-cost slightly below; willpower enters as a fitted per-cost credit rather than a
+  damage multiplier, and letter ranks are even thirds of 10-point bands with S+ starting at each
+  axis's perfect 8-cost (96.1 DPS, 94.6 Support). If you compared grades against his site before
+  August 2026, expect the same gem to grade differently now on both.
 
 **Open questions / not yet verified**
 

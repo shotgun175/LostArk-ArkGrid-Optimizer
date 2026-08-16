@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GRADE_ROWS } from '../scoring/gemScore';
+import { gradeRows } from '../scoring/gemScore';
 import {
   actionFor,
   actionLabel,
@@ -305,23 +305,29 @@ describe('labels / bands', () => {
 });
 
 describe('pipelineBaselineForGrade', () => {
-  // A realistic 12-anchor support-scale array (parallel to GRADE_ROWS).
+  // A realistic 12-anchor support-scale array (parallel to gradeRows('support')).
   const supportBaselines = [
-    0.124, 0.138, 0.153, 0.167, 0.181, 0.196, 0.21, 0.224, 0.239, 0.253, 0.267, 0.282,
+    0.138, 0.151, 0.165, 0.178, 0.191, 0.205, 0.219, 0.232, 0.246, 0.259, 0.273, 0.278,
   ];
-  it('maps a grade to the anchor at its GRADE_ROWS index', () => {
-    expect(GRADE_ROWS.length).toBe(supportBaselines.length);
-    expect(pipelineBaselineForGrade(GRADE_ROWS[0], supportBaselines)).toBe(supportBaselines[0]); // 40
-    expect(pipelineBaselineForGrade(GRADE_ROWS[11], supportBaselines)).toBe(supportBaselines[11]); // 95
+  const rows = gradeRows('support');
+  it('maps a grade to the anchor at its ladder index', () => {
+    expect(rows.length).toBe(supportBaselines.length);
+    expect(pipelineBaselineForGrade(rows[0], 'support', supportBaselines)).toBe(supportBaselines[0]); // 60 (C-)
+    expect(pipelineBaselineForGrade(rows[11], 'support', supportBaselines)).toBe(supportBaselines[11]); // 94.6 (S+)
   });
   it('snaps an off-anchor grade to the nearest anchor', () => {
-    expect(pipelineBaselineForGrade(72, supportBaselines)).toBe(supportBaselines[6]); // nearest 70
+    expect(pipelineBaselineForGrade(81, 'support', supportBaselines)).toBe(supportBaselines[6]); // nearest 80
+  });
+  it('reads the top row at the AXIS S+ cut (96.1 DPS vs 94.6 support)', () => {
+    // 94.5 is nearer the support S+ cut (94.6) than S (93.3), but on DPS it is nearer S than 96.1.
+    expect(pipelineBaselineForGrade(94.5, 'support', supportBaselines)).toBe(supportBaselines[11]);
+    expect(pipelineBaselineForGrade(94.5, 'dps', supportBaselines)).toBe(supportBaselines[10]);
   });
   it('keeps the whole grade range inside the support anchor span (no clamp)', () => {
     const lo = supportBaselines[0];
     const hi = supportBaselines[supportBaselines.length - 1];
-    for (const g of GRADE_ROWS) {
-      const pct = pipelineBaselineForGrade(g, supportBaselines);
+    for (const g of rows) {
+      const pct = pipelineBaselineForGrade(g, 'support', supportBaselines);
       expect(pct).toBeGreaterThanOrEqual(lo);
       expect(pct).toBeLessThanOrEqual(hi);
     }
@@ -348,8 +354,8 @@ describe('support axis (baseline scale-mismatch regression)', () => {
   // the support anchors so the read lands in-range. Same grade, same cells — the support array lands
   // in-range (cut>0); the DPS array (the bug) clamps to the zero top anchor.
   it('picks the support anchors via meta.baselines[axis], not the DPS array', () => {
-    const supportPct = pipelineBaselineForGrade(40, data.meta.baselines.support);
-    const dpsPct = pipelineBaselineForGrade(40, data.meta.baselines.dps);
+    const supportPct = pipelineBaselineForGrade(60, 'support', data.meta.baselines.support);
+    const dpsPct = pipelineBaselineForGrade(60, 'dps', data.meta.baselines.dps);
     expect(supportPct).toBeLessThanOrEqual(0.2); // in the support span
     expect(dpsPct).toBeGreaterThan(0.2); // above the support cells' top anchor
     expect(getCutCell(data, 'support', 'epic', 8, '2_damage', 'nrb', 500000, supportPct)!.cut).toBeGreaterThan(0);
@@ -363,15 +369,19 @@ describe('committed pipeline.json shape (locks types <-> data)', () => {
     expect(Array.isArray(meta.baselines)).toBe(false);
     for (const axis of ['dps', 'support'] as const) {
       const arr = meta.baselines[axis];
-      expect(arr).toHaveLength(GRADE_ROWS.length);
+      expect(arr).toHaveLength(gradeRows(axis).length);
       for (let i = 1; i < arr.length; i++) expect(arr[i]).toBeGreaterThan(arr[i - 1]);
     }
   });
-  it('keeps DPS on the ~0.66–1.43 scale and support on the smaller ~0.12–0.28 scale', () => {
-    expect(meta.baselines.dps[0]).toBeCloseTo(0.659, 2);
-    expect(meta.baselines.dps.at(-1)).toBeCloseTo(1.432, 2);
-    // Support anchors must all sit below the DPS floor — the whole point of the split.
-    expect(meta.baselines.support.at(-1)).toBeLessThan(meta.baselines.dps[0]);
+  it('keeps DPS on the centered ~0.07-0.75 gem-value scale and support on its own ~0.14-0.28 scale', () => {
+    // 2026-08-10 bake: DPS order is centered at level 4 and willpower is an additive credit, so the
+    // DPS anchors start near zero (grade 60 = 0.0748) and end at the S+ cut (96.1 = 0.7505). Support
+    // keeps a positive order term, so its anchors sit at 0.1375..0.2778. The two arrays overlap now,
+    // which is why every read passes the AXIS explicitly rather than inferring it from magnitude.
+    expect(meta.baselines.dps[0]).toBeCloseTo(0.0748, 3);
+    expect(meta.baselines.dps.at(-1)).toBeCloseTo(0.7505, 3);
+    expect(meta.baselines.support[0]).toBeCloseTo(0.1375, 3);
+    expect(meta.baselines.support.at(-1)).toBeCloseTo(0.2778, 3);
   });
   it('carries a numeric expSpend on each cell (nrb positive, rb zero)', () => {
     const c = (realPipeline as unknown as PipelineData).axes.dps.cells.epic['8']['2_damage']['5000000'][0];
@@ -383,12 +393,12 @@ describe('committed pipeline.json shape (locks types <-> data)', () => {
 
 describe('fuse-first (purple)', () => {
   const real = realPipeline as unknown as PipelineData;
-  // grade -> the baked % baseline the DPS cells were solved at (GRADE_ROWS index).
-  const at = (grade: number) => pipelineBaselineForGrade(grade, real.meta.baselines.dps);
+  // grade -> the baked baseline the DPS cells were solved at (ladder index).
+  const at = (grade: number) => pipelineBaselineForGrade(grade, 'dps', real.meta.baselines.dps);
   const GPD = 1_500_000; // his default Pipeline gpd tier
 
   it('unopenedFusion returns finite uncommon/rare fuse values and a null epic', () => {
-    const ff = unopenedFusion(real, 'dps', GPD, at(40));
+    const ff = unopenedFusion(real, 'dps', GPD, at(60));
     expect(ff).not.toBeNull();
     expect(Number.isFinite(ff!.fuse.uncommon[8]!)).toBe(true);
     expect(Number.isFinite(ff!.fuse.rare[10]!)).toBe(true);
@@ -397,37 +407,42 @@ describe('fuse-first (purple)', () => {
   });
 
   it('isBlockFuse is false for roster-bound, epic, and null fuse data', () => {
-    const ff = unopenedFusion(real, 'dps', GPD, at(40));
+    const ff = unopenedFusion(real, 'dps', GPD, at(60));
     // roster-bound gems are free to cut -> never fuse-first
-    expect(isBlockFuse(real, 'dps', 'rare', 10, 'rb', GPD, at(40), ff)).toBe(false);
+    expect(isBlockFuse(real, 'dps', 'rare', 10, 'rb', GPD, at(60), ff)).toBe(false);
     // epic never fuses
-    expect(isBlockFuse(real, 'dps', 'epic', 10, 'nrb', GPD, at(40), ff)).toBe(false);
+    expect(isBlockFuse(real, 'dps', 'epic', 10, 'nrb', GPD, at(60), ff)).toBe(false);
     // no fuse data -> false
-    expect(isBlockFuse(real, 'dps', 'rare', 10, 'nrb', GPD, at(40), null)).toBe(false);
+    expect(isBlockFuse(real, 'dps', 'rare', 10, 'nrb', GPD, at(60), null)).toBe(false);
   });
 
   it('getCutCell honors the blockFuse override', () => {
-    const cell = getCutCell(real, 'dps', 'rare', 10, '2_damage', 'nrb', GPD, at(40), true)!;
+    const cell = getCutCell(real, 'dps', 'rare', 10, '2_damage', 'nrb', GPD, at(60), true)!;
     expect(cell.verdict).toBe('purple');
     expect(cell.action).toBe('fuse');
     expect(cell.resetWorthy).toBe(false);
   });
 
-  // Golden: verdicts read off his live page (DPS / Global / 1.5M / Non-Roster-Bound) on 2026-07-19.
-  // At grade 40 ONLY rare/10 is purple; at grade 80 rare/8 is purple while rare/10 is not. These
-  // cross-checks prove the port tracks BOTH the rarity/cost and the baseline dimensions.
-  it('matches his live-page purple grid at DPS / 1.5M / NRB', () => {
+  // Regression pin for the fuse-first grid across the ladder (DPS / Global / 1.5M / Non-Roster-Bound).
+  // The C- row was read off his live page on 2026-07-19 (only rare/10 purple) and is unchanged under the
+  // 2026-08-10 bake; the A- and A+ rows below are re-derived from that bake itself (not an independent
+  // oracle), so they pin OUR current behavior against accidental change rather than prove parity.
+  it('tracks the fuse-first grid across rarity/cost and baseline at DPS / 1.5M / NRB', () => {
     const bf = (rarity: 'uncommon' | 'rare' | 'epic', cost: number, grade: number) => {
       const ff = unopenedFusion(real, 'dps', GPD, at(grade));
       return isBlockFuse(real, 'dps', rarity, cost, 'nrb', GPD, at(grade), ff);
     };
-    // grade 40: only rare/10 fuses
-    expect(bf('rare', 10, 40)).toBe(true);
-    expect(bf('rare', 8, 40)).toBe(false);
-    expect(bf('epic', 10, 40)).toBe(false);
-    expect(bf('uncommon', 8, 40)).toBe(false);
-    // grade 80: the pattern shifts to the cheaper rare costs; rare/10 is no longer fuse-first
+    // C- (60): only rare/10 fuses
+    expect(bf('rare', 10, 60)).toBe(true);
+    expect(bf('rare', 8, 60)).toBe(false);
+    expect(bf('epic', 10, 60)).toBe(false);
+    expect(bf('uncommon', 8, 60)).toBe(false);
+    // A- (80): the cheaper rare costs join in; epic still never fuses
     expect(bf('rare', 8, 80)).toBe(true);
-    expect(bf('rare', 10, 80)).toBe(false);
+    expect(bf('uncommon', 8, 80)).toBe(true);
+    expect(bf('epic', 8, 80)).toBe(false);
+    // A+ (86.7) and up: nothing is fuse-first
+    expect(bf('rare', 8, 86.7)).toBe(false);
+    expect(bf('rare', 10, 90)).toBe(false);
   });
 });

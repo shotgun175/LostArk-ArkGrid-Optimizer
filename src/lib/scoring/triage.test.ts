@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ArkGridGem } from '../models/arkGridGems';
-import { GRADE_ROWS, bumpedBaselineGrade, computeGemScore } from './gemScore';
+import { BASELINE_MIN_GRADE, bumpedBaselineGrade, computeGemScore, gradeRows } from './gemScore';
 import {
   type OwnedTriageInput,
   autoBaselineFromLoadout,
@@ -58,37 +58,41 @@ describe('autoBaselineFromLoadout', () => {
   it('returns null for an empty loadout', () => {
     expect(autoBaselineFromLoadout([], 'dps')).toBeNull();
   });
-  it('returns a grade on the rank ladder (GRADE_ROWS)', () => {
-    expect(GRADE_ROWS).toContain(autoBaselineFromLoadout([gemA, gemC], 'dps'));
+  it('returns a grade on the rank ladder (gradeRows)', () => {
+    expect(gradeRows('dps')).toContain(autoBaselineFromLoadout([gemA, gemC], 'dps'));
   });
   it('is one rank above the lowest equipped grade when an attribute has < 3 gems', () => {
     const equipped = [gemA, gemC]; // both Chaos, only 2 gems
     const lowest = Math.min(...equipped.map(dpsGrade));
-    expect(autoBaselineFromLoadout(equipped, 'dps')).toBe(bumpedBaselineGrade(lowest));
+    expect(autoBaselineFromLoadout(equipped, 'dps')).toBe(bumpedBaselineGrade(lowest, 'dps'));
   });
   it('uses the 3rd-lowest grade of an attribute when it has >= 3 gems', () => {
     const chaos = [gemA, gemB, gemC]; // 3 Chaos gems
     const thirdLowest = chaos.map(dpsGrade).sort((a, b) => a - b)[2];
-    expect(autoBaselineFromLoadout(chaos, 'dps')).toBe(bumpedBaselineGrade(thirdLowest));
+    expect(autoBaselineFromLoadout(chaos, 'dps')).toBe(bumpedBaselineGrade(thirdLowest, 'dps'));
   });
   it('drives the baseline off the stronger attribute’s source gem', () => {
     const strongOrder = { ...gemC, gemAttr: 'Order' as const }; // high grade
     const weakChaos = { ...junk, gemAttr: 'Chaos' as const }; // low grade
     expect(dpsGrade(strongOrder)).toBeGreaterThan(dpsGrade(weakChaos));
     expect(autoBaselineFromLoadout([strongOrder, weakChaos], 'dps')).toBe(
-      bumpedBaselineGrade(dpsGrade(strongOrder))
+      bumpedBaselineGrade(dpsGrade(strongOrder), 'dps')
     );
   });
-  it('is role-aware (each role grades the same gem on its own axis)', () => {
-    expect(GRADE_ROWS).toContain(autoBaselineFromLoadout([support], 'dps'));
-    expect(GRADE_ROWS).toContain(autoBaselineFromLoadout([support], 'support'));
+  it('is role-aware (each role grades the same gem on its own axis and its own ladder)', () => {
+    expect(gradeRows('dps')).toContain(autoBaselineFromLoadout([support], 'dps'));
+    expect(gradeRows('support')).toContain(autoBaselineFromLoadout([support], 'support'));
   });
 });
 
 describe('effectiveBaseline', () => {
   it('prefers an in-range manual override (a ladder grade) over the auto value', () => {
-    expect(effectiveBaseline(70, 85)).toBe(85);
-    expect(effectiveBaseline(70, GRADE_ROWS[0])).toBe(GRADE_ROWS[0]); // floor grade is in range
+    expect(effectiveBaseline(70, 83.3)).toBe(83.3);
+    expect(effectiveBaseline(70, BASELINE_MIN_GRADE)).toBe(BASELINE_MIN_GRADE); // floor grade is in range
+    // the top of the ladder differs per axis (S+ = perfect c8: 96.1 DPS, 94.6 support)
+    expect(effectiveBaseline(70, 96.1, 'dps')).toBe(96.1);
+    expect(effectiveBaseline(70, 96.1, 'support')).toBe(70); // above the support ladder
+    expect(effectiveBaseline(70, 94.6, 'support')).toBe(94.6);
   });
   it('uses the auto value when there is no override', () => {
     expect(effectiveBaseline(70, undefined)).toBe(70);
@@ -98,8 +102,8 @@ describe('effectiveBaseline', () => {
     expect(effectiveBaseline(70, 200)).toBe(70); // above the grade range
   });
   it('falls back to the floor grade when there is neither auto nor a valid override', () => {
-    expect(effectiveBaseline(null, undefined)).toBe(GRADE_ROWS[0]);
-    expect(effectiveBaseline(null, 0.5)).toBe(GRADE_ROWS[0]); // stale override ignored
+    expect(effectiveBaseline(null, undefined)).toBe(BASELINE_MIN_GRADE);
+    expect(effectiveBaseline(null, 0.5)).toBe(BASELINE_MIN_GRADE); // stale override ignored
     expect(effectiveBaseline(null, 75)).toBe(75); // valid override used
   });
 });

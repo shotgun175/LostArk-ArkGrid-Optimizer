@@ -13,7 +13,8 @@
 // every IIFE takes its browser branch and attaches its API to `self` (OcrStructuralEngine,
 // OcrEngineAPI, OcrLayout, ...) — no bundler CJS transform, no require path. Load order is
 // load-bearing: astrogem (Astrogem) first, then engine / layout / tesseract-engine / glyphs /
-// level-refs, then structural-engine which reads all of them off `self`.
+// level-refs / level-model / name-model / tile-model (the three GENERATED trained models his
+// 2026-07 OCR rounds added), then structural-engine which reads all of them off `self`.
 import type { ParsedAdvisorState } from './advisorController';
 import { type PanelRect, isGreyCharge } from './chargeDetect';
 import { type ApplyOutcomeFn, type FusionPrior, fuse, seedFromParse } from './fusion';
@@ -23,9 +24,12 @@ import nestedSrc from './vendor/model/nested.js?raw';
 import engineSrc from './vendor/ocr/engine.js?raw';
 import glyphsSrc from './vendor/ocr/glyphs.js?raw';
 import layoutSrc from './vendor/ocr/layout.js?raw';
+import levelModelSrc from './vendor/ocr/level-model.js?raw';
 import levelRefsSrc from './vendor/ocr/level-refs.js?raw';
+import nameModelSrc from './vendor/ocr/name-model.js?raw';
 import structuralSrc from './vendor/ocr/structural-engine.js?raw';
 import tessEngineSrc from './vendor/ocr/tesseract-engine.js?raw';
+import tileModelSrc from './vendor/ocr/tile-model.js?raw';
 
 const globalEval: (src: string) => void = eval; // indirect eval -> global scope
 // astrogem first (Astrogem), then nested + dp (the decision engine reads Astrogem + AstrogemNested),
@@ -39,6 +43,9 @@ for (const src of [
   tessEngineSrc,
   glyphsSrc,
   levelRefsSrc,
+  levelModelSrc,
+  nameModelSrc,
+  tileModelSrc,
   structuralSrc,
 ]) {
   globalEval(src);
@@ -175,14 +182,22 @@ function adviseFrom(
   snapped: { config: unknown; state: Record<string, unknown>; outcomes: unknown },
   baselineGrade: number | undefined,
   gpd: number | undefined,
-  axis: string | undefined
+  axis: string | undefined,
+  rosterBound: boolean | undefined
 ): DpAdvice | null {
   const evaluate = g.AstrogemDP?.evaluateActionsDP;
   const A = g.Astrogem;
   if (!evaluate || !A || baselineGrade == null || gpd == null) return null;
   const isSupport = axis === 'support';
   const baseline = isSupport ? A.supportGradeToScore(baselineGrade) : A.gradeToScore(baselineGrade);
-  const dpState = { config: snapped.config, ...snapped.state, outcomes: snapped.outcomes };
+  // Roster-bound is a market input (see AdviceInputs), so it overrides the state's own flag, which no
+  // parse can read off the screen. Undefined keeps whatever the caller's state said.
+  const dpState = {
+    config: snapped.config,
+    ...snapped.state,
+    ...(rosterBound === undefined ? {} : { rosterBound }),
+    outcomes: snapped.outcomes,
+  };
   const key = JSON.stringify([dpState, baseline, gpd, isSupport]);
   if (dpCache.has(key)) return dpCache.get(key) ?? null;
   const advice = evaluate(dpState, baseline, gpd, 1, null, { axis: isSupport ? 'support' : 'dps' });
@@ -197,9 +212,10 @@ function adviseFrom(
  * Carry the Processing window's on-screen width out with the parse.
  *
  * How many pixels that window occupies is the single best predictor of how well it reads: measured on
- * one machine, the same client scores 97.7% of fields with a ~925px panel and 95.5% with a ~677px one,
- * because the game's Force 21:9 setting letterboxes the UI and shrinks every glyph with it. Surfacing
- * the number lets the UI say so instead of the user discovering it the hard way.
+ * one machine, the same client scores 99.7% of fields with a ~925px panel and 99.1% with a ~677px one
+ * (and roughly three times the "confirm me" flags per frame; 2026-08 re-sync numbers), because the
+ * game's Force 21:9 setting letterboxes the UI and shrinks every glyph with it. Surfacing the number
+ * lets the UI say so instead of the user discovering it the hard way.
  *
  * Measured by locating the panel on the ORIGINAL raster. The parser's own debug channel is not usable
  * for this: it stores the rect AFTER a wheel-fit and scale normalisation, so the same 677px window
@@ -272,7 +288,7 @@ self.onmessage = async (ev: MessageEvent) => {
         result: finalResult,
         fusion: fusion ? { status: fusion.status, nextPrior: fusion.nextPrior } : undefined,
       });
-      const advice = adviseFrom(finalResult, msg.baselineGrade, msg.gpd, msg.axis);
+      const advice = adviseFrom(finalResult, msg.baselineGrade, msg.gpd, msg.axis, msg.rosterBound);
       self.postMessage({
         type: 'parse:done',
         id: msg.id,
@@ -302,7 +318,7 @@ self.onmessage = async (ev: MessageEvent) => {
         outcomes: msg.outcomes,
         rarity: msg.rarity,
       }) as { config: unknown; state: Record<string, unknown>; outcomes: unknown };
-      const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis);
+      const advice = adviseFrom(snapped, msg.baselineGrade, msg.gpd, msg.axis, msg.rosterBound);
       self.postMessage({
         type: 'parse:done',
         id: msg.id,

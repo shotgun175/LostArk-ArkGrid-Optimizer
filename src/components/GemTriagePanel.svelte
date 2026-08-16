@@ -63,7 +63,7 @@
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
-  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
+  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride, role));
 
   let solveStale = $derived(isSolveStale(profile));
 
@@ -103,6 +103,7 @@
       retainAssignments,
       baseline,
       hasEndgameEvidence,
+      role,
     });
 
     const scored = owned.map((gem, i) => {
@@ -244,9 +245,14 @@
         <p class="sh-eq">Grade &amp; rank</p>
         <ul class="sh-list">
           <li>
-            Each gem also gets a <strong>0-100 grade</strong> (0 = worst possible, 100 = a perfect
-            gem) and a letter <strong>rank</strong>. Cutoffs: S ≥ 85, A ≥ 70, B ≥ 55, C ≥ 40, D ≥
-            20, F ≥ 0 - each split into +/·/- thirds (S+, S, S-, A+ …).
+            Each gem also gets a <strong>grade</strong> (0 = worst possible, 100 = the average gem
+            of a perfect Ark Grid, so a perfect 10-cost reads a little above 100 and a perfect
+            8-cost a little below) and a letter <strong>rank</strong>. Willpower counts as a fitted
+            per-cost credit rather than damage: costs 3 and 4 earn a bonus, 5 is neutral, 6 and up
+            are taxed harder each step. Ranks are even thirds of 10-point bands (A- ≥ 80, A ≥ 83.3,
+            A+ ≥ 86.7, and so on down to D- ≥ 50; F below), with S+ starting at the perfect 8-cost
+            of the axis (96.1 DPS, 94.6 Support). Same model as shizukaziye's calculator, so grades
+            match his.
           </li>
         </ul>
         <div class="sh-ranks">
@@ -410,7 +416,7 @@
                   </span>
                 </span>
               </span>
-              <span class="rank" data-rank={row.rank} title="Grade {row.grade} / 100"
+              <span class="rank" data-rank={row.rank} title="Grade {row.grade}"
                 >{row.rank}</span
               >
               <span class="action" data-action={row.action}>{ACTION_LABEL[row.action]}</span>

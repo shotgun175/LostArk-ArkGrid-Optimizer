@@ -11,7 +11,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { ArkGridGem } from '../models/arkGridGems';
 import type { ArkGridGemOptionName } from '../models/arkGridGemSpecs';
-import { type GemRole, computeGemScore } from '../scoring/gemScore';
+import pipeline from '../cutplan/pipeline.json';
+import {
+  type GemRole,
+  RANK_LADDER_TAIL,
+  computeGemScore,
+  gradeRows,
+  sPlusCut,
+} from '../scoring/gemScore';
 import { DP_FIXTURES } from './advisorDp.fixtures';
 
 const require = createRequire(import.meta.url);
@@ -87,15 +94,20 @@ describe('advisor vendor: scoring drift guard (vendored astrogem.js vs our gemSc
   });
 
   it('his gradeToScore anchors match our baked pipeline baselines (both axes stay in lockstep)', () => {
-    const GRADE_ROWS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95];
-    // Sanity that the vendored inverse still returns finite, monotone thresholds (the units our
-    // cut-plan baselines are keyed on). A hard numeric lock lives in cutPlan.test.ts.
-    let prev = -Infinity;
-    for (const g of GRADE_ROWS) {
-      const v = A.gradeToScore(g);
-      expect(Number.isFinite(v)).toBe(true);
-      expect(v).toBeGreaterThan(prev);
-      prev = v;
+    // The vendored inverse over OUR baseline ladder must reproduce the baked meta.baselines[axis]
+    // exactly (that is how the Cutting Plan reads a cell by grade), and the two S+ cuts must agree.
+    // The whole letter ladder, not just the S+ pin: an upstream re-tune of the band cuts must fail here.
+    const ours = (role: GemRole) => [['S+', sPlusCut(role)], ...RANK_LADDER_TAIL];
+    expect(A.RANK_LADDER).toEqual(ours('dps'));
+    expect(A.SUPPORT_RANK_LADDER).toEqual(ours('support'));
+    for (const axis of ['dps', 'support'] as const) {
+      const rows = gradeRows(axis);
+      const baked = pipeline.meta.baselines[axis];
+      expect(baked).toHaveLength(rows.length);
+      rows.forEach((g, i) => {
+        const v = axis === 'support' ? A.supportGradeToScore(g) : A.gradeToScore(g);
+        expect(v).toBeCloseTo(baked[i], 6);
+      });
     }
   });
 });

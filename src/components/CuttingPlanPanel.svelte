@@ -85,12 +85,12 @@
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
   let auto = $derived(autoBaselineFromLoadout(equipped, role));
-  // Baseline is a GRADE tier (the same value the Gem Triage uses). The DP data is keyed by the % damage
-  // each grade anchor was baked at, so convert grade -> baked % (exact key lookup) before reading cells.
-  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
+  // Baseline is a GRADE tier (the same value the Gem Triage uses). The DP data is keyed by the gem VALUE
+  // each grade anchor was baked at, so convert grade -> baked value (exact key lookup) before reading cells.
+  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride, axis));
   // Baselines are per-axis: DPS and support cells are baked at different % scales, so read the
   // axis-matching anchor array (using the shared DPS array for support clamps every cell to 0).
-  let baselinePct = $derived(data ? pipelineBaselineForGrade(baseline, data.meta.baselines[axis]) : 0);
+  let baselinePct = $derived(data ? pipelineBaselineForGrade(baseline, axis, data.meta.baselines[axis]) : 0);
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
   let binding: BindingMode = $derived(profile.bindingMode ?? 'nrb');
@@ -155,7 +155,7 @@
       binding === 'nrb'
         ? ` · fodder L/R/A ${pctOf(cell.fLeg)}/${pctOf(cell.fRelic)}/${pctOf(cell.fAnc)}`
         : '';
-    return `${effectPair(data.meta, axis, cost, bkt)} · avg ${cell.expScore.toFixed(2)}% dmg${fodder}`;
+    return `${effectPair(data.meta, axis, cost, bkt)} · avg value ${cell.expScore.toFixed(2)}${fodder}`;
   };
 </script>
 
@@ -268,8 +268,9 @@
             </div>
           </div>
           <p class="ch-note">
-            Values are shizukaziye's exact Bellman-DP pipeline (real % damage), interpolated at your
-            baseline.
+            Values are shizukaziye's exact Bellman-DP pipeline, read at your baseline tier. Gold figures
+            are gold; the "avg value" in a cell's tooltip is the gem grading value (the same units the
+            grade is built on), not % damage.
           </p>
         </div>
       {/if}

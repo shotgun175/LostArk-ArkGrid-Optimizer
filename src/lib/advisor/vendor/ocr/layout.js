@@ -1,11 +1,12 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (ocr/layout.js), re-synced 2026-07-20.
- * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
- * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
- * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
+ * VENDORED from shizukaziye/loastuff (loa-astrogem-calc/ocr/layout.js), re-synced 2026-08-15
+ * (upstream main a76df2e8, 2026-08-14). Source: https://github.com/shizukaziye/loastuff (MIT per its
+ * package.json). FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node
+ * the require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
+ * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> level-model
+ * -> name-model -> tile-model -> structural-engine).
  */
 /**
  * ocr/layout.js — the structural parser's pure image-analysis core.
@@ -467,7 +468,12 @@
       }
       rows[y] = c; total += c;
     }
-    if (opts.rejectFill != null && total / (w * h) > opts.rejectFill) return null;
+    // opts.trace (optional array): every banded candidate is pushed with the
+    // accept verdict, plus a "fill" entry when the whole-box bail fires. Costs
+    // nothing when absent; without it a null locate is unattributable.
+    var fill = total / (w * h);
+    if (opts.trace) opts.trace.push({ fill: Math.round(fill * 100) / 100, w: w, h: h });
+    if (opts.rejectFill != null && fill > opts.rejectFill) return null;
     var accept = opts.accept || function () { return true; };
     function finish(yTop, yBot) {
       var x0 = w, x1 = -1;
@@ -488,8 +494,12 @@
         var bandH = yEnd - yy2;
         if (bandH >= minH && bandH <= maxH) {
           var r = finish(yy2 + 1, yEnd);
+          // trace the GEOMETRY only — never call accept() a second time: a caller's
+          // accept may record its own verdict (the points header does), and a
+          // double call would double-log it and pay for the test twice.
+          if (opts.trace && r) opts.trace.push({ y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) });
           if (r && accept(r)) return r;   // rejected candidates keep the scan moving up
-        }
+        } else if (opts.trace) opts.trace.push({ bandH: bandH, skipH: 1 });
         yEnd = -1;
       }
     }

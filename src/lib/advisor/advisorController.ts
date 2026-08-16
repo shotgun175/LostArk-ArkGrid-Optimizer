@@ -42,8 +42,9 @@ export interface ParsedAdvisorState {
   ocrDegraded?: boolean;
   /**
    * On-screen width of the Processing window in the captured frame, in pixels. The best single
-   * predictor of read quality: the same client measures 97.7% of fields correct at ~925px and 95.5%
-   * at ~677px, because Force 21:9 letterboxes the UI and shrinks every glyph with it.
+   * predictor of read quality: the same client measures 99.7% of fields correct at ~925px and 99.1%
+   * at ~677px with about three times the "confirm me" flags (2026-08 re-sync numbers), because Force
+   * 21:9 letterboxes the UI and shrinks every glyph with it.
    */
   panelWidth?: number;
 }
@@ -100,6 +101,13 @@ export interface AdviceInputs {
   baselineGrade?: number; // 0-100 grade; the worker converts to the DP's gemValue threshold
   gpd?: number; // gold per 1% damage
   axis?: 'dps' | 'support';
+  /**
+   * Roster-bound advice: processing gold is treated as committed (astrogems cannot be sold), so the DP
+   * optimizes the gem rather than the gold; rerolls and Reset still price their real gold. A market
+   * input, not a parsed one: nothing on the Processing screen says it, so it overrides whatever the
+   * parse or edit carried in `state.rosterBound`.
+   */
+  rosterBound?: boolean;
 }
 
 // --- Watch-loop re-read gate --------------------------------------------------------------------
@@ -531,7 +539,10 @@ export class AdvisorController {
           // The looser bar can cost one redundant parse when ambient drifts across a long parse, which
           // is now cheap: the state is unchanged, so the DP cache returns the previous answer.
           const fresh = this.frameSignature();
-          if (fresh && AdvisorController.changedPixels(fresh, parsedSig) > spikeBarFor(ambientWindow)) {
+          if (
+            fresh &&
+            AdvisorController.changedPixels(fresh, parsedSig) > spikeBarFor(ambientWindow)
+          ) {
             spikeSeen = true; // a change landed while we were reading; settle, then read it too
             stableSince = Date.now();
           }
@@ -576,6 +587,7 @@ export class AdvisorController {
             baselineGrade: inputs.baselineGrade,
             gpd: inputs.gpd,
             axis: inputs.axis,
+            rosterBound: inputs.rosterBound,
             prior,
           },
           [bitmap]
@@ -629,6 +641,7 @@ export class AdvisorController {
           baselineGrade: inputs.baselineGrade,
           gpd: inputs.gpd,
           axis: inputs.axis,
+          rosterBound: inputs.rosterBound,
         });
       });
       if (adoptMemory) this.adoptTracker(gen, res);

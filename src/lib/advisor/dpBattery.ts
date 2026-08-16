@@ -1,4 +1,4 @@
-// The equivalence battery behind the five local patches in vendor/model/dp.js.
+// The equivalence battery behind the six local patches in vendor/model/dp.js.
 //
 // dp.js is a DECISION engine: a mistake there changes what the advisor recommends rather than a
 // number on screen, and no OCR corpus would ever catch it. So the bar for touching it is
