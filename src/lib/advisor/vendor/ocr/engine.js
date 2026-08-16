@@ -1,11 +1,12 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (ocr/engine.js), re-synced 2026-07-20.
- * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
- * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
- * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
+ * VENDORED from shizukaziye/loastuff (loa-astrogem-calc/ocr/engine.js), re-synced 2026-08-15
+ * (upstream main a76df2e8, 2026-08-14). Source: https://github.com/shizukaziye/loastuff (MIT per its
+ * package.json). FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node
+ * the require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
+ * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> level-model
+ * -> name-model -> tile-model -> structural-engine).
  */
 /**
  * ocr/engine.js — common OCR-engine interface, the constraintSnap repair pass,
@@ -122,21 +123,6 @@
     return null;
   }
 
-  // Snap one effect to a base cost's pool. If `raw` resolves to a name that's in the
-  // pool, keep it; otherwise pick the first pool entry not equal to `avoid`.
-  function snapEffectToPool(raw, baseCost, avoid) {
-    var pool = EFFECT_POOLS[baseCost] || [];
-    if (pool.length === 0) return raw || null;
-    var canon = canonicalEffectName(raw);
-    if (canon && pool.indexOf(canon) !== -1 && canon !== avoid) return canon;
-    // canonical name exists but isn't in this pool, or collides with `avoid`:
-    // fall through to first available pool member.
-    for (var i = 0; i < pool.length; i++) {
-      if (pool[i] !== avoid) return pool[i];
-    }
-    return pool[0];
-  }
-
   function rarityFromMaxTurns(maxTurns) {
     if (maxTurns === 5) return "uncommon";
     if (maxTurns === 7) return "rare";
@@ -167,7 +153,14 @@
 
     if (t === "raise_effect" || t === "lower_effect") {
       var target = OUTCOME_TARGETS.indexOf(o.target) !== -1 ? o.target : "willpower";
-      var amount = clampInt(o.amount, 1, 4, 1); // game deltas are +/-1..4
+      // Raises step +1..+4; a LOWER is always exactly −1 — model/astrogem.js's
+      // OUTCOME_RATES has a single `change: -1` rung per target and no −2/−3/−4.
+      // So a parsed "lower by 2" is not a rare event, it is a misread, and the
+      // wrong channel is the AMOUNT: on a lower tile the amount renders red and
+      // the chartreuse reader picks up the ▼ or the face instead. Measured over
+      // the 302-board corpus: the engine emitted 3 such tiles and the label for
+      // every one of them is the same target lowered by 1.
+      var amount = t === "lower_effect" ? 1 : clampInt(o.amount, 1, 4, 1);
       var nm = target === "willpower" ? "Willpower"
         : target === "order" ? (config && config.gemType === "chaos" ? "Chaos" : "Order")
         : target === "effect1" ? (config ? config.effect1 : "Effect 1")
@@ -245,14 +238,31 @@
     var effect1Level = clampLevel(cIn.effect1Level, 1);
     var effect2Level = clampLevel(cIn.effect2Level, 1);
 
-    var effect1 = snapEffectToPool(cIn.effect1, baseCost, null);
-    var effect2 = snapEffectToPool(cIn.effect2, baseCost, effect1);
-    if (effect1 === effect2) {
-      // force-distinct from the pool
-      var pool = EFFECT_POOLS[baseCost] || [];
-      for (var i = 0; i < pool.length; i++) {
-        if (pool[i] !== effect1) { effect2 = pool[i]; break; }
-      }
+    // Effects: SEAT THE READS FIRST, then fill. The old order snapped slot 1 and
+    // handed its answer to slot 2 as `avoid` — so an ABSENT effect1 took pool[0]
+    // and, when pool[0] was exactly what effect2 had correctly read, bumped that
+    // read off it (measured on the 385-pair corpus: two boards read "Additional
+    // Damage" at E, cost 8, effect1 null, and shipped effect1 "Additional Damage"
+    // / effect2 "Attack Power" — the one true name destroyed by a default). A
+    // slot with no read has no evidence and must not out-rank one that has.
+    var pool = EFFECT_POOLS[baseCost] || [];
+    var e1Canon = canonicalEffectName(cIn.effect1);
+    var e2Canon = canonicalEffectName(cIn.effect2);
+    var e1Seat = (e1Canon && pool.indexOf(e1Canon) !== -1) ? e1Canon : null;
+    var e2Seat = (e2Canon && pool.indexOf(e2Canon) !== -1) ? e2Canon : null;
+    // a duplicate pair is one read repeated: slot 1 keeps it (historical tie-break)
+    if (e1Seat && e2Seat && e1Seat === e2Seat) e2Seat = null;
+    function fillPool(avoid) {
+      for (var i = 0; i < pool.length; i++) if (pool[i] !== avoid) return pool[i];
+      return pool[0];
+    }
+    var effect1, effect2;
+    if (pool.length === 0) {
+      effect1 = cIn.effect1 || null;
+      effect2 = cIn.effect2 || null;
+    } else {
+      effect1 = e1Seat || fillPool(e2Seat);
+      effect2 = e2Seat || fillPool(effect1);
     }
 
     var config = {
@@ -371,6 +381,11 @@
       if (changed) return Math.min(c, 0.3);
       return c;
     }
+    // The turn's own confidence, hoisted: the turn-1 reroll invariant below is
+    // gated on it, so it must be one value and not two copies that can drift.
+    var turnConf = fieldConf(sconf.currentTurn, sIn.currentTurn != null || sIn.turnsRemaining != null, false);
+    var TURN1_TURN_SURE = 0.8;   // the UI flag threshold — the turn must be unflagged
+    var TURN1_SURE = 0.9;        // below the pill's own agreeing rungs (0.92/0.96)
     var confidence = {
       config: {
         baseCost: fieldConf(cconf.baseCost, cIn.baseCost != null, baseCost !== parseInt(cIn.baseCost, 10)),
@@ -384,12 +399,57 @@
       },
       state: {
         rarity: fieldConf(sconf.rarity, (parsed.rarity || sIn.rarity || sIn.maxTurns) != null, false),
-        currentTurn: fieldConf(sconf.currentTurn, sIn.currentTurn != null || sIn.turnsRemaining != null, false),
+        currentTurn: turnConf,
         rerollsRemaining: (function () {
           var base = fieldConf(sconf.rerollsRemaining,
             sIn.rerollsShownFree != null || sIn.rerollsRemaining != null ||
             sIn.rerollsChargeSeen || sIn.rerollsChargeSpent || currentTurn === 1, false);
-          return rerollAmbiguous ? Math.min(base, 0.4) : base;
+          if (rerollAmbiguous) base = Math.min(base, 0.4);
+          // ---- TURN-1 INVARIANT (round 16) -------------------------------------
+          // A reroll can only be spent by rerolling, and the game does not offer a
+          // reroll until the gem has been processed once (advisor-window greys the
+          // pill on turn 1 for exactly this reason). So on turn 1 the count is not
+          // a reading at all — it is the rarity's allotment, and the pill merely
+          // displays it. The pixels agree: the control board turn1-epic-c9-chaos
+          // renders a GREYED pill still showing the full "2/2".
+          //
+          // This is the same standard as the rest of the engine — a second, wholly
+          // independent family of evidence naming the same value — except that the
+          // second family is a rule rather than a read: the turn comes from the
+          // Process (x/N) footer, a different region, mask and OCR call than the
+          // pill. Three guards keep it from ever minting a silent:
+          //   1. the TURN read must itself be unflagged (>= the UI threshold), so a
+          //      shaky turn cannot license a confident reroll count;
+          //   2. the committed value must ALREADY equal the allotment — the lift
+          //      never changes a number, it only withdraws a needless question. A
+          //      turn-1 board whose pill says anything else is self-contradictory
+          //      and stays flagged;
+          //   3. an ambiguous "0/d" read is excluded outright.
+          // Measured over the 472-board corpus: 60 boards whose LABEL says turn 1,
+          // and after two pixel-disproved labels were fixed all 60 carry exactly
+          // the allotment; the engine reads 46 of them as turn 1 with a confident
+          // turn, and on all 46 the committed value is already the allotment (0
+          // changed, 0 fixes, 0 breaks). No board in the corpus has its turn
+          // misread as 1 while the turn read is confident.
+          if (currentTurn === 1 && !rerollAmbiguous && turnConf >= TURN1_TURN_SURE &&
+              rerollsRemaining === maxRerolls) {
+            base = Math.max(base, TURN1_SURE);
+          }
+          // The same invariant read the other way, which is the direction that
+          // protects the user. If the turn is confidently 1 and the committed count
+          // does NOT equal the allotment, the read contradicts a game rule: nothing
+          // can have spent a reroll yet. That is a misread, so it must ask rather
+          // than commit. Round 16 could not measure this because no such board
+          // exists in the corpus — an English turn-1 uncommon board would reach it
+          // by reading a grey "Charge" as 0 (the two CJK boards of that shape land
+          // on the right value only because CHARGE_RX never matches 補充). Capping
+          // is safe in the way the lift above is not: it can only add a flag, never
+          // remove one, so it cannot mint a silent error even if the guess is wrong.
+          if (currentTurn === 1 && turnConf >= TURN1_TURN_SURE &&
+              rerollsRemaining !== maxRerolls) {
+            base = Math.min(base, 0.6);
+          }
+          return base;
         })(),
         // absent when unread (fieldConf's !inputPresent -> 0 would phantom-flag a
         // field that has no UI control; the window's null-guard skips undefined)
@@ -443,8 +503,9 @@
   // -------------------- exports (dual) --------------------
 
   // Consumed surface only (audited 2026-07-18): the snap sub-steps (snapOutcome,
-  // snapBaseCost, snapEffectToPool, canonicalEffectName, snapRarity,
-  // rarityFromMaxTurns) are internal to constraintSnap and no longer exported.
+  // snapBaseCost, canonicalEffectName, snapRarity, rarityFromMaxTurns) are internal
+  // to constraintSnap and no longer exported. (snapEffectToPool was removed in
+  // round 7: seating the READ slots first replaced it and left it uncalled.)
   var API = {
     constraintSnap: constraintSnap,
     BaseEngine: BaseEngine,

@@ -1,8 +1,9 @@
 // Smoke gate for the vendored parser stack. Proves the whole ocr/ UMD chain self-wires under our
-// setup (structural-engine -> engine + layout + tesseract-engine + glyphs + level-refs -> model), and
-// that the constraint solver repairs a messy parse to a legal game state. The full image-in ->
-// parse-out accuracy is his (99.7% corpus, frozen); it is validated in the browser worker, not here,
-// because it needs image decode + tesseract. These pure-logic checks need neither.
+// setup (structural-engine -> engine + layout + tesseract-engine + glyphs + level-refs + the three
+// generated models -> model), and that the constraint solver repairs a messy parse to a legal game
+// state. The full image-in -> parse-out accuracy is measured OUTSIDE the unit lane, by the harness under
+// Reference Projects/advisor-fixtures/groundtruth (needs image decode + tesseract); see the vendored
+// structural-engine.js header for the numbers pinned at the last re-sync. These checks need neither.
 import { createRequire } from 'node:module';
 
 import { describe, expect, it } from 'vitest';
@@ -18,6 +19,18 @@ describe('advisor parser stack wiring', () => {
   it('self-wires: parseStructural and constraintSnap are callable', () => {
     expect(typeof S.parseStructural).toBe('function');
     expect(typeof E.constraintSnap).toBe('function');
+  });
+
+  // The 2026-08 re-sync added three GENERATED trained models the engine consults for its joint level,
+  // name and tile solves. The engine swallows a missing model silently (try/catch at load), which would
+  // quietly degrade accuracy, so pin that each one exists, exports its table, and is in the worker's
+  // load list (advisorWorker.ts raw-imports + evals them in order before structural-engine).
+  it('ships the level, name and tile models the engine consults', () => {
+    expect(require('./vendor/ocr/level-model.js').LEVEL_MODEL).toBeTruthy();
+    const nm = require('./vendor/ocr/name-model.js');
+    expect(nm.NAME_MODEL).toBeTruthy();
+    expect(Array.isArray(nm.NAME_MODEL_NAMES)).toBe(true);
+    expect(require('./vendor/ocr/tile-model.js').TILE_MODEL).toBeTruthy();
   });
 });
 

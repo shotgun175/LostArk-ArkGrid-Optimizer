@@ -288,8 +288,10 @@
   // Fields the reader was not sure about. Ranking actions off them without saying so presents a guess
   // as a finding — the misread that produced a wrong recommendation was flagged on screen at the time.
   let unconfirmed = $derived(countUnconfirmed(result?.parsed));
-  // Below this the Processing window is small enough that glyph reads measurably degrade (~95.5% of
-  // fields vs ~97.7%). The usual cause is the game's Force 21:9 setting, which letterboxes the UI.
+  // Below this the Processing window is small enough that glyph reads measurably degrade: after the
+  // 2026-08 parser re-sync, 99.1% of fields vs 99.7% and about three times the "confirm me" flags per
+  // frame (harness, c219 vs the standard-aspect corpora). The usual cause is the game's Force 21:9
+  // setting, which letterboxes the UI.
   const READABLE_PANEL_PX = 800;
   let smallPanel = $derived(
     result?.parsed?.panelWidth != null && result.parsed.panelWidth < READABLE_PANEL_PX

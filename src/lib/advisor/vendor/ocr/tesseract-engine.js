@@ -1,11 +1,12 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (ocr/tesseract-engine.js), 2026-07-19.
- * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node the
- * require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
- * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> structural-engine).
+ * VENDORED from shizukaziye/loastuff (loa-astrogem-calc/ocr/tesseract-engine.js), re-synced 2026-08-15
+ * (upstream main a76df2e8, 2026-08-14). Source: https://github.com/shizukaziye/loastuff (MIT per its
+ * package.json). FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream. Under Node
+ * the require("./x.js") chain self-wires; in the browser worker the files attach to globalThis in
+ * load order (astrogem -> engine -> layout -> tesseract-engine -> glyphs -> level-refs -> level-model
+ * -> name-model -> tile-model -> structural-engine).
  */
 /**
  * ocr/tesseract-engine.js — the LEGACY text-parsing LIBRARY (no longer an engine).
@@ -85,7 +86,12 @@
   }
 
   var GEM_NAME_COST = {
-    stability: 8, corrosion: 8, solidity: 9, distortion: 9, immutability: 10, destruction: 10
+    stability: 8, corrosion: 8, solidity: 9, distortion: 9, immutability: 10, destruction: 10,
+    // 2026-07-29: a seventh suffix found in the wild — "Processed Chaos Astrogem:
+    // COLLAPSE" on two pixel-verified boards, both pinned to chaos-10 by pool
+    // intersection (Additional Damage ∈ {8,10} ∩ Boss Damage ∈ {9,10}). Until it
+    // was here the engine could read neither the cost nor the type of that gem.
+    collapse: 10
   };
 
   function canonicalGemSuffix(word) {
@@ -93,6 +99,7 @@
     var w = String(word).toLowerCase().replace(/[^a-z]/g, "");
     if (/^stab/.test(w)) return "stability";
     if (/^corr|^cor[mo]/.test(w)) return "corrosion";
+    if (/^coll/.test(w)) return "collapse";
     if (/^solid/.test(w)) return "solidity";
     if (/^dist/.test(w)) return "distortion";
     if (/^imm/.test(w)) return "immutability";
@@ -237,7 +244,18 @@
     var text = normalizeOcrText(stitched).toLowerCase();
     var result = { turnsRemaining: null, maxTurns: null,
       rerollsShownFree: null, rerollsShownDenom: null,
+      resetsRemaining: null,
       processCost: null, processCostMultiplier: null };
+
+    // "Reset (x/1)": x in {0,1}. Read it BEFORE the reroll-fraction pass strips it
+    // out (see the noReset note below) — this engine used to only exclude that text
+    // to protect the reroll read, never actually reporting the value itself (#7),
+    // so dp.js's Reset gating (model/dp.js) had nothing to go on from this engine.
+    var resetM = text.match(/reset\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+    if (resetM) {
+      var rsA = parseInt(resetM[1], 10), rsB = parseInt(resetM[2], 10);
+      if (rsB === 1 && (rsA === 0 || rsA === 1)) result.resetsRemaining = rsA;
+    }
 
     var procTurn = text.match(/process\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
     if (procTurn) {
