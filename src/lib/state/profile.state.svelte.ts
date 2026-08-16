@@ -8,7 +8,7 @@ import {
   createCore,
 } from '../models/arkGridCores';
 import { type ArkGridGem, determineGemGrade } from '../models/arkGridGems';
-import { BASELINE_MAX_GRADE, BASELINE_MIN_GRADE } from '../scoring/gemScore';
+import { BASELINE_MIN_GRADE, baselineMaxGrade, gradeRows } from '../scoring/gemScore';
 import type { GemSetPackTuple } from '../solver/models';
 import { addNewProfile, appConfig, getProfile } from './appConfig.state.svelte';
 import {
@@ -40,6 +40,11 @@ export interface BuildState {
   solveInfo: SolveInfo;
   /** Manual triage baseline override; when set, replaces the auto baseline (weakest equipped gem). */
   baselineOverride?: number;
+  /**
+   * Which baseline ladder `baselineOverride` is expressed on. Absent = the pre-2026-08 ladder
+   * (40..95 in steps of 5); 2 = the current per-axis ladder (60..S+ cut). Set by migrateProfile.
+   */
+  baselineLadder?: 2;
 }
 
 export interface CharacterProfile {
@@ -50,6 +55,12 @@ export interface CharacterProfile {
   goldPer1Pct?: import('../cutplan/types').GoldBracket;
   /** Cutting Plan: NRB/RB binding mode (Phase 2b). */
   bindingMode?: import('../cutplan/types').BindingMode;
+  /**
+   * Cut Advisor: treat processing gold as committed (astrogems cannot be sold, so the solve optimizes
+   * the gem, not the gold; rerolls and Reset still price their real gold). Absent = true, matching the
+   * upstream default and the roster-bound world the grading model is fitted on.
+   */
+  advisorRosterBound?: boolean;
   /** Two independent builds (DPS + Support). The gem pool and weapon are shared across both. */
   builds: Record<BuildRole, BuildState>;
   /** Which build the UI is currently viewing/editing; also the active triage/cutplan role. */
@@ -191,19 +202,33 @@ export function migrateProfile(profile: Partial<CharacterProfile>) {
     }
   }
 
-  // The triage/cut-plan baseline override moved from a % damage value (≤ 2) to a 0-100 grade tier.
-  // Drop any pre-migration override (out of the grade range) so the baseline re-derives from the
-  // loadout instead of being read as grade ≈ F.
+  // The triage/cut-plan baseline override is a grade on the baseline ladder. Two generations of it:
+  //  - pre-grade values (% damage ≤ 2) are dropped so the baseline re-derives from the loadout;
+  //  - the pre-2026-08 ladder (40, 45, ... 95, one rank each C- ... S+) is re-expressed on the current
+  //    per-axis ladder (60, 63.3, ... S+ cut) BY RANK POSITION, so a user who picked "A-" keeps "A-"
+  //    even though the grade scale underneath moved. `baselineLadder` marks a build as migrated so this
+  //    is idempotent (60/70/80/90 sit on both ladders and cannot be told apart by value alone).
   for (const role of ['dps', 'support'] as BuildRole[]) {
     const build = profile.builds?.[role];
+    if (!build) continue;
+    if (build.baselineLadder !== 2) {
+      if (build.baselineOverride !== undefined) {
+        const oldIdx = OLD_GRADE_ROWS.indexOf(build.baselineOverride);
+        build.baselineOverride = oldIdx >= 0 ? gradeRows(role)[oldIdx] : undefined;
+      }
+      build.baselineLadder = 2;
+    }
     if (
-      build?.baselineOverride !== undefined &&
-      (build.baselineOverride < BASELINE_MIN_GRADE || build.baselineOverride > BASELINE_MAX_GRADE)
+      build.baselineOverride !== undefined &&
+      (build.baselineOverride < BASELINE_MIN_GRADE ||
+        build.baselineOverride > baselineMaxGrade(role))
     ) {
       build.baselineOverride = undefined;
     }
   }
 }
+/** The retired baseline ladder (before the 2026-08 grading re-sync): 12 rows, one rank each C- ... S+. */
+const OLD_GRADE_ROWS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95];
 
 export function getCurrentProfile() {
   // Always returns the current profile.
@@ -319,6 +344,10 @@ export function updateBaselineOverride(baseline: number | undefined) {
 
 export function updateGoldPer1Pct(bracket: import('../cutplan/types').GoldBracket) {
   getCurrentProfile().goldPer1Pct = bracket;
+}
+
+export function updateAdvisorRosterBound(on: boolean) {
+  getCurrentProfile().advisorRosterBound = on;
 }
 
 export function updateBindingMode(mode: import('../cutplan/types').BindingMode) {

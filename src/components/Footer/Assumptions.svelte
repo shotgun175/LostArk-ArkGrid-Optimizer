@@ -6,7 +6,9 @@
     DPS_EFFECT_D,
     SUPPORT_EFFECT_D,
     SUPPORT_ORDER_D,
+    SUPPORT_VALUE_ORDER_D,
     SUPPORT_WILLPOWER_FACTOR,
+    sPlusCut,
   } from '../../lib/scoring/gemScore';
 
   type Row = { label: string; value: string };
@@ -27,7 +29,12 @@
     { label: 'Willpower per cost-level (4 − req) ×', value: D_WILLPOWER.toFixed(4) },
     { label: 'Order per point ×', value: D_ORDER.toFixed(4) },
     { label: 'Support order per point ×', value: SUPPORT_ORDER_D.toFixed(4) },
+    { label: 'Support order per point (grading value, fitted) ×', value: SUPPORT_VALUE_ORDER_D.toFixed(4) },
     { label: 'Support willpower factor', value: SUPPORT_WILLPOWER_FACTOR.toFixed(3) },
+    // Grading: the S+ cut is derived from the model (the axis's perfect 8-cost grade), so a refit
+    // of the willpower credit or the support coefficients moves it here automatically.
+    { label: 'Grade S+ cut, DPS (perfect 8-cost)', value: sPlusCut('dps').toFixed(1) },
+    { label: 'Grade S+ cut, Support (perfect 8-cost)', value: sPlusCut('support').toFixed(1) },
   ];
   const dpsCoeffs = activeCoeffs(DPS_EFFECT_D);
   const supportCoeffs = activeCoeffs(SUPPORT_EFFECT_D);

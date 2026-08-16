@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import type { ArkGridGem, ArkGridGemOption } from '../models/arkGridGems';
 import {
+  BASELINE_MIN_GRADE,
   D_ADD,
   D_ATTACK,
   D_BOSS,
   D_ORDER,
   D_WILLPOWER,
+  baselineMaxGrade,
+  bumpedBaselineGrade,
   computeGemScore,
   explainGemScore,
-  grade,
+  gradeRowIndex,
+  gradeRows,
   rankFromGrade,
+  sPlusCut,
   willpowerScore,
 } from './gemScore';
 
@@ -106,15 +111,21 @@ describe('computeGemScore (DPS, real % damage)', () => {
   });
 });
 
-describe('grade (0–100, min-max over the gem space) + letter rank', () => {
-  it('grades the perfect gem of EVERY base cost at 100 / S+ (cost-fair willpower multiplier)', () => {
-    // pool 10 top-2 DPS = Boss + AddDamage; pool 8 top-2 = AddDamage + AtkPower.
+describe('grade (perfect-grid anchor over the gem space) + letter rank', () => {
+  it('grades the perfect gems around the perfect-grid mean (c8 96.1 / c9 99.7 / c10 102.1), all S+', () => {
+    // pool 10 top-2 DPS = Boss + AddDamage; pool 9 = Boss + AtkPower; pool 8 = AddDamage + AtkPower.
+    // Perfects no longer tie: grade 100 is the MEAN of the perfect 3/3/6 layout, so a perfect c10 sits
+    // above it and a perfect c8 below; every perfect is still S+ (the S+ cut IS the perfect c8).
     const perfectC10 = gem(5, 5, { optionType: 'BossDamage', value: 5 }, { optionType: 'AddDamage', value: 5 });
+    const perfectC9 = gem(4, 5, { optionType: 'BossDamage', value: 5 }, { optionType: 'AtkPower', value: 5 });
     const perfectC8 = gem(3, 5, { optionType: 'AddDamage', value: 5 }, { optionType: 'AtkPower', value: 5 });
-    expect(computeGemScore(perfectC10, 'dps').grade).toBe(100);
-    expect(computeGemScore(perfectC10, 'dps').rank).toBe('S+');
-    expect(computeGemScore(perfectC8, 'dps').grade).toBe(100);
-    expect(computeGemScore(perfectC8, 'dps').rank).toBe('S+');
+    expect(computeGemScore(perfectC10, 'dps').grade).toBe(102.1);
+    expect(computeGemScore(perfectC9, 'dps').grade).toBe(99.7);
+    expect(computeGemScore(perfectC8, 'dps').grade).toBe(96.1);
+    expect(sPlusCut('dps')).toBe(96.1);
+    for (const g of [perfectC10, perfectC9, perfectC8]) expect(computeGemScore(g, 'dps').rank).toBe('S+');
+    // the perfect-grid mean: (3·96.1 + 3·99.7 + 6·102.1) / 12 = 100 (to grade rounding)
+    expect((3 * 96.1 + 3 * 99.7 + 6 * 102.1) / 12).toBeCloseTo(100, 0);
   });
 
   it('grades a worthless DPS gem (dead effects, high willpower cost) near 0 / F', () => {
@@ -124,31 +135,58 @@ describe('grade (0–100, min-max over the gem space) + letter rank', () => {
     expect(r.rank.startsWith('F')).toBe(true);
   });
 
-  it('rankFromGrade applies the S85/A70/B55/C40/D20/F0 cuts with +/- thirds', () => {
+  it('rankFromGrade applies even thirds of 10-point bands, S+ at the axis perfect c8', () => {
     expect(rankFromGrade(100)).toBe('S+');
-    expect(rankFromGrade(85)).toBe('S-'); // S band [85,100): bottom
-    expect(rankFromGrade(82)).toBe('A+'); // band A [70,85): top third (t=0.8)
-    expect(rankFromGrade(77)).toBe('A'); // middle third (t=0.47)
-    expect(rankFromGrade(72)).toBe('A-'); // bottom third (t=0.13)
-    expect(rankFromGrade(55)).toBe('B-'); // B band [55,70): bottom
-    expect(rankFromGrade(40)).toBe('C-'); // C band [40,55): bottom
-    expect(rankFromGrade(20)).toBe('D-'); // D band [20,40): bottom
+    expect(rankFromGrade(96.1)).toBe('S+'); // DPS perfect c8
+    expect(rankFromGrade(96.0)).toBe('S');
+    expect(rankFromGrade(93.3)).toBe('S');
+    expect(rankFromGrade(90)).toBe('S-');
+    expect(rankFromGrade(86.7)).toBe('A+');
+    expect(rankFromGrade(83.3)).toBe('A');
+    expect(rankFromGrade(80)).toBe('A-');
+    expect(rankFromGrade(73.3)).toBe('B'); // a displayed 73.3 IS a B (grade() rounds to 0.1)
+    expect(rankFromGrade(70)).toBe('B-');
+    expect(rankFromGrade(60)).toBe('C-');
+    expect(rankFromGrade(50)).toBe('D-');
+    expect(rankFromGrade(49.9)).toBe('F+'); // F takes thirds of 0-50
+    expect(rankFromGrade(33.3)).toBe('F+');
+    expect(rankFromGrade(16.7)).toBe('F');
     expect(rankFromGrade(0)).toBe('F-');
-    expect(grade(gem(5, 5, { optionType: 'BossDamage', value: 5 }, { optionType: 'AddDamage', value: 5 }), 'dps')).toBe(100);
+    // support pins S+ at ITS perfect c8 (94.6), everything else shared
+    expect(sPlusCut('support')).toBe(94.6);
+    expect(rankFromGrade(95, 'support')).toBe('S+');
+    expect(rankFromGrade(95, 'dps')).toBe('S');
+  });
+
+  it('exposes the per-axis baseline ladder: 12 rows, one distinct rank each, C- to S+', () => {
+    for (const role of ['dps', 'support'] as const) {
+      const rows = gradeRows(role);
+      expect(rows).toHaveLength(12);
+      expect(rows[0]).toBe(BASELINE_MIN_GRADE);
+      expect(rows[11]).toBe(baselineMaxGrade(role));
+      expect(rows.map((g) => rankFromGrade(g, role))).toEqual([
+        'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+', 'S-', 'S', 'S+',
+      ]);
+      // bumped baseline = one rank up the ladder, clamped at S+; off-ladder grades snap first
+      expect(bumpedBaselineGrade(rows[0], role)).toBe(rows[1]);
+      expect(bumpedBaselineGrade(rows[11], role)).toBe(rows[11]);
+      expect(bumpedBaselineGrade(20, role)).toBe(rows[1]); // F snaps to C- (nearest) then bumps to C
+      expect(gradeRowIndex(rows[5] + 0.1, role)).toBe(5);
+    }
   });
 });
 
 describe('computeGemScore (Support axis)', () => {
   it('uses support coefficients and ignores DPS damage options', () => {
     const support = gem(4, 4, { optionType: 'AllyAttackEnh', value: 5 }, { optionType: 'BrandPower', value: 5 });
-    // willpower 0, support (per-DPS, coeffs ÷3): AllyAttackEnh 0.0596/3 + Brand 0.0434/3 + 0.0747/3 order.
-    const expected = 0 + (4 * 0.0747) / 3 + (5 * 0.0596) / 3 + (5 * 0.0434) / 3;
+    // willpower 0, support (per-DPS, coeffs ÷3): AllyAttackEnh 0.0586/3 + Brand 0.0437/3 + 0.0769/3 order.
+    const expected = 0 + (4 * 0.0769) / 3 + (5 * 0.0586) / 3 + (5 * 0.0437) / 3;
     expect(computeGemScore(support, 'support').score).toBeCloseTo(expected, 9);
     // Same gem under DPS: both options are non-DPS -> only the flat order term.
     expect(computeGemScore(support, 'dps').score).toBeCloseTo(4 * refOrder, 9);
   });
 
-  it('refreshed support ratios (AllyAttackEnh:Brand:AllyDamageEnh ≈ 3.06:2.23:1)', () => {
+  it('refreshed support ratios (AllyAttackEnh:Brand:AllyDamageEnh ≈ 2.74:2.04:1)', () => {
     // Pull each per-effect contribution straight from the factor breakdown (level 1).
     const f = explainGemScore(
       gem(4, 4, { optionType: 'AllyAttackEnh', value: 1 }, { optionType: 'AllyDamageEnh', value: 1 }),
@@ -160,15 +198,18 @@ describe('computeGemScore (Support axis)', () => {
       gem(4, 4, { optionType: 'BrandPower', value: 1 }, { optionType: 'AllyDamageEnh', value: 1 }),
       'support'
     )[2].value;
-    expect(allyAttackEnh / allyDamageEnh).toBeCloseTo(0.0596 / 0.0195, 3);
-    expect(brand / allyDamageEnh).toBeCloseTo(0.0434 / 0.0195, 3);
+    expect(allyAttackEnh / allyDamageEnh).toBeCloseTo(0.0586 / 0.0214, 3);
+    expect(brand / allyDamageEnh).toBeCloseTo(0.0437 / 0.0214, 3);
   });
 
-  it('grades the perfect support gem at 100 / S+', () => {
+  it('grades the perfect support c10 at 103.6 / S+ (its perfect c8 at 94.6 = the support S+ cut)', () => {
     const perfectSupportC10 = gem(5, 5, { optionType: 'AllyAttackEnh', value: 5 }, { optionType: 'BrandPower', value: 5 });
     const sup = computeGemScore(perfectSupportC10, 'support');
-    expect(sup.grade).toBe(100);
+    expect(sup.grade).toBe(103.6);
     expect(sup.rank).toBe('S+');
+    const perfectSupportC8 = gem(3, 5, { optionType: 'BrandPower', value: 5 }, { optionType: 'AllyDamageEnh', value: 5 });
+    expect(computeGemScore(perfectSupportC8, 'support').grade).toBe(94.6);
+    expect(computeGemScore(perfectSupportC8, 'support').rank).toBe('S+');
     // The same gem grades worse on the DPS axis (its effects are dead for DPS; only its
     // order points count there).
     expect(computeGemScore(perfectSupportC10, 'dps').grade).toBeLessThan(sup.grade);

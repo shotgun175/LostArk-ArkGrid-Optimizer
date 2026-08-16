@@ -1,7 +1,7 @@
-// Re-sync tripwire AND equivalence proof for the five local patches in vendor/model/dp.js.
+// Re-sync tripwire AND equivalence proof for the six local patches in vendor/model/dp.js.
 //
 // dp.js is the DECISION engine. A mistake in it changes what the advisor tells you to do, not a
-// number on a screen, and no OCR corpus would catch it. The five patches are therefore held to a
+// number on a screen, and no OCR corpus would catch it. The six patches are therefore held to a
 // harder bar than the parser ones: they must produce BIT-IDENTICAL output, not merely equal-looking
 // output. dpBattery.golden.txt is the whole battery dumped from the PRISTINE upstream dp.js, every
 // returned float written as its raw IEEE-754 bit pattern; the first test re-runs the battery through
@@ -13,7 +13,8 @@
 //   * if the markers pass and only the golden fails, UPSTREAM changed the model. That is a real
 //     behaviour change and needs its own decision, exactly like re-freezing the solver's GOLDEN.
 //     Regenerate the golden only after deciding the new numbers are the ones you want, by dumping
-//     dumpDpBattery() from a pristine copy of the new upstream.
+//     dumpDpBattery() from a pristine copy of the new upstream WITH solver reuse defeated (see
+//     patch 6: a fresh Solver per query is what pristine upstream computed before acquireSolver).
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
@@ -155,12 +156,25 @@ describe('vendored dp.js local patches', () => {
     );
   });
 
+  it('still builds a fresh Solver per advice query instead of reusing a cached one', () => {
+    // Upstream's acquireSolver (2026-08-09) reuses a solver across queries when the six params
+    // match. Measured on a same-tuple probe it changes 61 of 84 rows against a fresh solver, by
+    // whole percents rather than ULPs, so advice would depend on what was asked before. The
+    // pristine golden is dumped with reuse defeated for the same reason.
+    expect(SRC).toContain('LOCAL PATCH 6 - FRESH SOLVER PER QUERY');
+    expect(SRC).toMatch(
+      /var solver = new Solver\(baseline, goldPerDamage, rb, \{ drawModel: options\.drawModel, maxTurns: state\.maxTurns, axis: options\.axis \}\);/
+    );
+    expect(SRC).not.toMatch(/var solver = acquireSolver\(/);
+  });
+
   it('documents the divergence in the file header', () => {
-    const header = SRC.slice(0, 6000);
+    const header = SRC.slice(0, 7000);
     expect(header).toContain('EFFECT-CLASS MAP ON A NUMERIC CACHE KEY');
     expect(header).toContain('MAP MEMO');
     expect(header).toContain('OUTCOME POSSIBILITY LIST MEMO');
     expect(header).toContain('HOISTED DRAW SCRATCH BUFFERS');
     expect(header).toContain('INTEGER MEMO KEY');
+    expect(header).toContain('FRESH SOLVER PER QUERY');
   });
 });

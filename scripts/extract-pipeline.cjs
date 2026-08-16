@@ -1,8 +1,9 @@
 // Build-time generator: transform shizukaziye's astrogem-calculator pipeline data
-// (the EXACT Bellman-DP per-effect-pair-bucket model, real % damage) into a compact,
+// (the EXACT Bellman-DP per-effect-pair-bucket model, gem-value units) into a compact,
 // interpolation-friendly JSON the app embeds. Re-run with: node scripts/extract-pipeline.cjs
 //
-// Source (third-party, deliberately untracked) lives under Reference Projects/. We bake
+// Source (third-party, deliberately untracked) lives under Reference Projects/ (his repo moved into
+// the loastuff monorepo in 2026-08; the data folder is loastuff-main/loa-astrogem-calc/data). We bake
 // BOTH axes — DPS (data/pipeline.json) and Support (data/pipeline-support.json) — into one
 // file, reorganized as cells[rarity][cost][bucket][gpd] = [{ b, nrb, rb } per baseline anchor]
 // plus thru[rarity][cost][gpd] = [{ b, ... } per baseline]. The output's _provenance block
@@ -14,7 +15,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const SRC_DIR = path.join(__dirname, '..', 'Reference Projects', 'astrogem-calculator-main', 'data');
+const SRC_DIR = path.join(__dirname, '..', 'Reference Projects', 'loastuff-main', 'loa-astrogem-calc', 'data');
 const OUT_PATH = path.join(__dirname, '..', 'src', 'lib', 'cutplan', 'pipeline.json');
 
 function readSource(file) {
@@ -172,8 +173,8 @@ if (fs.existsSync(OUT_PATH)) {
 const out = {
   _provenance: {
     generator: 'scripts/extract-pipeline.cjs',
-    source: 'shizukaziye/astrogem-calculator (data/pipeline.json, data/pipeline-support.json) — exact Bellman-DP, % damage',
-    upstream: 'https://github.com/shizukaziye/astrogem-calculator',
+    source: 'shizukaziye/loastuff, loa-astrogem-calc (data/pipeline.json, data/pipeline-support.json) - exact Bellman-DP over the 2026-08-10 roster-bound grading model (gem-value units)',
+    upstream: 'https://github.com/shizukaziye/loastuff',
     dps_sha256: dps.sha256,
     support_sha256: support.sha256,
     generated_at: generatedAt,

@@ -19,7 +19,7 @@ import type {
   ThruRow,
   Verdict,
 } from './types';
-import { GRADE_ROWS } from '../scoring/gemScore';
+import { gradeRows } from '../scoring/gemScore';
 import { COSTS, GOLD_PER_DAMAGE, RARITIES } from './types';
 
 export { GOLD_PER_DAMAGE };
@@ -31,20 +31,21 @@ export const RESET_COST = 20000; // gold to reset a finished gem for a fresh cut
 export const RESET_THRESHOLD = 20000; // green band: a below-baseline finished gem is worth resetting iff cut-EV >= this
 
 /**
- * Map a baseline GRADE to the exact baked % key the DP cells were solved at. Shizukaziye bakes one
- * solve per GRADE_ROWS anchor at baseline = gradeToScore(anchor), stored (same order) in
- * `meta.baselines[axis]`, and reads cells by exact key — so a baseline grade maps to that array at
- * the grade's anchor index. Any non-anchor grade snaps to its nearest anchor. Pass the AXIS-matching
- * array: DPS and support cells are baked at different % scales (support ÷3), so feeding the DPS array
- * to a support read clamps every cell to its top anchor (cut ≈ 0). (GRADE_ROWS and each axis array
- * are kept parallel; the length guard tolerates a future re-bake with fewer anchors.)
+ * Map a baseline GRADE to the exact baked key the DP cells were solved at. Shizukaziye bakes one
+ * solve per baseline-ladder anchor (gradeRows(axis)) at baseline = gradeToScore(anchor), stored (same
+ * order) in `meta.baselines[axis]`, and reads cells by exact key — so a baseline grade maps to that
+ * array at the grade's anchor index. Any non-anchor grade snaps to its nearest anchor. Pass the
+ * AXIS-matching array: DPS and support cells are baked at different value scales, and the two ladders
+ * end at different S+ cuts, so feeding the DPS array to a support read misreads every cell. (Each axis
+ * ladder and its baked array are kept parallel; the length guard tolerates a re-bake with fewer anchors.)
  */
-export function pipelineBaselineForGrade(grade: number, baselines: number[]): number {
-  const n = Math.min(GRADE_ROWS.length, baselines.length);
+export function pipelineBaselineForGrade(grade: number, axis: CutAxis, baselines: number[]): number {
+  const rows = gradeRows(axis);
+  const n = Math.min(rows.length, baselines.length);
   let best = 0;
   let bestD = Infinity;
   for (let i = 0; i < n; i++) {
-    const d = Math.abs(GRADE_ROWS[i] - grade);
+    const d = Math.abs(rows[i] - grade);
     if (d < bestD) {
       bestD = d;
       best = i;

@@ -1,24 +1,28 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (model/dp.js), re-synced 2026-07-20.
- * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
+ * VENDORED from shizukaziye/loastuff (loa-astrogem-calc/model/dp.js), re-synced 2026-08-15 (upstream
+ * main a76df2e8, 2026-08-14). Source: https://github.com/shizukaziye/loastuff (MIT per its package.json).
  * Third-party code, kept as close to upstream as possible. Re-sync by re-copying from upstream and
  * re-running the drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require()
  * astrogem.js relatively, so all three stay co-located.
  *
- * It carries FIVE local patches, each marked "LOCAL PATCH n - ..." below and guarded by
+ * It carries SIX local patches, each marked "LOCAL PATCH n - ..." below and guarded by
  * src/lib/advisor/dpPatch.test.ts. RE-APPLY THEM AFTER ANY RE-SYNC (the test fails if you forget).
  * They are held to a harder bar than the parser patches: this is the DECISION engine, so a mistake
  * changes what the advisor recommends rather than a displayed value, and no corpus would catch it.
- * All five are therefore pure allocation/lookup changes - none touches the search, the arithmetic,
- * the draw model or the decision logic - and the guard test proves it by re-running a 21-state
- * battery (all three rarities, both axes, all three base costs, roster-bound on and off, cost
- * multiplier -100/0/+100, every turn of every rarity, resets both spent and available) and comparing
- * every returned float against a golden dumped from PRISTINE upstream as raw IEEE-754 bit patterns.
+ * Patches 1-5 are pure allocation/lookup changes - none touches the search, the arithmetic, the draw
+ * model or the decision logic - and the guard test proves it by re-running a 21-state battery (all
+ * three rarities, both axes, all three base costs, roster-bound on and off, cost multiplier
+ * -100/0/+100, every turn of every rarity, resets both spent and available) and comparing every
+ * returned float against a golden dumped from PRISTINE upstream as raw IEEE-754 bit patterns.
  * Measured byte-identical, and again on a wider 48-state battery (82.5 s -> 30.9 s, same bytes).
  * Together they take DP wall time down ~57%: the guard battery 10.34 s -> 4.45 s, and alternating
  * A/B in one process, a single epic solve 7.2-7.6 s -> 3.1 s (-56% to -59%), rare and uncommon -50%.
+ * Patch 6 is a semantic guard, not a speed-up: it keeps one fresh Solver per advice query where the
+ * 2026-08 upstream reuses a cached one (see it for the measurement). The golden is therefore dumped
+ * from pristine upstream WITH reuse defeated (a fresh Solver per query), which is what pristine
+ * upstream computed before acquireSolver existed.
  *
  * Patch 1 ("EFFECT-CLASS MAP ON A NUMERIC CACHE KEY") stops the per-effect-class lookup rebuilding
  * its `baseCost + "_" + axis` cache key on every call; configKey calls it twice per memo probe, so
@@ -40,12 +44,11 @@
  * key, and upstream already relies on a Solver never spanning base costs) and was instrumented both
  * ways over the battery: 290,108 distinct integer keys, zero violations. Anything out of range
  * falls back to the vendored string key.
+ * Patch 6 ("FRESH SOLVER PER QUERY") is described at its site in topLevelAdvice.
  *
- * NOT taken, for the record: reusing one Solver across topLevelAdvice calls would make turns 2-9 of
- * a cut free, but it CHANGES published numbers (aboveBaselineOdds by up to 28% relative). configKey
- * collapses effects into value classes, so class-equivalent configs share a memo record and agree
- * only to within floating point; those 1-ULP differences land on the discrete `val > K` test and
- * flip diagnostic branches. Under the zero-silent-error rule, it stays out.
+ * Also adopted from the 2026-08 upstream: roster-bound now means PROCESSING is free while rerolls
+ * (incl. the paid final one) and Reset still cost gold (Shizu 2026-07-21; previously rerolls were
+ * free too), and results carry `modelSig` (Astrogem.MODEL_SIG) as a version-skew guard.
  */
 /**
  * dp.js — EXACT Bellman dynamic-program for optimal astrogem-cutting decisions.
@@ -117,7 +120,7 @@
 
   // ---------------- cost helpers (match nested.js exactly) ----------------
 
-  // procCost(cm) = 900 * (1 + cm/100), floored at 100 and rounded (mirrors
+  // procCost(cm) = 900 * (1 + cm/100), clamped at >= 0 and rounded (mirrors
   // nested.js _applyProcessStep, which rounds and clamps the process cost).
   function procCost(cm) {
     // cm = -100 is REAL: the game's "-100% Processing Cost" outcome shows a
@@ -351,9 +354,11 @@
   // ---------------- the Solver (holds memo + caches for one query) ----------------
 
   // baseline, goldPerDamage, AND rosterBound are fixed for the life of a Solver, so
-  // they are NOT part of the memo key. rosterBound makes processing/reroll FREE
-  // (matching nested.js), which genuinely changes the optimal policy — so the costs
-  // used inside W must reflect it. Each advice query builds its own Solver.
+  // they are NOT part of the memo key. rosterBound makes PROCESSING free (only) —
+  // rerolls (incl. the paid final one) and Reset still cost gold, matching the game
+  // (Shizu, 2026-07-21) and nested.js. This changes the optimal policy, so the
+  // process cost used inside W must reflect it. Advice queries REUSE a solver via
+  // acquireSolver (below) whenever every one of these params matches exactly.
   function Solver(baseline, goldPerDamage, rosterBound, opts) {
     this.baseline = baseline;
     this.gpd = goldPerDamage;
@@ -382,9 +387,10 @@
     this.nodes = 0;                      // diagnostic: nodes actually computed
   }
 
-  // Cost of a process / reroll under this Solver's roster-bound setting.
+  // Process is free when roster-bound; reroll is NOT (only processing is free —
+  // Shizu 2026-07-21). Reset likewise stays paid (see topLevelAdvice).
   Solver.prototype.procCost = function (cm) { return this.rb ? 0 : procCost(cm); };
-  Solver.prototype.rerollCost = function (r) { return this.rb ? 0 : rerollCost(r); };
+  Solver.prototype.rerollCost = function (r) { return rerollCost(r); };
 
   // Terminal gem value (direct or fusion-fodder) — SAME as nested.calculateGemValue.
   Solver.prototype.gemValue = function (config) {
@@ -789,6 +795,37 @@
     return 3;
   }
 
+  // ---- persistent solver reuse (2026-08-09) ----
+  // W(config,t,r,cm) is a pure function of the six Solver params, so the memo
+  // survives across advice queries unchanged. Rebuilding it each query made every
+  // late-turn solve re-price the whole fresh-gem tree (Reset + its C(4,2) combo
+  // table): measured 3.3s on a fresh cut and 6.3s on the last turn, per turn, on
+  // states whose answers were already in the previous turn's memo. Reuse makes
+  // those memo hits (~0ms) with bit-identical results. One cached solver per
+  // param tuple, two tuples kept (a session that alternates two rarities or
+  // axes shouldn't thrash); any other change starts fresh — exactly the old
+  // behavior. `nodes` counts memo inserts, so it doubles as the size cap: past
+  // SOLVER_MEMO_CAP (~3 cold trees' worth, tens of MB) the solver retires and
+  // the next acquisition rebuilds, bounding worker memory for long sessions.
+  var _solvers = [];   // [{ key, solver }], most-recently-used last
+  var SOLVER_MEMO_CAP = 600000;
+  function acquireSolver(baseline, goldPerDamage, rb, drawModel, maxTurns, axis) {
+    var key = baseline + "|" + goldPerDamage + "|" + (rb ? 1 : 0) + "|" +
+      (drawModel || "wor") + "|" + maxTurns + "|" + (axis === "support" ? "support" : "dps") +
+      "|" + (A.MODEL_SIG || "0");   // solvers can never outlive the model they were built on
+    for (var i = 0; i < _solvers.length; i++) {
+      if (_solvers[i].key === key) {
+        var hit = _solvers.splice(i, 1)[0];
+        if (hit.solver.nodes < SOLVER_MEMO_CAP) { _solvers.push(hit); return hit.solver; }
+        break;   // over the cap — fall through to a fresh solver
+      }
+    }
+    var s = new Solver(baseline, goldPerDamage, rb, { drawModel: drawModel, maxTurns: maxTurns, axis: axis });
+    _solvers.push({ key: key, solver: s });
+    if (_solvers.length > 2) _solvers.shift();
+    return s;
+  }
+
   // Returns { bestAction, allActions:[{name,value,aboveBaselineOdds,expectedScore,
   // expectedCost,description}], currentValue, expectedValues, expectedScores } —
   // the SAME shape advisor.js consumes from evaluateActions.
@@ -797,7 +834,18 @@
     var rb = !!state.rosterBound;
     // options.axis "support" grades the cut by supportValue against a support-scale
     // baseline (supportGradeToScore) — the Solver already carries the axis internally.
+    // (includeSim2 shapes only the top-level action list, never W itself, so it is
+    // deliberately NOT part of the reuse key.)
+    // LOCAL PATCH 6 - FRESH SOLVER PER QUERY: upstream's acquireSolver (2026-08-09) hands a later
+    // query the solver an earlier one built when the six params match. Measured on our same-tuple
+    // probe (every battery state at one baseline/gpd/axis, roster-bound on and off): 61 of 84 rows
+    // change vs a fresh solver, and not by ULPs (a Process value moves ~4%, aboveBaselineOdds 0.514
+    // -> 0.498), while a fresh solver reproduces the pre-reuse upstream engine bit for bit. So reuse
+    // makes advice depend on what was asked before; the same board must always get the same answer.
+    // The five allocation patches above already carry the speed. Upstream's acquireSolver is left in
+    // place (dead) so the diff to upstream stays a hunk, not a rewrite.
     var solver = new Solver(baseline, goldPerDamage, rb, { drawModel: options.drawModel, maxTurns: state.maxTurns, axis: options.axis });
+    var nodes0 = solver.nodes;   // report this query's own work, not the cache's lifetime
     var config = cloneConfig(state.config);
     var t = Math.max(0, (state.maxTurns - state.currentTurn + 1)); // turns remaining incl. current
     var r = state.rerollsRemaining || 0;
@@ -860,7 +908,7 @@
     // 2026-07-17 — this corrects an earlier wrong reading). Mirrors W()/chooseAction.
     var rerollNet = -Infinity, rerollScore = NaN, rerollCost_ = 0, rerollAbove = 0;
     if (r >= 1 && t >= 1 && !isFirstTurn) {
-      var rc = rb ? 0 : rerollCost(r);
+      var rc = rerollCost(r);   // reroll costs gold even roster-bound (only processing is free)
       var rch = solver._node(config, t, r - 1, cm);
       rerollNet = -rc + rch.v;
       rerollScore = rch.expScore;
@@ -949,7 +997,7 @@
       currentValue: solver.gemValue(config),
       resetCombos: resetCombos,
       resetCost: A.COSTS ? A.COSTS.reset : null,
-      _solverNodes: solver.nodes
+      _solverNodes: solver.nodes - nodes0
     };
   }
 
@@ -997,6 +1045,7 @@
   // identical shape advisor.js consumes.
   function evaluateActionsDP(state, baseline, goldPerDamage, numRuns, onProgress, options) {
     var res = topLevelAdvice(state, baseline, goldPerDamage, options || {});
+    res.modelSig = A.MODEL_SIG;   // callers compare vs their own model (skew guard)
     if (typeof onProgress === "function") onProgress(numRuns || 1, numRuns || 1);
     return res;
   }

@@ -1,11 +1,11 @@
 // @ts-nocheck
 /* eslint-disable */
 /*
- * VENDORED from shizukaziye/astrogem-calculator (model/astrogem.js), 2026-07-19.
- * Source: https://github.com/shizukaziye/astrogem-calculator (MIT per its package.json).
- * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream and re-running
- * the drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require()
- * astrogem.js relatively, so all three stay co-located.
+ * VENDORED from shizukaziye/loastuff (loa-astrogem-calc/model/astrogem.js), re-synced 2026-08-15 (upstream
+ * main a76df2e8, 2026-08-14). Source: https://github.com/shizukaziye/loastuff (MIT per its package.json).
+ * FROZEN third-party code: do NOT edit. Re-sync by re-copying from upstream and re-running the
+ * drift-guard test (src/lib/advisor/advisorDp.test.ts). dp.js/nested.js require() astrogem.js
+ * relatively, so all three stay co-located.
  */
 /**
  * astrogem.js — PURE deterministic core for the Lost Ark astrogem-cutting model.
@@ -35,7 +35,7 @@
  *   willpowerCost(baseCost, wpLevel)            -> number  (baseCost - wpLevel)
  *   willpowerScore(willpowerCost)               -> number  D (±0.078119 / cost-lvl from 4)
  *   effectScore(effectType, level)              -> number  D (% damage)
- *   orderScore(orderLevel)                      -> number  D (flat 0.159872 / point)
+ *   orderScore(orderLevel)                      -> number  D ((level−4) × 0.159872; 4 = neutral)
  *   score(config)                               -> number  D ≈ % damage (sum of lines)
  *   damagePercent(config)                       -> number  exact mult % = (e^(D/100)-1)*100
  *   scoreBreakdown(config)                      -> {...}   (component breakdown, in D)
@@ -91,11 +91,11 @@
   //                         Converted from the old abstract ±2.4 by the old
   //                         willpower-to-attack ratio (2.4 / 1.0 = 2.4): one
   //                         cost-level of willpower is worth 2.4 attack-levels, so
-  //                         D_WP = 2.4 · D_ATTACK_PER_LEVEL ≈ ±0.078119 per cost-level.
+  //                         D_WP = 2.4 · D_ATTACK_PER_LEVEL ≈ ±0.077726 per cost-level.
   //   * Brand Power / Ally Damage Enh. / Ally Attack Enh. — 0 (support, no DPS).
   //
-  // The numeric values these baselines yield (≈): atk 0.032549, addDmg 0.059839,
-  // boss 0.082309, order 0.159872, willpower 0.078119 (per cost-level from 4).
+  // The numeric values these baselines yield (≈): atk 0.032386, addDmg 0.059287,
+  // boss 0.081268, order 0.159872, willpower 0.077726 (per cost-level from 4).
 
   // Bucket baselines (edit these to retune the assumptions).
   var STAT_BASELINES = {
@@ -120,7 +120,7 @@
   var D_ORDER_PER_POINT   = 100 * Math.log(1 + STAT_BASELINES.order.perPoint); // ≈ 0.159872
   // Willpower keeps the old willpower:attack weight ratio (2.4 : 1.0) in D units.
   var WILLPOWER_OVER_ATTACK_RATIO = 2.4;
-  var D_WILLPOWER_PER_COSTLEVEL = WILLPOWER_OVER_ATTACK_RATIO * D_ATTACK_PER_LEVEL; // ≈ 0.078119
+  var D_WILLPOWER_PER_COSTLEVEL = WILLPOWER_OVER_ATTACK_RATIO * D_ATTACK_PER_LEVEL; // ≈ 0.077726
 
   var SCORING = {
     // All values are D = 100·ln(multiplier) ≈ % damage (ADDITIVE in log space).
@@ -236,24 +236,24 @@
     }
   }
 
-  // Order is FLAT per point (new) or relative-to-4 (old-scoring mode).
+  // DPS order is centered at level 4 (Shizu 2026-08-09): order 4 adds nothing,
+  // 5 adds damage, 1–3 subtract. The per-point D is the EXACT in-game damage
+  // value — order is deterministic, so it is never fitted.
   function orderScore(orderLevel) {
     if (OLD_SCORING_MODE) return (orderLevel - 4) * OLD_W.orderPer;
-    return orderLevel * SCORING.orderPerPoint;
+    return (orderLevel - 4) * SCORING.orderPerPoint;
   }
 
-  // ---- Willpower as a MULTIPLIER on damage (the grading model) ----
-  // Damage is multiplicative; willpower is a quality multiplier on it. Each baseCost's
-  // PERFECT gem (wp5, order5, top-2 effects @5) lands at cost 3/4/5; M(cost) is
-  // calibrated so those three tie EXACTLY (each -> grade 100):
-  //   M(3)=Dp5/Dp3, M(4)=Dp5/Dp4, M(5)=1.  Cost 6+ continues linearly at the cost4->5
-  //   slope (low willpower punished hard; lands on ~0.90/0.80/0.70/0.60).
-  // Computed from the perfect-gem damages so it tracks the effect weights.
+  // ---- Willpower as a MULTIPLIER on damage (LEGACY — no longer the grading model) ----
+  // Kept only because it is exported; the 2026-08-09 reweight replaced the multiplier
+  // with the additive budget credit in gemValue below. See docs/how-a-gem-is-graded.md.
   function _perfectDamage(baseCost) {
     var pool = EFFECT_POOLS[baseCost], v = [];
     for (var i = 0; i < pool.length; i++) v.push(effectScore(pool[i], 5));
     v.sort(function (a, b) { return b - a; });
-    return v[0] + v[1] + orderScore(5);
+    // FLAT order on purpose: this legacy table's historical values predate the
+    // level-4 recentering of orderScore and must not drift with it.
+    return v[0] + v[1] + 5 * SCORING.orderPerPoint;
   }
   var _WP_MULT = (function () {
     var M = { 3: _perfectDamage(10) / _perfectDamage(8),
@@ -277,9 +277,91 @@
       + effectScore(config.effect2, config.effect2Level)
       + orderScore(config.orderLevel);
   }
-  // Grading value = damage x willpower multiplier (every perfect gem ties at the top).
+
+  // ---- Grading value: FITTED PER-COST MULTIPLIER TABLE (2026-08-09 reweight) ----
+  // Fitted on 15k simulated accounts (5k per economy tier): gems cut by this
+  // site's own advisor, then packed into the optimal 3x17 Ark Grid by an exact-
+  // verified packer. The score that best predicts "does the optimal grid socket
+  // this gem" is:
+  //   value = (effects + 0.1571 x order) x M[willpowerCost]
+  // Order keeps its damage-fit weight (~ the old 0.15987 — the old model had
+  // order right). Willpower is a fitted percentage toll per effective cost —
+  // the old model's multiplicative STRUCTURE with honest per-cost numbers
+  // instead of the perfect-tie calibration (which overpaid cheapness ~2.5x).
+  // The curve: costs 3-6 all viable, 7 taxed, 8 heavy, 9 a cliff (the optimal
+  // packer never sockets a cost-9; a cost-10 config cannot exist, wp min 1).
+  // Beat the old model 1.62 vs 2.95 displaced gems/account on held-out data and
+  // called every rung of the monster-vs-perfect-c8 crossover ladder correctly
+  // except one (by <1 grade point). See docs/account-study-2026-08-08.md.
+  // 2026-08-10 (v3, "K-steep"): the grading value serves the ROSTER-BOUND
+  // economy — 112k simulated accounts cut with roster-bound solvers (processing
+  // free, nothing abandoned), equip-best-12, floor-5 keeps, relic fusion
+  // recycling. On that world the fitted ADDITIVE per-cost credit dominated
+  // every alternative (1.686 misses vs the 2.455 of the sell-world table, past
+  // the empirical ceiling, 11/11 on the monster crossover ladders): a gem's
+  // willpower chassis has a roughly CONSTANT worth independent of line quality,
+  // which a flat credit expresses natively. Steep by design — Shizu's original
+  // perfect-tie multiplier had the right slope all along; this is that slope,
+  // data-trimmed, in additive form. The sell-economy M-table generation is
+  // retained below as valueWpMult (legacy consumers only).
+  // Order is PINNED at its exact damage weight (never fitted — its damage is
+  // known deterministically) and centered at level 4 like orderScore. Only the
+  // willpower credit K is fitted; re-fitted 2026-08-10 on the ADAPTIVE-FUSION
+  // corpus (117k accounts, tiers 6M/90 · 2.5M/85 · 1M/80, 60/30/10 cut mix,
+  // each account choosing its own c9/c10 fusion target by exact packer
+  // marginals — mostly 9s; strong grids flip to 10s). Held-out 1.546 misses
+  // vs 1.698 for the prior table on this world; 11/11 monster ladder; costs
+  // +0.044 on the old target-10 corpus — a favorable trade since the site's
+  // own fodder advice now steers this world.
+  var VALUE_ORDER_PER_POINT = SCORING.orderPerPoint;
+  var VALUE_WP_CREDIT = { 3: 0.1327, 4: 0.0896, 5: 0, 6: -0.1203, 7: -0.2504, 8: -0.3970, 9: -0.5686 };
+  function valueWpCredit(cost) {
+    if (cost <= 3) return VALUE_WP_CREDIT[3];
+    if (cost >= 9) return VALUE_WP_CREDIT[9];
+    if (VALUE_WP_CREDIT[cost] != null) return VALUE_WP_CREDIT[cost];
+    var lo = Math.floor(cost);               // non-integer (baseline math): interpolate
+    return VALUE_WP_CREDIT[lo] + (VALUE_WP_CREDIT[lo + 1] - VALUE_WP_CREDIT[lo]) * (cost - lo);
+  }
+  // legacy sell-economy multiplier table (2026-08-10 v2) — kept only because it
+  // is exported; no grading path uses it.
+  var VALUE_WP_MULT = { 3: 1.110, 4: 1.053, 5: 1.000, 6: 0.955, 7: 0.898, 8: 0.825, 9: 0.735 };
+  function valueWpMult(cost) {
+    if (cost <= 3) return VALUE_WP_MULT[3];
+    if (cost >= 9) return VALUE_WP_MULT[9];
+    if (VALUE_WP_MULT[cost] != null) return VALUE_WP_MULT[cost];
+    var lo = Math.floor(cost);
+    return VALUE_WP_MULT[lo] + (VALUE_WP_MULT[lo + 1] - VALUE_WP_MULT[lo]) * (cost - lo);
+  }
   function gemValue(config) {
-    return gemDamage(config) * willpowerMultiplier(willpowerCost(config.baseCost, config.willpowerLevel));
+    return effectScore(config.effect1, config.effect1Level)
+      + effectScore(config.effect2, config.effect2Level)
+      + VALUE_ORDER_PER_POINT * (config.orderLevel - 4)
+      + valueWpCredit(willpowerCost(config.baseCost, config.willpowerLevel));
+  }
+
+  // The perfect config at a base cost: top-2 effects for the axis at level 5,
+  // order 5, willpower 5. Perfects no longer tie: c8/c9/c10 grade 93.9/98.1/104.0,
+  // and their 3/3/6 Ark-Grid-layout average defines grade 100 (see valueAnchor).
+  function _topPairFor(baseCost, esFn) {
+    var pool = EFFECT_POOLS[baseCost].slice().sort(function (a, b) { return esFn(b, 5) - esFn(a, 5); });
+    return [pool[0], pool[1]];
+  }
+  function _perfectConfig(baseCost, axis) {
+    var esFn = (axis === "support") ? supportEffectScore : effectScore;
+    var top = _topPairFor(baseCost, esFn);
+    return { baseCost: baseCost, gemType: "order", willpowerLevel: 5, orderLevel: 5,
+      effect1: top[0], effect1Level: 5, effect2: top[1], effect2Level: 5 };
+  }
+  // TRUE perfect roll (rainbow badge): wp5 + order5 + the axis's top-2 effects
+  // both at 5. Config-gated, NOT grade-gated — above-100 near-perfect c10s must
+  // not rainbow, and the perfect c8 (93.9) must.
+  function isPerfectConfig(config, axis) {
+    if (!config || config.willpowerLevel !== 5 || config.orderLevel !== 5) return false;
+    if (config.effect1Level !== 5 || config.effect2Level !== 5) return false;
+    var esFn = (axis === "support") ? supportEffectScore : effectScore;
+    var top = _topPairFor(config.baseCost, esFn);
+    return (config.effect1 === top[0] && config.effect2 === top[1])
+      || (config.effect1 === top[1] && config.effect2 === top[0]);
   }
 
   // Total score = approximate % damage of the gem (sum of per-line D, additive
@@ -357,39 +439,73 @@
     _valueBounds = { min: min, max: max };
     return _valueBounds;
   }
+  // Grade anchor: the value of the PERFECT Ark Grid layout, per gem — 3 perfect
+  // 8-costs + 3 perfect 9-costs + 6 perfect 10-costs (exactly the wp5 packing
+  // 5+5+4+3 = 17 budget per core), averaged over the 12. Grade 100 = this mean.
+  var _valueAnchor = null;
+  function valueAnchor() {
+    if (_valueAnchor != null) return _valueAnchor;
+    _valueAnchor = (3 * gemValue(_perfectConfig(8, "dps"))
+      + 3 * gemValue(_perfectConfig(9, "dps"))
+      + 6 * gemValue(_perfectConfig(10, "dps"))) / 12;
+    return _valueAnchor;
+  }
+
+  // ONE straight line: the worst legal gem (all levels have a floor of 1, so a
+  // trash c10 at wp1/order1) grades exactly 0 and the perfect-grid mean grades
+  // exactly 100. The scale is open above 100 — a perfect c10 reads 104.0.
   function grade(config) {
     var b = valueBounds();
-    var g = 100 * (gemValue(config) - b.min) / (b.max - b.min);
-    return Math.round(Math.max(0, Math.min(100, g)) * 10) / 10;
+    var g = 100 * (gemValue(config) - b.min) / (valueAnchor() - b.min);
+    return Math.round(Math.max(0, Math.min(110, g)) * 10) / 10;
   }
 
-  // Inverse of grade(): the gemValue threshold at a given 0-100 grade. Used to turn
-  // a grade-based baseline into the value threshold the verdict logic compares against.
-  // Runs on the global multiplicative valueBounds() — the old per-type/`all` additive
-  // scale is gone (see the gradeBounds removal note above).
+  // Inverse of grade(): the gemValue threshold at a given grade. Used to turn
+  // a grade-based baseline into the value threshold the verdict logic compares
+  // against. Same single line as grade(); accepts 0..110.
   function gradeToScore(g, baseCost) {
-    // Inverts the NEW global value-grade -> the gemValue threshold for grade g, so the
-    // pipeline's grade baselines compare against the gemValue distribution. baseCost is
-    // kept for signature compatibility; grading is global now.
     var b = valueBounds();
-    return b.min + (Math.max(0, Math.min(100, g)) / 100) * (b.max - b.min);
+    return b.min + (Math.max(0, Math.min(110, g)) / 100) * (valueAnchor() - b.min);
   }
 
-  // Letter rank from a 0-100 grade (user-set cutoffs). Each band split into +/ /-
-  // thirds for finer granularity.
-  var RANK_CUTS = [["S", 85], ["A", 70], ["B", 55], ["C", 40], ["D", 20], ["F", 0]];
-  function rankFromGrade(g) {
-    var i, lo, hi, t;
-    for (i = 0; i < RANK_CUTS.length; i++) {
-      lo = RANK_CUTS[i][1];
-      if (g >= lo) {
-        hi = (i === 0) ? 100 : RANK_CUTS[i - 1][1];
-        t = hi > lo ? (g - lo) / (hi - lo) : 0;
-        return RANK_CUTS[i][0] + (t >= 2 / 3 ? "+" : (t < 1 / 3 ? "-" : ""));
-      }
+  // Letter rank (Shizu 2026-08-10, percentile-aware bands): EVEN THIRDS of
+  // each 10-point band from 50 up (D 50/53.3/56.7, C 60/…, B 70/…, A 80/83.3/
+  // 86.7, S 90/93.3/S+), F = thirds of 0-50. The S+ cut is the axis's PERFECT
+  // 8-COST grade, DERIVED from the model at load so refits move it
+  // automatically — on DPS that lands exactly on the even grid (96.7); on
+  // support it sits at 96.3 (its perfect c8 — the "every perfect is S+" rule
+  // outranks grid evenness there). Cuts use 1-decimal values because grade()
+  // rounds to 0.1 (a displayed 73.3 IS a B). Chosen against the measured
+  // cut-outcome percentiles of the v58 scale (S ~1%, A- ~14%, B- ~34%).
+  function _perfectCfg8(esFn) {
+    var pool = EFFECT_POOLS[8].slice().sort(function (a, b) { return esFn(b, 5) - esFn(a, 5); });
+    return { baseCost: 8, gemType: "order", willpowerLevel: 5, orderLevel: 5,
+      effect1: pool[0], effect1Level: 5, effect2: pool[1], effect2Level: 5 };
+  }
+  // Derived at the MODULE TAIL (needs SUPPORT_SCORING, which initializes in
+  // the support section below): S+ = 96.7 DPS / 96.3 support under the
+  // 2026-08-10 fit.
+  var S_PLUS_CUT, SUP_S_PLUS_CUT, RANK_LADDER, SUPPORT_RANK_LADDER;
+  function _ladder(sPlus) {
+    return [
+      ["S+", sPlus], ["S", 93.3], ["S-", 90],
+      ["A+", 86.7], ["A", 83.3], ["A-", 80],
+      ["B+", 76.7], ["B", 73.3], ["B-", 70],
+      ["C+", 66.7], ["C", 63.3], ["C-", 60],
+      ["D+", 56.7], ["D", 53.3], ["D-", 50],
+      ["F+", 33.3], ["F", 16.7], ["F-", 0]
+    ];
+  }
+  // Coarse letter starts derived from the ladder (kept for export compatibility).
+  var RANK_CUTS = [["S", 90], ["A", 80], ["B", 70], ["C", 60], ["D", 50], ["F", 0]];
+  function _rankFrom(ladder, g) {
+    for (var i = 0; i < ladder.length; i++) {
+      if (g >= ladder[i][1]) return ladder[i][0];
     }
     return "F-";
   }
+  function rankFromGrade(g) { return _rankFrom(RANK_LADDER, g); }
+  function supportRankFromGrade(g) { return _rankFrom(SUPPORT_RANK_LADDER, g); }
   function gemRank(config) { return rankFromGrade(grade(config)); }
 
   // ---- Whole-character (grid) TOTAL damage — lvl-0, multiplicative ----  axis "dps" | "support"
@@ -434,7 +550,8 @@
   // SUPPORT grid total — same shape as the DPS total. Support EFFECTS stay linear (the
   // support per-level party values are flat — no bucket diminishing in this model), and
   // ORDER/chaos is per-CORE with the 17-point floor, the 6 cores MULTIPLYING (each core
-  // carries its own per-point party rate). Party scale; the UI shows ÷3 (per-ally).
+  // carries its own per-point party rate). Coefficients are already ÷3 (per-DPS-ally),
+  // so this returns the per-ally figure and the UI shows it as-is (no further ÷3).
   function supportGridDamage(gems) {
     var eff = 0, core = {};
     for (var i = 0; i < gems.length; i++) {
@@ -450,10 +567,14 @@
   }
   // Cost-fair quality = Σ ln(value) = log of the product of gem values. Pairing-
   // invariant (equivalent builds tie); the per-gem grades roll up into this. axis-aware.
+  // Values are floored at a tiny positive epsilon before the log: the additive
+  // budget-credit forms can go NEGATIVE on trash gems (a DPS-built support grid
+  // is full of them), and ln(<=0) = NaN would poison the whole grid's quality.
   function gridQuality(gems, axis) {
     var s = 0;
     for (var i = 0; i < gems.length; i++) {
-      s += Math.log((axis === "support") ? supportValue(gems[i]) : gemValue(gems[i]));
+      var v = (axis === "support") ? supportValue(gems[i]) : gemValue(gems[i]);
+      s += Math.log(Math.max(1e-6, v));
     }
     return s;
   }
@@ -467,22 +588,27 @@
   // gold, leaderboard party%, and grade thresholds all scale down by 3. Willpower is a
   // per-DPS efficiency ratio (NOT a party buff), so it is NOT divided.
   //
-  // Mapping to the DPS structure:
+  // Mapping to the DPS structure. Values re-derived against the corrected support
+  // model (Bebkok sup-buff sheet): the identity channel runs serenade, Major Chord
+  // and the t-skill through one bracket, with spec as a multiplier — so per-point
+  // party damage moved ally-attack ×0.98, brand ×1.01, ally-damage ×1.10 (see the
+  // accessory calc METHODOLOGY §3 and grading doc §8). Baseline: Bard spec 1100,
+  // uptimes AP 95 / brand 100 / serenade 70 / chord 70 / t-skill 40.
   //   * Effect per-level values (additive, like the DPS D-values), base ÷3:
-  //       Ally Attack Enh.  0.0596/3   (party attack buff)
-  //       Brand Power       0.0434/3   (brand amp)
-  //       Ally Damage Enh.  0.0195/3   (party damage buff)
+  //       Ally Attack Enh.  0.0586/3   (party attack buff)   was 0.0596
+  //       Brand Power       0.0437/3   (brand amp)           was 0.0434
+  //       Ally Damage Enh.  0.0214/3   (party damage buff)   was 0.0195
   //     The DPS effects (Attack Power / Additional Damage / Boss Damage) -> 0.
-  //   * Order/Chaos point: 0.0747/3 = 0.0249 per orderLevel point.
+  //   * Order/Chaos point: 0.0769/3 = 0.0256 per orderLevel point (avg of the 6 cores).
   //   * Willpower: exactly (2/3) × the DPS willpower contribution — same
   //     willpowerScore mechanic, same willpowerCost = baseCost − wpLevel, same 4.25
   //     neutral, just scaled by 2/3 (not party-scaled, so not ÷3).
   var SUPPORT_SCORING = {
-    orderPerPoint: 0.0747 / 3,             // support order: flat per point (party buff ÷3 = 0.0249)
+    orderPerPoint: 0.0769 / 3,             // support order: flat per point (party buff ÷3 = 0.0256)
     willpowerFactor: 2 / 3,                // support willpower = (2/3) × DPS willpower (not party-scaled)
-    allyAttackEnh: 0.0596 / 3,
-    brandPower: 0.0434 / 3,
-    allyDamageEnh: 0.0195 / 3,
+    allyAttackEnh: 0.0586 / 3,
+    brandPower: 0.0437 / 3,
+    allyDamageEnh: 0.0214 / 3,
     // DPS-only effects contribute nothing to support:
     attackPower: 0,
     additionalDamage: 0,
@@ -519,8 +645,8 @@
     return orderLevel * SUPPORT_SCORING.orderPerPoint;
   }
 
-  // Total SUPPORT score = supportWillpower + 0.0747·orderLevel + supportEff(e1) +
-  // supportEff(e2). Mirrors score(config) line-for-line with support coefficients.
+  // Total SUPPORT score = supportWillpower + orderPerPoint·orderLevel (≈ 0.0256) +
+  // supportEff(e1) + supportEff(e2). Mirrors score(config) with support coefficients.
   function supportScore(config) {
     var wpc = willpowerCost(config.baseCost, config.willpowerLevel);
     return supportWillpowerScore(wpc)
@@ -546,14 +672,18 @@
   // ---- SUPPORT multiplicative grading (parallel to the DPS gemValue model) ----
   // Per-core order/chaos point values: each core grants a different party-buff stat,
   // so a support gem's order points are worth different amounts by core. A standalone
-  // gem grade uses the AVERAGE (SUPPORT_SCORING.orderPerPoint ≈ 0.0747); the whole-grid
+  // gem grade uses the AVERAGE (SUPPORT_SCORING.orderPerPoint ≈ 0.0256); the whole-grid
   // total (the leaderboard) uses the PER-CORE value (keyed by core base id 10001-10006).
+  // Re-derived on the corrected support model (see SUPPORT_SCORING note). Order Star
+  // (serenade) and Chaos Star (weapon power) are unchanged: serenade is held provisional
+  // (it scores meter generation, a bar-step channel — a separate re-derive), and the AP
+  // channel that weapon power feeds kept its shape.
   var SUPPORT_ORDER_PER_CORE = {
-    10001: 0.0694 / 3, // Order Sun   (Ally Attack)
-    10002: 0.0640 / 3, // Order Moon  (Ally Damage)
-    10003: 0.0486 / 3, // Order Star  (serenade)
-    10004: 0.0753 / 3, // Chaos Sun   (Ally Damage)
-    10005: 0.1044 / 3, // Chaos Moon  (Brand — strongest)
+    10001: 0.0682 / 3, // Order Sun   (Ally Attack)          was 0.0694
+    10002: 0.0702 / 3, // Order Moon  (Ally Damage)          was 0.0640
+    10003: 0.0486 / 3, // Order Star  (serenade — provisional)
+    10004: 0.0826 / 3, // Chaos Sun   (Ally Damage)          was 0.0753
+    10005: 0.1052 / 3, // Chaos Moon  (Brand — strongest)    was 0.1044
     10006: 0.0869 / 3  // Chaos Star  (Weapon Power)
   };
   function supportOrderValueForCore(coreBase) {
@@ -570,8 +700,9 @@
       + supportEffectScore(config.effect2, config.effect2Level)
       + config.orderLevel * ov;
   }
-  // Support willpower MULTIPLIER — its own curve, calibrated so the 3 perfect SUPPORT
-  // gems (top-2 support effects @5, order5 avg, wp5) tie exactly; cost 6+ linear like DPS.
+  // Support willpower MULTIPLIER (LEGACY — no longer the grading model; the
+  // perfect-tie calibration below survives only for tools/upgrade-cost-study).
+  // supportValue now prices willpower with the fitted ADDITIVE credit below.
   function _supPerfectDamage(baseCost) {
     var pool = EFFECT_POOLS[baseCost], v = [];
     for (var i = 0; i < pool.length; i++) v.push(supportEffectScore(pool[i], 5));
@@ -593,11 +724,49 @@
     var lo = Math.floor(cost);
     return _SUP_WP_MULT[lo] + (_SUP_WP_MULT[lo + 1] - _SUP_WP_MULT[lo]) * (cost - lo);
   }
-  // Support grading value = supportDamage (avg order) × support willpower multiplier.
-  function supportValue(config) {
-    return supportDamage(config) * supportWillpowerMultiplier(willpowerCost(config.baseCost, config.willpowerLevel));
+  // Support grading value: the ROSTER-BOUND additive refit (2026-08-09) — the
+  // same form and protocol that won the DPS axis. 62,400 joint order+chaos
+  // accounts were cut roster-bound under the LIVE advisor (nothing abandoned,
+  // per-side keep floor-5, per-side fusion of discarded relic+ with 2 leg
+  // c10s), packed per side by the exact packer; this additive credit was best
+  // on every tier of held-out accounts (3.68 misses vs 4.40 live / 4.60
+  // low-regime, beating the empirical C-table ceiling) and went 9/9 on the
+  // packer-margin monster ladder — the only candidate to do both. Unified
+  // order weight for both grid sides (the fitted side-split gains ~1%, not
+  // worth two scales). The earlier sell-world fits (native + low-regime) are
+  // superseded: their fixed-point loop oscillated because the sell world's
+  // cut policy feeds back into the fit; the roster corpus doesn't.
+  // Re-fitted 2026-08-10 on the support ADAPTIVE-FUSION corpus (107k joint
+  // accounts, tiers 6M/85 · 2.5M/80 · 1M/75 on the support scale, per-side
+  // c9/c10 fusion targeting): held-out 3.333 misses vs 3.421 prior (Shizu
+  // adopted with the disclosed floor-inversion trade, 10.79 vs 10.00).
+  var SUP_VALUE_ORDER_PER_POINT = 0.02879;
+  var SUP_WP_CREDIT = { 3: 0.0252, 4: 0.0150, 5: 0, 6: -0.0235, 7: -0.0593, 8: -0.0986, 9: -0.1346 };
+  function supValueWpCredit(cost) {
+    if (cost <= 3) return SUP_WP_CREDIT[3];
+    if (cost >= 9) return SUP_WP_CREDIT[9];
+    if (SUP_WP_CREDIT[cost] != null) return SUP_WP_CREDIT[cost];
+    var lo = Math.floor(cost);
+    return SUP_WP_CREDIT[lo] + (SUP_WP_CREDIT[lo + 1] - SUP_WP_CREDIT[lo]) * (cost - lo);
   }
-  // Global value bounds for the SUPPORT grade (perfect support gems tie at the top).
+  // LEGACY export-only: the superseded low-regime multiplicative toll (kept so
+  // older tools that imported supWpMult keep loading; not used in grading).
+  var SUP_WP_MULT = { 3: 1.121, 4: 1.062, 5: 1.000, 6: 0.942, 7: 0.848, 8: 0.774, 9: 0.677 };
+  function supWpMult(cost) {
+    if (cost <= 3) return SUP_WP_MULT[3];
+    if (cost >= 9) return SUP_WP_MULT[9];
+    if (SUP_WP_MULT[cost] != null) return SUP_WP_MULT[cost];
+    var lo = Math.floor(cost);
+    return SUP_WP_MULT[lo] + (SUP_WP_MULT[lo + 1] - SUP_WP_MULT[lo]) * (cost - lo);
+  }
+  function supportValue(config) {
+    return supportEffectScore(config.effect1, config.effect1Level)
+      + supportEffectScore(config.effect2, config.effect2Level)
+      + SUP_VALUE_ORDER_PER_POINT * config.orderLevel
+      + supValueWpCredit(willpowerCost(config.baseCost, config.willpowerLevel));
+  }
+  // Global value bounds for the SUPPORT grade (min = worst legal support gem,
+  // max = the perfect support c10; perfects do NOT tie under the fitted table).
   var _supportValueBounds = null;
   function supportValueBounds() {
     if (_supportValueBounds) return _supportValueBounds;
@@ -621,8 +790,8 @@
   }
 
   // Min-max bounds for the SUPPORT grade, over SUPPORT gems only (the support-axis
-  // twin of valueBounds). min = worst support gem, max = the perfect support gem (10-cost
-  // Ally Attack Enh Lv5 + Brand Power Lv5, order 5, willpower 5 ≈ 0.836).
+  // twin of valueBounds). min = worst support gem, max = the perfect support gem (8-cost
+  // Brand Power Lv5 + Ally Damage Enh Lv5, order 5, willpower 5 ≈ 0.28848).
   var _supportGradeBounds = null;
   function supportGradeBounds() {
     if (_supportGradeBounds) return _supportGradeBounds;
@@ -645,44 +814,110 @@
     return _supportGradeBounds;
   }
 
-  // 0-100 SUPPORT grade for a gem (rounded to 1 decimal). Mirrors grade(): GLOBAL
-  // value-normalization over supportValue (every perfect support gem reads 100).
+  // Support grade anchor: mean of the perfect 3/3/6 support grid layout, same
+  // convention as valueAnchor on the DPS axis.
+  var _supportValueAnchor = null;
+  function supportValueAnchor() {
+    if (_supportValueAnchor != null) return _supportValueAnchor;
+    _supportValueAnchor = (3 * supportValue(_perfectConfig(8, "support"))
+      + 3 * supportValue(_perfectConfig(9, "support"))
+      + 6 * supportValue(_perfectConfig(10, "support"))) / 12;
+    return _supportValueAnchor;
+  }
+
+  // SUPPORT grade: the same single line as the DPS grade — worst legal support
+  // gem = 0, perfect-grid mean = 100, open above. Under the roster-fit
+  // additive constants the perfects land 96.3 / 98.8 / 102.5, all clearing
+  // the shared S+ 95 cut naturally.
   function supportGrade(config) {
     var b = supportValueBounds();
-    var g = 100 * (supportValue(config) - b.min) / (b.max - b.min);
-    return Math.round(Math.max(0, Math.min(100, g)) * 10) / 10;
+    var g = 100 * (supportValue(config) - b.min) / (supportValueAnchor() - b.min);
+    return Math.round(Math.max(0, Math.min(110, g)) * 10) / 10;
   }
 
-  // Letter rank from the SUPPORT grade — reuses the SAME RANK_CUTS as DPS.
-  function supportRank(config) { return rankFromGrade(supportGrade(config)); }
+  // Letter rank from the SUPPORT grade — reuses the SAME RANK_LADDER as DPS.
+  function supportRank(config) { return supportRankFromGrade(supportGrade(config)); }
 
-  // Inverse of supportGrade(): the support score at a 0-100 support grade. Parallel
-  // to gradeToScore — turns a grade-based baseline into the support-score threshold
-  // the support value/verdict logic uses.
+  // Inverse of supportGrade(): the support value at a support grade. Parallel
+  // to gradeToScore — turns a grade-based baseline into the support-value
+  // threshold the support value/verdict logic uses. Accepts 0..110.
   function supportGradeToScore(g) {
-    // Value-based inverse, parallel to gradeToScore (supportValue distribution).
     var b = supportValueBounds();
-    return b.min + (Math.max(0, Math.min(100, g)) / 100) * (b.max - b.min);
+    return b.min + (Math.max(0, Math.min(110, g)) / 100) * (supportValueAnchor() - b.min);
   }
 
-  // Grade-tier colors (owner's percentile palette): F/D gray, C green, B blue,
-  // A purple, S- orange, S pink, S+ white. rank = "S+"|"S"|"S-"|"A+"|"A"|… .
+  // Grade-tier colors (owner's percentile palette): F/D gray, C green, B blue, A purple.
+  // These five are the ramp ANCHORS; C- through A- are read off the ramp (RANK_STOPS).
   var RANK_COLORS = {
     F:    { bg: "#6f747a", fg: "#ffffff" },
     D:    { bg: "#6f747a", fg: "#ffffff" },
     C:    { bg: "#4f9d5d", fg: "#ffffff" },
     B:    { bg: "#3b7fd0", fg: "#ffffff" },
-    A:    { bg: "#7e5cc0", fg: "#ffffff" },
-    "S-": { bg: "#dd8a2e", fg: "#ffffff" },
-    "S":  { bg: "#c95f85", fg: "#ffffff" },
-    "S+": { bg: "#e8e2cc", fg: "#1a1a1a" }
+    A:    { bg: "#7e5cc0", fg: "#ffffff" }
   };
+  // The TOP of the ladder (A+ and the three S ranks) leaves the ramp and runs a smooth
+  // cool-elite arc — A purple -> A+ violet -> S- orchid -> S rose -> S+ pale champagne (the
+  // near-perfect tier). Explicit points, not ramp mixes, so they read cleanly. Dark fg on
+  // the light champagne.
+  var TOP_TIER = {
+    "A+": { bg: "#a660be", fg: "#ffffff" },
+    "S-": { bg: "#c15cad", fg: "#ffffff" },
+    "S":  { bg: "#cc5c81", fg: "#ffffff" },
+    "S+": { bg: "#e6d5a6", fg: "#4a3a1e" }
+  };
+  // A PERFECT gem transcends the spectrum with the animated pastel rainbow from
+  // the old tier list — bg is a GRADIENT, not a hex, dropped straight into `background:`, and
+  // the `rank-rainbow` class in styles.css adds the tiling + seamless slide. This is
+  // CONFIG-gated (isPerfectConfig), NOT grade-gated: perfects no longer share one grade
+  // (93.9/98.1/104.0), and near-perfect c10s above 100 must not rainbow (see gradeColor).
+  var RAINBOW = { bg: "linear-gradient(90deg,#FF8A80,#FFC46B,#F8E081,#8CE99A,#7FD0FF,#C9A2FF,#FF8A80)", fg: "#2b2440", cls: "rank-rainbow" };
+  // Mix a hex toward white (amt > 0) or black (amt < 0). amt is 0..1.
+  function shade(hex, amt) {
+    var n = parseInt(hex.slice(1), 16);
+    var p = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (c) {
+      return Math.max(0, Math.min(255, Math.round(amt >= 0 ? c + (255 - c) * amt : c * (1 + amt))));
+    });
+    return "#" + p.map(function (c) { return (c < 16 ? "0" : "") + c.toString(16); }).join("");
+  }
+
+  // Mix two hexes: t=0 gives a, t=1 gives b.
+  function mix(a, b, t) {
+    var x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+    var p = [16, 8, 0].map(function (sh) {
+      var ca = (x >> sh) & 255, cb = (y >> sh) & 255;
+      return Math.max(0, Math.min(255, Math.round(ca + (cb - ca) * t)));
+    });
+    return "#" + p.map(function (c) { return (c < 16 ? "0" : "") + c.toString(16); }).join("");
+  }
+
+  // The mid ranks are evenly spaced points on ONE ramp: D grey -> C green -> B blue ->
+  // A purple, so C- through A- read as a single gradient. Each third is a fixed fraction of
+  // the step between two anchors, so C+ (1/3 of C->B) and B- (2/3 of that same step) are two
+  // readings of one green-blue transition. A+ and the S ranks are handled by TOP_TIER above.
+  var RANK_STOPS = {
+    "C-": ["D", "C", 2 / 3],
+    "C+": ["C", "B", 1 / 3],
+    "B-": ["C", "B", 2 / 3],
+    "B+": ["B", "A", 1 / 3],
+    "A-": ["B", "A", 2 / 3]
+  };
+  var RANK_TILT = 0.28;   // fallback for D/F, whose neighbours are the same grey
+
   function rankColor(rank) {
     if (!rank) return RANK_COLORS.F;
-    if (rank.charAt(0) === "S") return RANK_COLORS[rank] || RANK_COLORS.S;
-    return RANK_COLORS[rank.charAt(0)] || RANK_COLORS.F;
+    // A+ and the S ranks leave the ramp for the explicit cool-elite arc (S+ is the rainbow).
+    if (TOP_TIER[rank]) return TOP_TIER[rank];
+    var stop = RANK_STOPS[rank];
+    if (stop) return { bg: mix(RANK_COLORS[stop[0]].bg, RANK_COLORS[stop[1]].bg, stop[2]), fg: "#ffffff" };
+    var base = RANK_COLORS[rank.charAt(0)] || RANK_COLORS.F;
+    var mod = rank.charAt(1);
+    if (mod !== "+" && mod !== "-") return base;
+    return { bg: shade(base.bg, mod === "+" ? RANK_TILT : -RANK_TILT), fg: base.fg };
   }
-  function gradeColor(g) { return rankColor(rankFromGrade(g)); }
+  // Grade -> color. Pass perfect=true (from isPerfectConfig) for the rainbow;
+  // everything else follows its rank band. Grade alone can't gate the rainbow
+  // anymore: near-perfect c10s exceed 100 while the perfect c8 sits at 93.9.
+  function gradeColor(g, perfect) { return perfect ? RAINBOW : rankColor(rankFromGrade(g)); }
 
   function scoreBreakdown(config) {
     var wpc = willpowerCost(config.baseCost, config.willpowerLevel);
@@ -910,17 +1145,21 @@
       for (var pi = 0; pi < parts.length; pi++) {
         var part = parts[pi];
         var wp = part[0], ord = part[1], lvA = part[2], lvB = part[3];
-        // NEW multiplicative model: per-gem value = (order damage + effects) ×
-        // willpower multiplier M(cost). Mirrors gemValue / supportValue exactly
-        // (willpower is no longer an additive term — it scales the damage).
+        // Mirrors gemValue / supportValue exactly: DPS order is PINNED at the
+        // exact damage weight and centered at level 4; support order uses its
+        // fitted value weight, flat per point.
         var _cost = willpowerCost(baseCost, wp);
-        var ordD = support ? supportOrderScore(ord) : orderScore(ord);
-        var Mw = support ? supportWillpowerMultiplier(_cost) : willpowerMultiplier(_cost);
+        var ordD = support ? SUP_VALUE_ORDER_PER_POINT * ord
+                           : VALUE_ORDER_PER_POINT * (ord - 4);
+        // BOTH axes are ADDITIVE now (flat willpower credit, each axis's own
+        // fitted table) — the multiplicative support toll is superseded.
+        var Mw = 1;
+        var addCr = support ? supValueWpCredit(_cost) : valueWpCredit(_cost);
         for (var ci = 0; ci < pairs.length; ci++) {
           var eA = pairs[ci][0], eB = pairs[ci][1];
           // Average over the two assignments of (lvA, lvB) to the unordered pair.
-          var sc1 = (ordD + esFn(eA, lvA) + esFn(eB, lvB)) * Mw;
-          var sc2 = (ordD + esFn(eA, lvB) + esFn(eB, lvA)) * Mw;
+          var sc1 = (ordD + esFn(eA, lvA) + esFn(eB, lvB)) * Mw + addCr;
+          var sc2 = (ordD + esFn(eA, lvB) + esFn(eB, lvA)) * Mw + addCr;
           var w = pSum * partW * pairW * 0.5;
           _addToDist(dist, sc1, w);
           _addToDist(dist, sc2, w);
@@ -966,7 +1205,8 @@
   // It's a contraction (the only coupling is the per-iterate scalars maxG/maxH),
   // so plain iteration converges fast. PARITY: the loop below is implemented
   // IDENTICALLY in astrogem.py (same cost order, same operation order, same
-  // 1e-9 convergence test) so JS and Python converge bit-identically.
+  // 1e-12 convergence test) so JS and Python converge bit-identically. (1e-9
+  // knife-edged: one extra/missing iteration flipped last-digit refs.)
   var JOINT_COSTS = [8, 9, 10];
   var _jointEVCache = {};
 
@@ -1035,7 +1275,7 @@
         E[c].ancient = newA;
       }
       iters++;
-      if (maxDelta < 1e-9) break;
+      if (maxDelta < 1e-12) break;
     }
 
     // Recompute maxG / maxH from the CONVERGED E so callers see the final values.
@@ -1099,6 +1339,26 @@
   // (_solve3x3, a Gaussian 3x3 solver, was removed 2026-07-18 — the joint fusion
   // EV converges by fixed-point iteration below and never called it.)
 
+  // ---- rank-ladder derivation (sits after the support section so
+  // SUPPORT_SCORING is initialized; the vars are declared at the ladder block) ----
+  S_PLUS_CUT = grade(_perfectCfg8(effectScore));
+  SUP_S_PLUS_CUT = supportGrade(_perfectCfg8(supportEffectScore));
+  RANK_LADDER = _ladder(S_PLUS_CUT);
+  SUPPORT_RANK_LADDER = _ladder(SUP_S_PLUS_CUT);
+
+  // MODEL SIGNATURE (2026-08-10): a short fingerprint of every fitted constant
+  // this model grades with. The dp-worker echoes it and advisor.js compares —
+  // a tab whose main thread and worker disagree on physics (stale cache, edge
+  // poisoning, deploy race) fails LOUDLY instead of mixing worlds; the
+  // persistent-solver cache also keys on it. Derived, never hand-edited.
+  var MODEL_SIG = (function () {
+    var s = JSON.stringify([VALUE_ORDER_PER_POINT, VALUE_WP_CREDIT,
+      SUP_VALUE_ORDER_PER_POINT, SUP_WP_CREDIT, S_PLUS_CUT, SUP_S_PLUS_CUT]);
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36);
+  })();
+
   // -------------------- exports (dual: browser global + CommonJS) --------------------
 
   var API = {
@@ -1122,6 +1382,12 @@
     gemDamage: gemDamage,
     gemValue: gemValue,
     valueBounds: valueBounds,
+    valueAnchor: valueAnchor,
+    valueWpMult: valueWpMult,
+    supWpMult: supWpMult,
+    supportValueAnchor: supportValueAnchor,
+    isPerfectConfig: isPerfectConfig,
+    RANK_LADDER: RANK_LADDER,
     gridDamage: gridDamage,
     gridQuality: gridQuality,
     coreKeyOf: coreKeyOf,
@@ -1130,7 +1396,12 @@
     supportGradeToScore: supportGradeToScore,
     gemRank: gemRank,
     rankFromGrade: rankFromGrade,
+    supportRankFromGrade: supportRankFromGrade,
     RANK_CUTS: RANK_CUTS,
+    SUPPORT_RANK_LADDER: SUPPORT_RANK_LADDER,
+    valueWpCredit: valueWpCredit,
+    supValueWpCredit: supValueWpCredit,
+    MODEL_SIG: MODEL_SIG,
     // ---- SUPPORT scoring axis (parallel to the DPS scoring above) ----
     SUPPORT_SCORING: SUPPORT_SCORING,
     supportWillpowerScore: supportWillpowerScore,

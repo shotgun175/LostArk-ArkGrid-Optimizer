@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { ArkGridGem } from '../lib/models/arkGridGems';
   import {
-    BASELINE_MAX_GRADE,
     BASELINE_MIN_GRADE,
-    GRADE_ROWS,
     type GemRole,
+    baselineMaxGrade,
+    gradeRowIndex,
+    gradeRows,
     rankFromGrade,
   } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
@@ -25,14 +26,17 @@
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
   let auto: number | null = $derived(autoBaselineFromLoadout(equipped, role));
-  // Baseline is a 0-100 GRADE on shizukaziye's rank ladder (GRADE_ROWS, C- … S+), shown as a letter
-  // tier. Both the Gem Triage split and the Cutting Plan target read this same value.
-  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride));
-  let baselineTier = $derived(rankFromGrade(baseline));
+  // Baseline is a GRADE on shizukaziye's per-axis baseline ladder (gradeRows(role), C- … S+), shown as
+  // a letter tier. Both the Gem Triage split and the Cutting Plan target read this same value.
+  let rows = $derived(gradeRows(role));
+  let maxGrade = $derived(baselineMaxGrade(role));
+  let baseline = $derived(effectiveBaseline(auto, build.baselineOverride, role));
+  let baselineTier = $derived(rankFromGrade(baseline, role));
+  let baselineIdx = $derived(gradeRowIndex(baseline, role));
   let usingOverride = $derived(
     build.baselineOverride !== undefined &&
       build.baselineOverride >= BASELINE_MIN_GRADE &&
-      build.baselineOverride <= BASELINE_MAX_GRADE
+      build.baselineOverride <= maxGrade
   );
 
   // Clear a stale out-of-range override (e.g. a pre-grade-migration % value ≤ 2) so the control and
@@ -40,14 +44,16 @@
   $effect(() => {
     if (
       build.baselineOverride !== undefined &&
-      (build.baselineOverride < BASELINE_MIN_GRADE || build.baselineOverride > BASELINE_MAX_GRADE)
+      (build.baselineOverride < BASELINE_MIN_GRADE || build.baselineOverride > maxGrade)
     ) {
       updateBaselineOverride(undefined);
     }
   });
 
+  // The ladder is not evenly spaced (thirds of 10, then the S+ cut), so the slider walks row INDEXES.
   function onSlider(e: Event) {
-    updateBaselineOverride(Number((e.target as HTMLInputElement).value));
+    const idx = Number((e.target as HTMLInputElement).value);
+    updateBaselineOverride(rows[Math.max(0, Math.min(rows.length - 1, idx))]);
   }
   function reset() {
     updateBaselineOverride(undefined);
@@ -69,25 +75,27 @@
     class="bl-slider"
     type="range"
     aria-label="Baseline tier"
-    min={BASELINE_MIN_GRADE}
-    max={BASELINE_MAX_GRADE}
-    step="5"
-    value={baseline}
+    aria-valuetext={baselineTier}
+    min="0"
+    max={rows.length - 1}
+    step="1"
+    value={baselineIdx}
     oninput={onSlider}
   />
   <div class="slider-ticks">
-    {#each GRADE_ROWS as g}
+    {#each rows as g}
       <button
         type="button"
         class="slider-tick"
         class:active={g === baseline}
-        onclick={() => updateBaselineOverride(g)}>{rankFromGrade(g)}</button
+        onclick={() => updateBaselineOverride(g)}>{rankFromGrade(g, role)}</button
       >
     {/each}
   </div>
   <div class="bl-hint">
     {#if auto === null && !usingOverride}
-      Use Optimize in Gem Triage to auto-set this from your equipped loadout, or pick a tier to set it manually.
+      Use Optimize in Gem Triage to auto-set this from your equipped loadout, or pick a tier to set
+      it manually.
     {:else}
       Gems at tier {baselineTier} or better are upgrades; the Cutting Plan targets this tier.
     {/if}

@@ -1,10 +1,15 @@
 // Gem scoring in REAL % DAMAGE (log space). Each gem line is scored as
 //   D = 100 · ln(multiplier)   ≈ % damage gain, additive in log space.
-// The grade (0-100 + S/A/B letter rank) folds willpower in MULTIPLICATIVELY so every
-// base cost's perfect gem ties at 100. This re-implements the model published by
-// shizukaziye (astrogem-calculator, model/astrogem.js + METHODOLOGY.md); the per-line
-// D values are derived in code from documented stat baselines so the assumptions stay
-// editable. Re-implemented from the methodology, not copied.
+// The grade (0-100+, letter rank) is shizukaziye's 2026-08-10 roster-bound model: willpower enters as
+// an ADDITIVE fitted credit per effective cost (K tables fitted on ~117k DPS / ~107k support simulated
+// roster-bound accounts against an exact grid packer), the scale is anchored so the worst legal gem is
+// 0 and the MEAN of the perfect Ark Grid layout (3 c8 + 3 c9 + 6 c10) is 100 (open above: perfect
+// c8/c9/c10 grade 96.1/99.7/102.1 DPS, 94.6/98.2/103.6 support), and the letter ladder is even thirds
+// of 10-point bands with S+ pinned at each axis's perfect c8. This re-implements the model published
+// by shizukaziye (loastuff/loa-astrogem-calc, model/astrogem.js + docs/how-a-gem-is-graded.md); the
+// per-line D values are derived in code from documented stat baselines so the assumptions stay
+// editable. Re-implemented from the methodology, not copied; src/lib/advisor/advisorDp.test.ts is the
+// drift guard that pins it to the vendored astrogem.js grade for grade.
 //
 // Type-only import keeps this module runnable under node (the support-table generator
 // imports it; arkGridGems.ts itself uses Vite-only import.meta.glob).
@@ -49,7 +54,7 @@ const WILLPOWER_NEUTRAL = 4; // willpower cost 4 is the zero point
 // per-DPS efficiency). The ×3 party benefit is reapplied ONLY at the gold step — which for us lives
 // in the baked cut-plan (pipeline-support.json), so no ×3 belongs here. Willpower is a per-DPS ratio
 // (not a party buff), so it is NOT divided — just the 2/3 factor.
-export const SUPPORT_ORDER_D = 0.0747 / 3; // support order, flat per point (party buff ÷3 = 0.0249)
+export const SUPPORT_ORDER_D = 0.0769 / 3; // support order, flat per point (party buff ÷3 = 0.0256)
 export const SUPPORT_WILLPOWER_FACTOR = 2 / 3; // support willpower = (2/3) × the DPS willpower term
 
 export const DPS_EFFECT_D: Record<ArkGridGemOptionName, number> = {
@@ -60,10 +65,11 @@ export const DPS_EFFECT_D: Record<ArkGridGemOptionName, number> = {
   AllyAttackEnh: 0,
   AllyDamageEnh: 0,
 };
+// Re-derived 2026-08 against the corrected support-buff model (his accessory calculator, METHODOLOGY §3).
 export const SUPPORT_EFFECT_D: Record<ArkGridGemOptionName, number> = {
-  AllyAttackEnh: 0.0596 / 3, // party attack buff ÷3 (per-DPS)
-  BrandPower: 0.0434 / 3, // brand amp ÷3
-  AllyDamageEnh: 0.0195 / 3, // party damage buff ÷3
+  AllyAttackEnh: 0.0586 / 3, // party attack buff ÷3 (per-DPS)
+  BrandPower: 0.0437 / 3, // brand amp ÷3
+  AllyDamageEnh: 0.0214 / 3, // party damage buff ÷3
   AtkPower: 0,
   AddDamage: 0,
   BossDamage: 0,
@@ -106,48 +112,73 @@ function gemDamage(gem: ScoredGem, role: GemRole): number {
   );
 }
 
-// ---- Willpower as a MULTIPLIER on damage (the grading model) ----
-// M(cost) is calibrated so each base cost's PERFECT gem (top-2 effects @5, order 5, the
-// best willpower cost) ties at the top; cost 6+ continues linearly at the cost-4→5 slope.
-function perfectDamage(role: GemRole, baseCost: number): number {
-  const ranked = EFFECT_POOLS[baseCost].map((t) => effectD(role, t) * 5).sort((a, b) => b - a);
-  return ranked[0] + ranked[1] + 5 * orderPerPoint(role);
-}
-function buildWpMult(role: GemRole): Record<number, number> {
-  const M: Record<number, number> = {
-    3: perfectDamage(role, 10) / perfectDamage(role, 8),
-    4: perfectDamage(role, 10) / perfectDamage(role, 9),
-    5: 1,
-  };
-  const slope = M[4] - M[5];
-  for (let c = 6; c <= 9; c++) M[c] = 1 - slope * (c - 5);
-  return M;
-}
-const WP_MULT: Record<GemRole, Record<number, number>> = {
-  dps: buildWpMult('dps'),
-  support: buildWpMult('support'),
+// ---- Willpower as an ADDITIVE fitted credit (the grading model) ----
+// K[effective cost] is the packer's revealed price of willpower budget on the roster-bound world:
+// costs 3 and 4 earn a bonus, 5 is neutral, 6-9 are taxed harder and harder (a cost-9 gem is essentially
+// never socketed, so its price is an upper bound). Support's table is ~5x smaller only because support
+// effect lines are ~5x smaller; the shape is the same. Non-integer costs interpolate (baseline math).
+const DPS_WP_CREDIT: Record<number, number> = {
+  3: 0.1327,
+  4: 0.0896,
+  5: 0,
+  6: -0.1203,
+  7: -0.2504,
+  8: -0.397,
+  9: -0.5686,
 };
-function willpowerMultiplier(role: GemRole, cost: number): number {
-  const M = WP_MULT[role];
-  if (cost <= 3) return M[3];
-  if (cost >= 9) return M[9];
-  if (M[cost] != null) return M[cost];
+const SUPPORT_WP_CREDIT: Record<number, number> = {
+  3: 0.0252,
+  4: 0.015,
+  5: 0,
+  6: -0.0235,
+  7: -0.0593,
+  8: -0.0986,
+  9: -0.1346,
+};
+/** Support's fitted order weight for the GRADING value (its damage weight is SUPPORT_ORDER_D). */
+export const SUPPORT_VALUE_ORDER_D = 0.02879;
+/** DPS order is pinned at its exact damage weight and centered at level 4 (4 adds nothing). */
+const ORDER_VALUE_NEUTRAL = 4;
+
+function willpowerCredit(role: GemRole, cost: number): number {
+  const K = role === 'support' ? SUPPORT_WP_CREDIT : DPS_WP_CREDIT;
+  if (cost <= 3) return K[3];
+  if (cost >= 9) return K[9];
+  if (K[cost] != null) return K[cost];
   const lo = Math.floor(cost); // non-integer (e.g. 4.25 neutral): interpolate
-  return M[lo] + (M[lo + 1] - M[lo]) * (cost - lo);
+  return K[lo] + (K[lo + 1] - K[lo]) * (cost - lo);
 }
 
-/** Grading value = gem damage × willpower multiplier (every perfect gem ties at the top). */
+/** Grading value = effects + order (DPS centered at 4; support at its fitted weight) + willpower credit. */
 function gemValue(gem: ScoredGem, role: GemRole): number {
-  return gemDamage(gem, role) * willpowerMultiplier(role, gem.req);
+  const effects =
+    effectD(role, gem.option1.optionType) * gem.option1.value +
+    effectD(role, gem.option2.optionType) * gem.option2.value;
+  const order =
+    role === 'support'
+      ? SUPPORT_VALUE_ORDER_D * gem.point
+      : D_ORDER * (gem.point - ORDER_VALUE_NEUTRAL);
+  return effects + order + willpowerCredit(role, gem.req);
 }
 
-// Global min/max gemValue over the whole gem space (per role), for the 0-100 grade.
-const _valueBounds: Partial<Record<GemRole, { min: number; max: number }>> = {};
-function valueBounds(role: GemRole): { min: number; max: number } {
-  const cached = _valueBounds[role];
+/** The perfect gem of a base cost for a role: its top-2 effects at 5, order 5, willpower 5. */
+function perfectGem(role: GemRole, baseCost: number): ScoredGem {
+  const top = [...EFFECT_POOLS[baseCost]].sort((a, b) => effectD(role, b) - effectD(role, a));
+  return {
+    req: baseCost - 5,
+    point: 5,
+    option1: { optionType: top[0], value: 5 },
+    option2: { optionType: top[1], value: 5 },
+  };
+}
+
+// The grade scale per role: 0 = the worst legal gem, 100 = the mean value of the perfect Ark Grid
+// layout (3 perfect c8 + 3 perfect c9 + 6 perfect c10, the wp5 5+5+4+3 = 17 packing per core).
+const _scale: Partial<Record<GemRole, { min: number; anchor: number }>> = {};
+function valueScale(role: GemRole): { min: number; anchor: number } {
+  const cached = _scale[role];
   if (cached) return cached;
   let min = Infinity;
-  let max = -Infinity;
   for (const baseCost of [8, 9, 10]) {
     const pool = EFFECT_POOLS[baseCost];
     for (let i = 0; i < pool.length; i++)
@@ -167,61 +198,86 @@ function valueBounds(role: GemRole): { min: number; max: number } {
                   role
                 );
                 if (v < min) min = v;
-                if (v > max) max = v;
               }
         }
   }
-  const bounds = { min, max };
-  _valueBounds[role] = bounds;
-  return bounds;
+  const anchor =
+    (3 * gemValue(perfectGem(role, 8), role) +
+      3 * gemValue(perfectGem(role, 9), role) +
+      6 * gemValue(perfectGem(role, 10), role)) /
+    12;
+  const scale = { min, anchor };
+  _scale[role] = scale;
+  return scale;
 }
 
-/** 0-100 grade (rounded to 1 decimal): 0 = worst possible gem, 100 = a perfect gem. */
+/**
+ * Grade (rounded to 1 decimal): 0 = worst possible gem, 100 = the perfect-grid mean; open above 100
+ * (a perfect c10 reads 102.1 DPS / 103.6 support), clamped at 110 like the reference model.
+ */
 export function grade(gem: ScoredGem, role: GemRole): number {
-  const b = valueBounds(role);
-  const g = (100 * (gemValue(gem, role) - b.min)) / (b.max - b.min);
-  return Math.round(Math.max(0, Math.min(100, g)) * 10) / 10;
+  const { min, anchor } = valueScale(role);
+  const g = (100 * (gemValue(gem, role) - min)) / (anchor - min);
+  return Math.round(Math.max(0, Math.min(110, g)) * 10) / 10;
 }
 
-// Cutoffs synced to shizukaziye's recalibrated multiplicative grade (astrogem-calculator,
-// model/astrogem.js): S85 / A70 / B55 / C40 / D20 / F0.
-const RANK_CUTS: [string, number][] = [
-  ['S', 85],
-  ['A', 70],
-  ['B', 55],
-  ['C', 40],
-  ['D', 20],
-  ['F', 0],
+// ---- Letter ladder (shizukaziye 2026-08-10, percentile-aware bands) ----
+// Even thirds of each 10-point band from 50 up (D 50/53.3/56.7, C 60/…, B 70/…, A 80/83.3/86.7,
+// S 90/93.3/S+), F = thirds of 0-50. The S+ cut is the AXIS'S PERFECT 8-COST grade, derived from the
+// model so a refit moves it: 96.1 DPS, 94.6 support ("every perfect gem is S+ on its axis").
+const _sPlusCut: Partial<Record<GemRole, number>> = {};
+/** The S+ cut for a role: the grade of that role's perfect cost-8 gem. */
+export function sPlusCut(role: GemRole): number {
+  return (_sPlusCut[role] ??= grade(perfectGem(role, 8), role));
+}
+const RANK_LADDER_TAIL: [GemRank, number][] = [
+  ['S', 93.3],
+  ['S-', 90],
+  ['A+', 86.7],
+  ['A', 83.3],
+  ['A-', 80],
+  ['B+', 76.7],
+  ['B', 73.3],
+  ['B-', 70],
+  ['C+', 66.7],
+  ['C', 63.3],
+  ['C-', 60],
+  ['D+', 56.7],
+  ['D', 53.3],
+  ['D-', 50],
+  ['F+', 33.3],
+  ['F', 16.7],
+  ['F-', 0],
 ];
-/** Letter rank from a 0-100 grade; each band split into −/·/+ thirds for finer granularity. */
-export function rankFromGrade(g: number): GemRank {
-  for (let i = 0; i < RANK_CUTS.length; i++) {
-    const [letter, lo] = RANK_CUTS[i];
-    if (g >= lo) {
-      const hi = i === 0 ? 100 : RANK_CUTS[i - 1][1];
-      const t = hi > lo ? (g - lo) / (hi - lo) : 0;
-      return letter + (t >= 2 / 3 ? '+' : t < 1 / 3 ? '-' : '');
-    }
-  }
+/** Letter rank from a grade. The ladders differ per role only in where S+ starts. */
+export function rankFromGrade(g: number, role: GemRole = 'dps'): GemRank {
+  if (g >= sPlusCut(role)) return 'S+';
+  for (const [letter, lo] of RANK_LADDER_TAIL) if (g >= lo) return letter;
   return 'F-';
 }
 
 // Shizukaziye's baseline rank ladder: the 12 grade anchors his exact-DP cut pipeline bakes ONE solve
-// per (each maps 1:1 to a distinct rank, C- … S+, under the RANK_CUTS above). pipeline.json's
-// meta.baselines is now per-axis (Record<CutAxis, number[]>): meta.baselines[axis][i] is the % damage
-// this grade anchor was baked at for that role (his gradeToScore/supportGradeToScore(GRADE_ROWS[i])),
-// so the Cutting Plan reads cell i by exact key lookup. KEEP ALIGNED with each meta.baselines[axis]
-// array (same length, same order). Used as the shared triage/cut-plan baseline ladder.
-export const GRADE_ROWS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95] as const;
-export const BASELINE_MIN_GRADE = GRADE_ROWS[0];
-export const BASELINE_MAX_GRADE = GRADE_ROWS[GRADE_ROWS.length - 1];
+// per, C- … S+ (one distinct rank each), the last one being the axis's own S+ cut. pipeline.json's
+// meta.baselines is per-axis (Record<CutAxis, number[]>): meta.baselines[axis][i] is the value this
+// grade anchor was baked at for that role (his gradeToScore/supportGradeToScore(rows[i])), so the
+// Cutting Plan reads cell i by exact key lookup. KEEP ALIGNED with each meta.baselines[axis] array
+// (same length, same order). Used as the shared triage/cut-plan baseline ladder.
+const GRADE_ROWS_HEAD = [60, 63.3, 66.7, 70, 73.3, 76.7, 80, 83.3, 86.7, 90, 93.3] as const;
+export function gradeRows(role: GemRole): readonly number[] {
+  return [...GRADE_ROWS_HEAD, sPlusCut(role)];
+}
+export const BASELINE_MIN_GRADE = GRADE_ROWS_HEAD[0];
+export function baselineMaxGrade(role: GemRole): number {
+  return sPlusCut(role);
+}
 
-/** Nearest GRADE_ROWS index to a grade (exact when on an anchor, else closest by value). */
-export function gradeRowIndex(grade: number): number {
+/** Nearest baseline-row index to a grade for a role (exact when on an anchor, else closest by value). */
+export function gradeRowIndex(grade: number, role: GemRole): number {
+  const rows = gradeRows(role);
   let best = 0;
   let bestD = Infinity;
-  for (let i = 0; i < GRADE_ROWS.length; i++) {
-    const d = Math.abs(GRADE_ROWS[i] - grade);
+  for (let i = 0; i < rows.length; i++) {
+    const d = Math.abs(rows[i] - grade);
     if (d < bestD) {
       bestD = d;
       best = i;
@@ -231,16 +287,17 @@ export function gradeRowIndex(grade: number): number {
 }
 
 /**
- * A grade bumped ONE rank up on the GRADE_ROWS ladder (shizukaziye's bumpedBaselineGrade): the baseline
+ * A grade bumped ONE rank up on the baseline ladder (shizukaziye's bumpedBaselineGrade): the baseline
  * a gem must beat to be a real upgrade is one rank above the gem itself. Finds the anchor whose rank
  * matches the gem's rank (each anchor is a distinct rank), steps +1, clamped at the top (S+). An
- * off-ladder grade (rank below C-) snaps to the nearest anchor first. Returns a GRADE_ROWS value.
+ * off-ladder grade (rank below C-) snaps to the nearest anchor first. Returns a ladder value.
  */
-export function bumpedBaselineGrade(grade: number): number {
-  const rank = rankFromGrade(grade);
-  let idx = GRADE_ROWS.findIndex((g) => rankFromGrade(g) === rank);
-  if (idx < 0) idx = gradeRowIndex(grade);
-  return GRADE_ROWS[Math.min(idx + 1, GRADE_ROWS.length - 1)];
+export function bumpedBaselineGrade(grade: number, role: GemRole): number {
+  const rows = gradeRows(role);
+  const rank = rankFromGrade(grade, role);
+  let idx = rows.findIndex((g) => rankFromGrade(g, role) === rank);
+  if (idx < 0) idx = gradeRowIndex(grade, role);
+  return rows[Math.min(idx + 1, rows.length - 1)];
 }
 
 /** The %-damage zero-point: a willpower-4.25 / order-4.25 gem with dead side effects. */
@@ -253,7 +310,7 @@ export interface GemScoreResult {
   score: number;
   /** Exact multiplicative % damage of the gem (effects + order, no willpower). */
   damagePercent: number;
-  /** Grading value (damage × willpower multiplier); drives the grade. */
+  /** Grading value (effects + order + additive willpower credit); drives the grade. */
   gemValue: number;
   /** 0-100 grade. */
   grade: number;
@@ -281,7 +338,7 @@ export function computeGemScore(gem: ArkGridGem, role: GemRole): GemScoreResult 
     damagePercent: (Math.exp(gemDamage(gem, role) / 100) - 1) * 100,
     gemValue: gemValue(gem, role),
     grade: g,
-    rank: rankFromGrade(g),
+    rank: rankFromGrade(g, role),
     relDamage: score - cpBaseline(role),
     contributions: { willpower, point, option1, option2 },
   };
