@@ -230,7 +230,8 @@ const _sPlusCut: Partial<Record<GemRole, number>> = {};
 export function sPlusCut(role: GemRole): number {
   return (_sPlusCut[role] ??= grade(perfectGem(role, 8), role));
 }
-const RANK_LADDER_TAIL: [GemRank, number][] = [
+/** The letter ladder below S+ (shared by both axes); exported so the drift guard can pin it whole. */
+export const RANK_LADDER_TAIL: [GemRank, number][] = [
   ['S', 93.3],
   ['S-', 90],
   ['A+', 86.7],

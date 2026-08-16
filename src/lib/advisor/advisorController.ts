@@ -42,8 +42,9 @@ export interface ParsedAdvisorState {
   ocrDegraded?: boolean;
   /**
    * On-screen width of the Processing window in the captured frame, in pixels. The best single
-   * predictor of read quality: the same client measures 97.7% of fields correct at ~925px and 95.5%
-   * at ~677px, because Force 21:9 letterboxes the UI and shrinks every glyph with it.
+   * predictor of read quality: the same client measures 99.7% of fields correct at ~925px and 99.1%
+   * at ~677px with about three times the "confirm me" flags (2026-08 re-sync numbers), because Force
+   * 21:9 letterboxes the UI and shrinks every glyph with it.
    */
   panelWidth?: number;
 }

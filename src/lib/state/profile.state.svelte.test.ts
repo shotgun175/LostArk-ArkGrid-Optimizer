@@ -158,6 +158,16 @@ describe('migrateProfile', () => {
     expect(p1).toEqual(snapshot);
   });
 
+  it('marks builds created at runtime as new-ladder, so a fresh override survives the next load', () => {
+    const p = initNewProfile('Fresh');
+    expect(p.builds.dps.baselineLadder).toBe(2);
+    expect(p.builds.support.baselineLadder).toBe(2);
+    // an in-session A- (80) must still be A- after the read-time migration runs on it
+    p.builds.dps.baselineOverride = 80;
+    migrateProfile(p as any);
+    expect(p.builds.dps.baselineOverride).toBe(80);
+  });
+
   it('drops an override that is off both ladders (a pre-grade % value or out of range)', () => {
     const profile = {
       characterName: 'Stale',

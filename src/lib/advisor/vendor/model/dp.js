@@ -20,7 +20,8 @@
  * Together they take DP wall time down ~57%: the guard battery 10.34 s -> 4.45 s, and alternating
  * A/B in one process, a single epic solve 7.2-7.6 s -> 3.1 s (-56% to -59%), rare and uncommon -50%.
  * Patch 6 is a semantic guard, not a speed-up: it keeps one fresh Solver per advice query where the
- * 2026-08 upstream reuses a cached one (see it for the measurement). The golden is therefore dumped
+ * 2026-08 upstream reuses a cached one (see it for the two measured mechanisms: a base-cost memo-key
+ * collision worth whole percents, and a 1-ULP class-sharing residual). The golden is therefore dumped
  * from pristine upstream WITH reuse defeated (a fresh Solver per query), which is what pristine
  * upstream computed before acquireSolver existed.
  *
@@ -837,13 +838,24 @@
     // (includeSim2 shapes only the top-level action list, never W itself, so it is
     // deliberately NOT part of the reuse key.)
     // LOCAL PATCH 6 - FRESH SOLVER PER QUERY: upstream's acquireSolver (2026-08-09) hands a later
-    // query the solver an earlier one built when the six params match. Measured on our same-tuple
-    // probe (every battery state at one baseline/gpd/axis, roster-bound on and off): 61 of 84 rows
-    // change vs a fresh solver, and not by ULPs (a Process value moves ~4%, aboveBaselineOdds 0.514
-    // -> 0.498), while a fresh solver reproduces the pre-reuse upstream engine bit for bit. So reuse
-    // makes advice depend on what was asked before; the same board must always get the same answer.
-    // The five allocation patches above already carry the speed. Upstream's acquireSolver is left in
-    // place (dead) so the diff to upstream stays a hunk, not a rewrite.
+    // query the solver an earlier one built when the six params match. Two mechanisms make that
+    // history-dependent, both measured 2026-08-16:
+    //  (a) neither configKey nor the acquire key carries baseCost, while gemValue depends on it
+    //      through the effect pool and the willpower credit, so a c8 cut followed by a c10 cut at the
+    //      same baseline/gpd/axis/rarity reads the c8 memo: on our same-tuple probe (every battery
+    //      state at one tuple, roster-bound on and off) 61 of 84 rows change vs a fresh solver, by
+    //      whole percents (a Process value moves ~4%, aboveBaselineOdds 0.514 -> 0.498). Adding
+    //      baseCost to the acquire key removes ALL of that (0 of 84 differ);
+    //  (b) even keyed by baseCost, class-equivalent configs share memo records, so a second gem of
+    //      the same base cost reads values computed on another gem's arithmetic path: on a 25-turn
+    //      three-cut session probe 8 rows differ by 1 ULP on `value` (rankings unchanged).
+    // A fresh solver reproduces the pre-reuse upstream engine bit for bit, and the DP bar here is
+    // bit-identical (same board in, same answer out, whatever was asked before), so reuse stays out.
+    // The price is known: that same 25-turn session runs 11.8 s fresh vs 3.5 s keyed-reuse (turn 2 of
+    // an epic 1.1 s vs 8 ms); the five allocation patches above and the worker's exact-state cache
+    // carry the speed we do have. Upstream's acquireSolver is left in place (dead) so the diff to
+    // upstream stays a hunk, not a rewrite. If reuse is ever adopted, key it on baseCost AND accept
+    // the 1-ULP class-sharing residual explicitly, with the golden re-dumped under the same rule.
     var solver = new Solver(baseline, goldPerDamage, rb, { drawModel: options.drawModel, maxTurns: state.maxTurns, axis: options.axis });
     var nodes0 = solver.nodes;   // report this query's own work, not the cache's lifetime
     var config = cloneConfig(state.config);

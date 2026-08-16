@@ -161,10 +161,12 @@ export function initNewProfile(name: string): CharacterProfile {
       dps: {
         cores: initBuildCores(false),
         solveInfo: {},
+        baselineLadder: 2,
       },
       support: {
         cores: initBuildCores(true),
         solveInfo: {},
+        baselineLadder: 2,
       },
     },
     activeBuild: 'dps',
@@ -339,7 +341,11 @@ export function resetCore(attr: ArkGridAttr, ctype: ArkGridCoreType) {
 }
 
 export function updateBaselineOverride(baseline: number | undefined) {
-  activeBuildState().baselineOverride = Number.isFinite(baseline) ? baseline : undefined;
+  const build = activeBuildState();
+  build.baselineOverride = Number.isFinite(baseline) ? baseline : undefined;
+  // Anything written at runtime is on the current ladder. Without this a build created in-session
+  // (no marker yet) would have its fresh override re-mapped as an OLD-ladder value on the next load.
+  build.baselineLadder = 2;
 }
 
 export function updateGoldPer1Pct(bracket: import('../cutplan/types').GoldBracket) {

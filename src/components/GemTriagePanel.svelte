@@ -416,7 +416,7 @@
                   </span>
                 </span>
               </span>
-              <span class="rank" data-rank={row.rank} title="Grade {row.grade} / 100"
+              <span class="rank" data-rank={row.rank} title="Grade {row.grade}"
                 >{row.rank}</span
               >
               <span class="action" data-action={row.action}>{ACTION_LABEL[row.action]}</span>

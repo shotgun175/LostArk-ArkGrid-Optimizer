@@ -158,9 +158,10 @@ describe('vendored dp.js local patches', () => {
 
   it('still builds a fresh Solver per advice query instead of reusing a cached one', () => {
     // Upstream's acquireSolver (2026-08-09) reuses a solver across queries when the six params
-    // match. Measured on a same-tuple probe it changes 61 of 84 rows against a fresh solver, by
-    // whole percents rather than ULPs, so advice would depend on what was asked before. The
-    // pristine golden is dumped with reuse defeated for the same reason.
+    // match. Its key omits baseCost (a c8 then a c10 at the same tuple reads the c8 memo: 61 of 84
+    // same-tuple probe rows move by whole percents), and even keyed by baseCost class-equivalent
+    // configs share memo records (1-ULP residual on 8 of 25 rows of a three-cut session), so advice
+    // would depend on what was asked before. The pristine golden is dumped with reuse defeated.
     expect(SRC).toContain('LOCAL PATCH 6 - FRESH SOLVER PER QUERY');
     expect(SRC).toMatch(
       /var solver = new Solver\(baseline, goldPerDamage, rb, \{ drawModel: options\.drawModel, maxTurns: state\.maxTurns, axis: options\.axis \}\);/

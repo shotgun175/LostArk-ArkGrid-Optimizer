@@ -12,7 +12,13 @@ import { describe, expect, it } from 'vitest';
 import type { ArkGridGem } from '../models/arkGridGems';
 import type { ArkGridGemOptionName } from '../models/arkGridGemSpecs';
 import pipeline from '../cutplan/pipeline.json';
-import { type GemRole, computeGemScore, gradeRows, sPlusCut } from '../scoring/gemScore';
+import {
+  type GemRole,
+  RANK_LADDER_TAIL,
+  computeGemScore,
+  gradeRows,
+  sPlusCut,
+} from '../scoring/gemScore';
 import { DP_FIXTURES } from './advisorDp.fixtures';
 
 const require = createRequire(import.meta.url);
@@ -90,8 +96,10 @@ describe('advisor vendor: scoring drift guard (vendored astrogem.js vs our gemSc
   it('his gradeToScore anchors match our baked pipeline baselines (both axes stay in lockstep)', () => {
     // The vendored inverse over OUR baseline ladder must reproduce the baked meta.baselines[axis]
     // exactly (that is how the Cutting Plan reads a cell by grade), and the two S+ cuts must agree.
-    expect(A.RANK_LADDER[0][1]).toBe(sPlusCut('dps'));
-    expect(A.SUPPORT_RANK_LADDER[0][1]).toBe(sPlusCut('support'));
+    // The whole letter ladder, not just the S+ pin: an upstream re-tune of the band cuts must fail here.
+    const ours = (role: GemRole) => [['S+', sPlusCut(role)], ...RANK_LADDER_TAIL];
+    expect(A.RANK_LADDER).toEqual(ours('dps'));
+    expect(A.SUPPORT_RANK_LADDER).toEqual(ours('support'));
     for (const axis of ['dps', 'support'] as const) {
       const rows = gradeRows(axis);
       const baked = pipeline.meta.baselines[axis];

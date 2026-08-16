@@ -16,7 +16,7 @@ export interface TriageResult {
   rationale: string;
 }
 
-// The baseline is a 0-100 GRADE on shizukaziye's rank ladder (GRADE_ROWS, ranks C- … S+), shown as a
+// The baseline is a GRADE on shizukaziye's per-axis baseline ladder (gradeRows(role), C- … S+), shown as a
 // letter tier. It is the ONE value both the Gem Triage upgrade/keep/remove split and the Cutting Plan
 // target read, so the two panels stay tied together as the user moves the shared control.
 

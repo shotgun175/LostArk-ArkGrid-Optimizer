@@ -423,12 +423,10 @@ describe('fuse-first (purple)', () => {
     expect(cell.resetWorthy).toBe(false);
   });
 
-  // Golden: the fuse-first grid across the ladder (DPS / Global / 1.5M / Non-Roster-Bound). Originally
-  // read off his live page on 2026-07-19 (old ladder: at C- ONLY rare/10 purple; at A- rare/8 purple,
-  // rare/10 not). Re-derived from the 2026-08-10 bake at the same RANK positions: the C- row is
-  // unchanged (only rare/10), the A- row now fuses every uncommon and rare cost (r10 included), and
-  // from A+ up nothing fuses. These cross-checks prove the port tracks BOTH the rarity/cost and the
-  // baseline dimensions.
+  // Regression pin for the fuse-first grid across the ladder (DPS / Global / 1.5M / Non-Roster-Bound).
+  // The C- row was read off his live page on 2026-07-19 (only rare/10 purple) and is unchanged under the
+  // 2026-08-10 bake; the A- and A+ rows below are re-derived from that bake itself (not an independent
+  // oracle), so they pin OUR current behavior against accidental change rather than prove parity.
   it('tracks the fuse-first grid across rarity/cost and baseline at DPS / 1.5M / NRB', () => {
     const bf = (rarity: 'uncommon' | 'rare' | 'epic', cost: number, grade: number) => {
       const ff = unopenedFusion(real, 'dps', GPD, at(grade));

@@ -85,8 +85,8 @@
     (build.solveInfo.after?.solveAnswer?.assignedGems ?? []).flat()
   );
   let auto = $derived(autoBaselineFromLoadout(equipped, role));
-  // Baseline is a GRADE tier (the same value the Gem Triage uses). The DP data is keyed by the % damage
-  // each grade anchor was baked at, so convert grade -> baked % (exact key lookup) before reading cells.
+  // Baseline is a GRADE tier (the same value the Gem Triage uses). The DP data is keyed by the gem VALUE
+  // each grade anchor was baked at, so convert grade -> baked value (exact key lookup) before reading cells.
   let baseline = $derived(effectiveBaseline(auto, build.baselineOverride, axis));
   // Baselines are per-axis: DPS and support cells are baked at different % scales, so read the
   // axis-matching anchor array (using the shared DPS array for support clamps every cell to 0).
@@ -268,8 +268,9 @@
             </div>
           </div>
           <p class="ch-note">
-            Values are shizukaziye's exact Bellman-DP pipeline (real % damage), interpolated at your
-            baseline.
+            Values are shizukaziye's exact Bellman-DP pipeline, read at your baseline tier. Gold figures
+            are gold; the "avg value" in a cell's tooltip is the gem grading value (the same units the
+            grade is built on), not % damage.
           </p>
         </div>
       {/if}
