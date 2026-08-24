@@ -251,8 +251,7 @@
             per-cost credit rather than damage: costs 3 and 4 earn a bonus, 5 is neutral, 6 and up
             are taxed harder each step. Ranks are even thirds of 10-point bands (A- ≥ 80, A ≥ 83.3,
             A+ ≥ 86.7, and so on down to D- ≥ 50; F below), with S+ starting at the perfect 8-cost
-            of the axis (96.1 DPS, 94.6 Support). Same model as shizukaziye's calculator, so grades
-            match his.
+            of the axis (96.1 DPS, 94.6 Support). Grading model built on shizukaziye's calculator.
           </li>
         </ul>
         <div class="sh-ranks">

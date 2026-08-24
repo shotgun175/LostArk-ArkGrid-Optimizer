@@ -83,8 +83,9 @@
   <div class="group">
     <h4>Cutting Plan <span class="src">src/lib/cutplan/pipeline.json</span></h4>
     <p class="note">
-      Cut / reset / fuse values are shizukaziye's exact Bellman-DP pipeline (real % damage),
-      interpolated at your baseline. See the Cutting Plan glossary for the verdict bands.
+      Cut / reset / fuse values come from an exact Bellman-DP pipeline built on shizukaziye's model
+      (real % damage), interpolated at your baseline. See the Cutting Plan glossary for the verdict
+      bands.
     </p>
   </div>
 </details>

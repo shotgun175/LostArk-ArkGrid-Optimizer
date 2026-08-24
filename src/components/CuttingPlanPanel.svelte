@@ -303,7 +303,8 @@
             </div>
           </div>
           <p class="ch-note">
-            Values are shizukaziye's exact Bellman-DP pipeline, read at your baseline tier. Gold figures
+            Values come from an exact Bellman-DP pipeline built on shizukaziye's model, read at your
+            baseline tier. Gold figures
             are gold; the "avg value" in a cell's tooltip is the gem grading value (the same units the
             grade is built on), not % damage.
           </p>

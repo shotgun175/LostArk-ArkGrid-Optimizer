@@ -104,7 +104,7 @@ boundaries are.
   base (only the option coefficients differ), which is what lets the Cutting Plan apply one
   EV-based cut/reset/keep rule to both. The exact coefficients are listed in-app under
   **Assumptions / Tuning**.
-- **Grades match shizukaziye's calculator (2026-08 model).** A gem's grade is 0 for the worst legal
+- **Grades are built on shizukaziye's calculator (2026-08 model).** A gem's grade is 0 for the worst legal
   gem and 100 for the average gem of a perfect Ark Grid, so a perfect 10-cost reads slightly above
   100 and a perfect 8-cost slightly below; willpower enters as a fitted per-cost credit rather than a
   damage multiplier, and letter ranks are even thirds of 10-point bands with S+ starting at each
