@@ -6,6 +6,7 @@
     type AdvisorResult,
     type EditedAdvisorState,
     type ParsedAdvisorState,
+    adviceMargin,
     countUnconfirmed,
     parsedToEdited,
   } from '../../lib/advisor/advisorController';
@@ -309,6 +310,14 @@
       ? result.parsed.panelWidth
       : null
   );
+  // The parser's own ruler beats the width heuristic: scaleF 3 means the window had to be tripled to
+  // be legible, the one capture tier that (measured upstream, round 17) never parses clean. It gets
+  // the hard "recapture" warning; the width note stays as the softer fallback.
+  let tooSmallCapture = $derived((result?.parsed?.scaleF ?? 0) >= 3);
+  // Rule-of-thumb margin between the best action and the runner-up, plus the reset-pair table the
+  // DP returns whenever Reset is a live consideration.
+  let margin = $derived(adviceMargin(liveAdvice));
+  let resetCombos = $derived(liveAdvice?.resetCombos ?? null);
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
@@ -442,6 +451,37 @@
                   </div>
                 {/each}
               </div>
+              {#if margin}
+                <div class="rec-margin" class:stale={computing}>
+                  Rule of thumb: <b>{margin.best}</b> beats {margin.runnerUp} by
+                  <b>{fmtGold(margin.margin)}</b> EV here; {margin.clause}
+                </div>
+              {/if}
+              {#if resetCombos?.length}
+                <div class="reset-combos" class:stale={computing}>
+                  <div class="rc-title">⚠ Before pressing Reset in game</div>
+                  <p class="rc-note">
+                    The ranked Reset assumes the side effects come back unchanged, but a reset may
+                    re-roll them. Net value of a fresh cut per pair ({fmtGold(
+                      liveAdvice?.resetCost ?? 20000
+                    )} fee included):
+                  </p>
+                  <table class="rc-table">
+                    <tbody>
+                      {#each resetCombos as cb (cb.effect1 + '|' + cb.effect2)}
+                        <tr>
+                          <td class="rcp">
+                            {cb.effect1} + {cb.effect2}{#if cb.current}<span class="rc-cur">
+                                (current pair)</span
+                              >{/if}
+                          </td>
+                          <td class="rcv {cb.net >= 0 ? 'good' : 'bad'}">{fmtGold(cb.net)}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
             {:else}
               <div class="rec-empty">
                 Build your gem on the left (click any field) or read a screenshot, and the ranked
@@ -453,6 +493,10 @@
           <!-- 3. read your screen -->
           <div class="side-panel">
             <div class="side-title">Read your screen</div>
+            <p class="advisor-tip">
+              💡 Set in-game <b>brightness to about 70</b> before sharing or screenshotting; the
+              reader is tuned for it, and other brightness settings are a main cause of misreads.
+            </p>
             <div class="advisor-buttons">
               {#if captureSupported}
                 {#if !watching}
@@ -480,7 +524,14 @@
               {/if}
               <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={onPick} />
             </div>
-            {#if smallPanel}
+            {#if tooSmallCapture}
+              <div class="small-panel-note too-small" role="status">
+                <strong>Small capture:</strong> the Processing window is about a third of the size the
+                reader wants, and captures this small misread far more often. Recapture with the game
+                window larger, or crop to just the Processing panel; it will read much better. Parsed
+                anyway; check any highlighted fields closely.
+              </div>
+            {:else if smallPanel}
               <div class="small-panel-note">
                 The Processing window is only {smallPanel}px wide in this capture, which makes the
                 small level digits harder to read. If your game has
@@ -840,6 +891,68 @@
     font-size: 0.78rem;
     opacity: 0.7;
   }
+  /* Rule-of-thumb margin line under the action cards. */
+  .rec-margin {
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+    font-style: italic;
+    line-height: 1.4;
+    color: #b9c2d0;
+    transition: opacity 0.12s ease;
+  }
+  .rec-margin b {
+    color: #e6c266;
+    font-style: normal;
+  }
+  .rec-margin.stale,
+  .reset-combos.stale {
+    opacity: 0.5;
+  }
+  /* Reset-pair table: every side-effect pair a reset could land on, fee included. */
+  .reset-combos {
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in srgb, #d9a441 45%, transparent);
+    background: color-mix(in srgb, #d9a441 10%, transparent);
+    transition: opacity 0.12s ease;
+  }
+  .rc-title {
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: #ffe08a;
+  }
+  .rc-note {
+    margin: 0.25rem 0 0.35rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #cfd6e2;
+  }
+  .rc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .rc-table td {
+    padding: 0.12rem 0;
+  }
+  .rcp {
+    color: #dfe4ee;
+  }
+  .rc-cur {
+    opacity: 0.65;
+  }
+  .rcv {
+    text-align: right;
+    font-weight: 700;
+  }
+  .rcv.good {
+    color: #5fc94f;
+  }
+  .rcv.bad {
+    color: #e0533f;
+  }
   .small-panel-note {
     margin: 8px 0 0;
     padding: 7px 9px;
@@ -851,6 +964,22 @@
   }
   .small-panel-note strong {
     color: var(--text);
+  }
+  /* The hard "recapture larger" variant (parser scale factor 3): amber, not the soft accent. */
+  .small-panel-note.too-small {
+    border: 1px solid color-mix(in srgb, var(--warn, #d9a441) 55%, transparent);
+    border-left-width: 3px;
+    background: color-mix(in srgb, var(--warn, #d9a441) 12%, transparent);
+  }
+  /* Always-visible brightness tip above the capture buttons. */
+  .advisor-tip {
+    margin: 0 0 0.55rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: #b9c2d0;
+  }
+  .advisor-tip b {
+    color: #e6c266;
   }
   .rec-unconfirmed {
     margin: 0 0 8px;
