@@ -42,10 +42,12 @@
   );
   let bracket: GoldBracket = $derived(profile.goldPer1Pct ?? '2_5M');
   let goldPerDamage = $derived(GOLD_PER_DAMAGE[bracket]);
-  // Roster-bound advice (default ON, like upstream since 2026-08-10): the gem cannot be sold, so the
-  // solve treats processing gold as already committed and optimizes the gem; rerolls and Reset still
-  // price their real gold. Off = classic gold-EV advice. Persisted per profile.
-  let rosterBound = $derived(profile.advisorRosterBound ?? true);
+  // Roster-bound advice: the gem cannot be sold, so the solve treats processing gold as already
+  // committed and optimizes the gem; rerolls and Reset still price their real gold. Default OFF
+  // (owner call 2026-08-24): classic gold-EV advice, the mode shizukaziye's published tables
+  // (stop-cutting floors, pipeline economics) are computed in, so our numbers line up with his data
+  // out of the box. Toggling roster-bound on is persisted per profile.
+  let rosterBound = $derived(profile.advisorRosterBound ?? false);
   let inputs: AdviceInputs = $derived({
     baselineGrade,
     gpd: goldPerDamage,
