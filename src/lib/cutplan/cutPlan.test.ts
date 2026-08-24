@@ -7,6 +7,7 @@ import {
   bracketLabel,
   cellBreakdown,
   effectPair,
+  fuseRecipe,
   getCutCell,
   getThru,
   headerCut,
@@ -397,23 +398,28 @@ describe('fuse-first (purple)', () => {
   const at = (grade: number) => pipelineBaselineForGrade(grade, 'dps', real.meta.baselines.dps);
   const GPD = 1_500_000; // his default Pipeline gpd tier
 
-  it('unopenedFusion returns finite uncommon/rare fuse values and a null epic', () => {
+  it('unopenedFusion returns finite fuse values for all three rarities (epic lane, 2026-08)', () => {
     const ff = unopenedFusion(real, 'dps', GPD, at(60));
     expect(ff).not.toBeNull();
     expect(Number.isFinite(ff!.fuse.uncommon[8]!)).toBe(true);
     expect(Number.isFinite(ff!.fuse.rare[10]!)).toBe(true);
-    expect(ff!.fuse.epic[8]).toBeNull();
+    // The 1E+2UC lane: epic now carries a finite fuse value and its own steer cost.
+    expect(Number.isFinite(ff!.fuse.epic[8]!)).toBe(true);
     expect([8, 9, 10]).toContain(ff!.steer.rare[8]);
+    expect([8, 9, 10]).toContain(ff!.steer.epic[8]);
   });
 
-  it('isBlockFuse is false for roster-bound, epic, and null fuse data', () => {
+  it('isBlockFuse is false for roster-bound and null fuse data', () => {
     const ff = unopenedFusion(real, 'dps', GPD, at(60));
     // roster-bound gems are free to cut -> never fuse-first
     expect(isBlockFuse(real, 'dps', 'rare', 10, 'rb', GPD, at(60), ff)).toBe(false);
-    // epic never fuses
-    expect(isBlockFuse(real, 'dps', 'epic', 10, 'nrb', GPD, at(60), ff)).toBe(false);
     // no fuse data -> false
     expect(isBlockFuse(real, 'dps', 'rare', 10, 'nrb', GPD, at(60), null)).toBe(false);
+  });
+
+  it('fuseRecipe names the steered 1E+2UC recipe for a fuse-first epic block', () => {
+    const ff = unopenedFusion(real, 'dps', GPD, at(60));
+    expect(fuseRecipe(ff, 'epic', 10)).toMatch(/^this \+ 2x (8|9|10)-cost Uncommon$/);
   });
 
   it('getCutCell honors the blockFuse override', () => {
@@ -437,12 +443,26 @@ describe('fuse-first (purple)', () => {
     expect(bf('rare', 8, 60)).toBe(false);
     expect(bf('epic', 10, 60)).toBe(false);
     expect(bf('uncommon', 8, 60)).toBe(false);
-    // A- (80): the cheaper rare costs join in; epic still never fuses
+    // A- (80): the cheaper rare costs join in; epic is still worth opening here
     expect(bf('rare', 8, 80)).toBe(true);
     expect(bf('uncommon', 8, 80)).toBe(true);
     expect(bf('epic', 8, 80)).toBe(false);
-    // A+ (86.7) and up: nothing is fuse-first
+    // A+ (86.7): the UC/rare lanes are done, but the epic cost-steer lane (1E+2UC) fires for c8,
+    // whose open value has collapsed at this baseline while the fuse can still steer toward 9/10.
     expect(bf('rare', 8, 86.7)).toBe(false);
+    expect(bf('epic', 8, 86.7)).toBe(true);
+    // S- (90) and up at this gpd: nothing is fuse-first
+    expect(bf('epic', 8, 90)).toBe(false);
     expect(bf('rare', 10, 90)).toBe(false);
+  });
+
+  // The epic lane strengthens with gpd: at 2.5M the c8 epic block is still fuse-first at S- (90),
+  // steering its two Uncommons toward 10-cost output (oracle: scratch epic-purple-grid vs his
+  // pipeline.js unopenedFusion, 2026-08-24).
+  it('keeps the c8 epic block fuse-first at S- on the 2.5M tier', () => {
+    const gpd = 2_500_000;
+    const ff = unopenedFusion(real, 'dps', gpd, at(90));
+    expect(isBlockFuse(real, 'dps', 'epic', 8, 'nrb', gpd, at(90), ff)).toBe(true);
+    expect(ff!.steer.epic[8]).toBe(10);
   });
 });
