@@ -471,9 +471,9 @@
                       {#each resetCombos as cb (cb.effect1 + '|' + cb.effect2)}
                         <tr>
                           <td class="rcp">
-                            {cb.effect1} + {cb.effect2}{#if cb.current}<span class="rc-cur">
-                                (current pair)</span
-                              >{/if}
+                            {cb.effect1} + {cb.effect2}{#if cb.current}<span class="rc-cur"
+                              >(current pair)</span
+                            >{/if}
                           </td>
                           <td class="rcv {cb.net >= 0 ? 'good' : 'bad'}">{fmtGold(cb.net)}</td>
                         </tr>
@@ -942,6 +942,7 @@
   }
   .rc-cur {
     opacity: 0.65;
+    margin-left: 0.3em;
   }
   .rcv {
     text-align: right;
