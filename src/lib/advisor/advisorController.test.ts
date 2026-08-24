@@ -3,7 +3,7 @@
 // via advisorWatchDebug during a missed gem swap on a 677px Force-21:9 window (2026-08-04).
 import { describe, expect, it } from 'vitest';
 
-import { spikeBarFor, watchReadGate } from './advisorController';
+import { type AdvisorAdvice, adviceMargin, spikeBarFor, watchReadGate } from './advisorController';
 
 /** Shorthand: a polled frame after the first read, not busy, in the shape the gate takes. */
 const frame = (motion: number, content: number, stableFor: number, spikeSeen = true) => ({
@@ -107,5 +107,70 @@ describe('watchReadGate', () => {
     };
     expect(watchReadGate(first)).toBe(true);
     expect(watchReadGate({ ...first, stableFor: 300 })).toBe(false);
+  });
+});
+
+// --- resetCombos passthrough + the margin one-liner -----------------------------------------------
+const action = (name: string, value: number) => ({
+  name,
+  value,
+  expectedScore: 0.5,
+  expectedCost: 1000,
+  aboveBaselineOdds: 0.3,
+  description: '',
+});
+
+describe('AdvisorAdvice resetCombos passthrough', () => {
+  it('survives the structured clone the worker postMessage performs', () => {
+    const advice: AdvisorAdvice = {
+      bestAction: 'complete',
+      allActions: [action('Complete', 0), action('Reset', -3000)],
+      currentValue: 12000,
+      resetCost: 20000,
+      resetCombos: [
+        { effect1: 'Boss Damage', effect2: 'Attack Power', net: 4200, expectedScore: 0.7, current: false },
+        { effect1: 'Attack Power', effect2: 'Ally Damage Enh.', net: -800, expectedScore: 0.4, current: true },
+      ],
+    };
+    const cloned = structuredClone(advice);
+    expect(cloned.resetCombos).toHaveLength(2);
+    expect(cloned.resetCombos![0].net).toBe(4200);
+    expect(cloned.resetCombos![1].current).toBe(true);
+  });
+});
+
+describe('adviceMargin', () => {
+  it('states the margin between the top two finite actions with the winner clause', () => {
+    const m = adviceMargin({
+      bestAction: 'process',
+      allActions: [action('Process', 5000), action('Reroll', 3200), action('Complete', 0)],
+      currentValue: 0,
+      resetCost: null,
+    })!;
+    expect(m.best).toBe('Process');
+    expect(m.runnerUp).toBe('Reroll');
+    expect(m.margin).toBe(1800);
+    expect(m.clause).toContain('keep processing');
+  });
+  it('ignores non-finite actions (the game state rules them out)', () => {
+    const m = adviceMargin({
+      bestAction: 'complete',
+      allActions: [action('Complete', 100), action('Reset', -Infinity), action('Reroll', -500)],
+      currentValue: 0,
+      resetCost: null,
+    })!;
+    expect(m.runnerUp).toBe('Reroll');
+    expect(m.clause).toContain('stop here');
+  });
+  it('returns null when fewer than two actions are rankable', () => {
+    expect(adviceMargin(null)).toBeNull();
+    expect(
+      adviceMargin({
+        bestAction: 'process',
+        allActions: [action('Process', 5000)],
+        currentValue: 0,
+        resetCost: null,
+      })
+    ).toBeNull();
   });
 });
