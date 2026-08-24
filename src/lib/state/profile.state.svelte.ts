@@ -57,8 +57,9 @@ export interface CharacterProfile {
   bindingMode?: import('../cutplan/types').BindingMode;
   /**
    * Cut Advisor: treat processing gold as committed (astrogems cannot be sold, so the solve optimizes
-   * the gem, not the gold; rerolls and Reset still price their real gold). Absent = true, matching the
-   * upstream default and the roster-bound world the grading model is fitted on.
+   * the gem, not the gold; rerolls and Reset still price their real gold). Absent = false (owner call
+   * 2026-08-24): the default is classic gold-EV, the non-roster-bound mode shizukaziye's published
+   * tables are computed in, so advisor numbers line up with his data out of the box.
    */
   advisorRosterBound?: boolean;
   /** Two independent builds (DPS + Support). The gem pool and weapon are shared across both. */

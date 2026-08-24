@@ -47,6 +47,14 @@ export interface ParsedAdvisorState {
    * 21:9 letterboxes the UI and shrinks every glyph with it.
    */
   panelWidth?: number;
+  /**
+   * The parser's own upscale factor (1 | 2 | 3), picked from the wheel gap BEFORE any pixel is read.
+   * Upstream's round-17 measurement over his 472-board corpus: scale-1 and scale-2 captures parse
+   * equally well, but the scale-3 tier (the window at about a third of the wanted size) carries 20.4%
+   * of ALL flags at 6.8% of boards and never once parses clean. 3 therefore warrants a hard
+   * "recapture larger" warning; width is a weaker proxy and stays as the fallback note.
+   */
+  scaleF?: number;
 }
 
 /**
@@ -84,11 +92,27 @@ export interface AdvisorAction {
   aboveBaselineOdds: number; // P(the result clears your baseline)
   description: string;
 }
+/**
+ * One row of the DP's reset-pair table: the net value of a fresh cut landing on this side-effect
+ * pair, reset fee included. Present only when Reset is a live consideration (the last turn, or
+ * Complete winning), because an in-game reset MAY re-roll the two side effects while the single
+ * ranked Reset value assumes they come back unchanged.
+ */
+export interface AdvisorResetCombo {
+  effect1: string;
+  effect2: string;
+  net: number;
+  expectedScore: number;
+  /** True for this gem's own current pair. */
+  current: boolean;
+}
 export interface AdvisorAdvice {
   bestAction: string; // lowercased winning action
   allActions: AdvisorAction[];
   currentValue: number;
   resetCost: number | null;
+  /** Sorted by net desc (the vendored dp.js builds and sorts it); null/absent when reset isn't live. */
+  resetCombos?: AdvisorResetCombo[] | null;
 }
 export interface AdvisorResult {
   parsed: ParsedAdvisorState;
@@ -676,6 +700,38 @@ export function parsedToEdited(p: ParsedAdvisorState): EditedAdvisorState {
     outcomes: p.outcomes.map((o) => ({ ...o })),
     rarity:
       p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic'),
+  };
+}
+
+export interface AdviceMargin {
+  best: string;
+  runnerUp: string;
+  /** Gold EV by which the best action beats the runner-up. */
+  margin: number;
+  /** Plain-English reading of why the winner wins (a summary of the DP numbers, not their source). */
+  clause: string;
+}
+const MARGIN_CLAUSES: Record<string, string> = {
+  Process: 'keep processing while the expected gain outweighs the per-turn gold.',
+  Reroll: 'reroll while a fresh board is worth more than processing this one.',
+  Reset: 'pay for a fresh cut; this board is not worth finishing.',
+  Complete: 'stop here; neither processing nor rerolling pays for itself.',
+};
+
+/**
+ * The margin one-liner under the verdict: best action vs runner-up, from the ranked actions the DP
+ * already returned (allActions arrives sorted by value desc; non-finite rows are actions the game
+ * state rules out). Null when fewer than two actions are rankable.
+ */
+export function adviceMargin(advice: AdvisorAdvice | null): AdviceMargin | null {
+  const ranked = (advice?.allActions ?? []).filter((a) => isFinite(a.value));
+  if (ranked.length < 2) return null;
+  const [best, runnerUp] = ranked;
+  return {
+    best: best.name,
+    runnerUp: runnerUp.name,
+    margin: best.value - runnerUp.value,
+    clause: MARGIN_CLAUSES[best.name] ?? MARGIN_CLAUSES.Complete,
   };
 }
 

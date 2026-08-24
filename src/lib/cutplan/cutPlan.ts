@@ -189,11 +189,17 @@ export function cellBreakdown(
 const FUSION_COST = 500; // gold per 3-into-1 fuse
 const UC_FUSE = { uncommon: 0.85, rare: 0.135, epic: 0.015 }; // 3 UC same cost -> same cost out
 const RARE_FUSE = { uncommon: 0.52, rare: 0.44, epic: 0.04 }; // 1R + 2UC -> cost from inputs
+// 1E + 2UC -> cost from inputs. Fusing an epic DOWNGRADES it on average (0.26 epic back), so it only
+// pays as a COST-STEER: trade a cheap-cost epic for a shot at a 9/10-cost one. The fixed point's
+// max(open, fuse) decides where that actually wins (his 2026-08 epic lane, Global branch).
+const EPIC_FUSE = { uncommon: 0.25, rare: 0.49, epic: 0.26 };
 
 export interface FuseFirst {
-  /** Per (rarity, cost) NRB fuse-EV per block; null for epic (never fuses). */
+  /** Per (rarity, cost) NRB fuse-EV per block. */
   fuse: Record<Rarity, Record<number, number | null>>;
-  /** Cost a Rare steers its two partners toward (argmax mixed output); UC keeps its own; epic null. */
+  /** Cost a Rare / Epic steers its two Uncommon partners toward (argmax of its own output mix);
+   *  an Uncommon fuse keeps its own cost. The two mixes differ, so the epic lane can steer
+   *  somewhere the rare lane does not. */
   steer: Record<Rarity, Record<number, number | null>>;
 }
 
@@ -245,25 +251,37 @@ export function unopenedFusion(
   // open value; the other half is the current NRB fixed-point estimate.
   const E = (rar: Rarity, cost: number) => 0.5 * OV.rb[rar][cost] + 0.5 * U[rar][cost];
 
-  let fuse: Record<Rarity, Record<number, number | null>> = { uncommon: {}, rare: {}, epic: {} };
-  let bestCost: number = COSTS[0];
-  for (let iter = 0; iter < 200; iter++) {
-    const Out: Record<number, number> = {};
-    let maxOut = -Infinity;
-    bestCost = COSTS[0];
+  // Output value of one fuse by OUTPUT COST for a given rarity mix, plus the best cost to steer
+  // toward (argmax). The 2 added Uncommons carry 2/3 of the output cost, so a fuse lands at the
+  // steered cost with probability 2/3 and holds its own with 1/3.
+  const outByCost = (mix: Record<Rarity, number>) => {
+    const out: Record<number, number> = {};
+    let best: number = COSTS[0];
+    let max = -Infinity;
     for (const c of COSTS) {
-      Out[c] = RARE_FUSE.uncommon * E('uncommon', c) + RARE_FUSE.rare * E('rare', c) + RARE_FUSE.epic * E('epic', c);
-      if (Out[c] > maxOut) {
-        maxOut = Out[c];
-        bestCost = c;
+      out[c] = mix.uncommon * E('uncommon', c) + mix.rare * E('rare', c) + mix.epic * E('epic', c);
+      if (out[c] > max) {
+        max = out[c];
+        best = c;
       }
     }
+    return { out, best, max };
+  };
+
+  let fuse: Record<Rarity, Record<number, number | null>> = { uncommon: {}, rare: {}, epic: {} };
+  let bestCost: number = COSTS[0];
+  let bestCostE: number = COSTS[0];
+  for (let iter = 0; iter < 200; iter++) {
+    const R = outByCost(RARE_FUSE);
+    const Ep = outByCost(EPIC_FUSE);
+    bestCost = R.best;
+    bestCostE = Ep.best;
     const fA: Record<Rarity, Record<number, number | null>> = { uncommon: {}, rare: {}, epic: {} };
     for (const c of COSTS) {
       fA.uncommon[c] =
         (UC_FUSE.uncommon * E('uncommon', c) + UC_FUSE.rare * E('rare', c) + UC_FUSE.epic * E('epic', c) - FUSION_COST) / 3;
-      fA.rare[c] = (1 / 3) * Out[c] + (2 / 3) * maxOut - FUSION_COST;
-      fA.epic[c] = null;
+      fA.rare[c] = (1 / 3) * R.out[c] + (2 / 3) * R.max - FUSION_COST;
+      fA.epic[c] = (1 / 3) * Ep.out[c] + (2 / 3) * Ep.max - FUSION_COST;
     }
     let maxChange = 0;
     for (const rar of RARITIES)
@@ -281,7 +299,7 @@ export function unopenedFusion(
   for (const c of COSTS) {
     steer.uncommon[c] = c;
     steer.rare[c] = bestCost;
-    steer.epic[c] = null;
+    steer.epic[c] = bestCostE;
   }
   return { fuse, steer };
 }
@@ -433,13 +451,13 @@ export function actionLabel(action: CutAction): string {
 
 /**
  * The rarity-upgrade fuse recipe for a "fuse first" block (shizukaziye's pipeline.js steerTxt): an
- * Uncommon block fuses 3 of its own cost; a Rare fuses itself with two Uncommons steered toward the
- * cost with the best mixed output; Epic never fuses. Returns null when there's no fuse recipe.
+ * Uncommon block fuses 3 of its own cost; a Rare or an Epic fuses itself with two Uncommons steered
+ * toward the cost with the best mixed output for its own lane. Returns null when there's no fuse data.
  */
 export function fuseRecipe(ff: FuseFirst | null, rarity: Rarity, cost: number): string | null {
-  if (!ff || rarity === 'epic') return null;
+  if (!ff) return null;
   if (rarity === 'uncommon') return `3x ${cost}-cost Uncommon`;
-  const steer = ff.steer.rare[cost] ?? cost;
+  const steer = ff.steer[rarity][cost] ?? cost;
   return `this + 2x ${steer}-cost Uncommon`;
 }
 

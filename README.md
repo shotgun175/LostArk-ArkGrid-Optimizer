@@ -23,11 +23,14 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 - **Cutting Plan** — a forward-looking "what to farm next" advisor. For DPS it surfaces the
   cut / reset / fuse / don't-cut action and pipeline outlook (weeks-to-complete, gold/week, projected cp% gain)
   per gem archetype, driven by your gold-per-1%-damage budget and binding mode. For Support it shows a
-  sim-backed relative ranking of which archetypes are best to chase.
+  sim-backed relative ranking of which archetypes are best to chase. A per-cost
+  **"still worth cutting?"** strip judges each base cost against the worst equipped gem it can
+  legally replace, and a production-cost table shows the expected gold to cut a gem of each tier.
 - **Cut Advisor** (work in progress): watches the Processing window live via screen share and
   recommends the best cutting move each turn. While watching, it remembers the cut in progress and
   checks each new frame against the game's legal moves, so misreads get caught and confirmed values
-  stay put.
+  stay put. When Reset is on the table it also prices every side-effect pair a reset could re-roll
+  into, so you can see what you would actually be paying for.
 - **Multiple character profiles** with local persistence.
 
 ## Tech stack
@@ -104,7 +107,7 @@ boundaries are.
   base (only the option coefficients differ), which is what lets the Cutting Plan apply one
   EV-based cut/reset/keep rule to both. The exact coefficients are listed in-app under
   **Assumptions / Tuning**.
-- **Grades match shizukaziye's calculator (2026-08 model).** A gem's grade is 0 for the worst legal
+- **Grades are built on shizukaziye's calculator (2026-08 model).** A gem's grade is 0 for the worst legal
   gem and 100 for the average gem of a perfect Ark Grid, so a perfect 10-cost reads slightly above
   100 and a perfect 8-cost slightly below; willpower enters as a fitted per-cost credit rather than a
   damage multiplier, and letter ranks are even thirds of 10-point bands with S+ starting at each

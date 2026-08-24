@@ -4,9 +4,11 @@
 // computes this live from an editable CONST block; we bake it per (axis, gpd, baseline anchor) so the
 // runtime stays a pure lookup and the oracle-guarded math is never re-implemented.
 //
-// Global region ONLY (KR excluded): secondHalfGev is just the RB open value. cpBaselineScore is made
-// AXIS-AWARE here (his caches a single DPS value, a known wrinkle) — support uses supportBaseline.
-// COND_SCORE is null even in his source, so avgScore degrades to the baseline exactly as his page does.
+// Global region ONLY (KR excluded, incl. his 2026-08 KR_FLOOR/tradable branches): secondHalfGev is
+// just the RB open value. cpBaselineScore is made AXIS-AWARE here (his caches a single DPS value, a
+// known wrinkle) - support uses supportBaseline. Includes his 2026-08 epic (1E+2UC) pre-cut fuse
+// lane (fuseDecisions epic/epicUcCost + the epic lane in computePipeline), Global branch only.
+// DELIBERATE DIVERGENCE in avgScore's conditional-score fallback: see the comment there.
 
 const COSTS = [8, 9, 10];
 const RARITIES = ['uncommon', 'rare', 'epic'];
@@ -31,6 +33,9 @@ const CONST = {
 };
 const UC_FUSE = { uncommon: 0.85, rare: 0.135, epic: 0.015 };
 const RARE_FUSE = { uncommon: 0.52, rare: 0.44, epic: 0.04 };
+// 1E + 2UC -> cost from inputs. Fusing an epic downgrades it on average (0.26 epic back), so it only
+// pays as a cost-steer: trade a cheap-cost epic for a shot at a 9/10-cost one (his 2026-08 lane).
+const EPIC_FUSE = { uncommon: 0.25, rare: 0.49, epic: 0.26 };
 const FUSE_A2L = { legendary: 0.35, relic: 0.4, ancient: 0.25 };
 const FUSE_R2L = { legendary: 0.73, relic: 0.25, ancient: 0.02 };
 const FUSE_3L = { legendary: 0.99, relic: 0.01, ancient: 0 };
@@ -70,35 +75,48 @@ function bakeEconomy(Astrogem, axis, srcCells, bakedBaselines, anchorGpd) {
       ucSf[c] = fpi > ucDirect;
       ucValue[c] = Math.max(ucDirect, fpi);
     }
-    const fuseEvByCost = {};
-    for (const cc of COSTS) {
-      let ev = 0;
-      for (const or2 of RARITIES) {
-        const rt = RARE_FUSE[or2];
-        ev += Math.max(gev(or2, cc, bl, gpd, 'nrb'), 0) * rt * 0.5;
-        ev += Math.max(secondHalfGev(or2, cc, bl, gpd), 0) * rt * 0.5;
-      }
-      fuseEvByCost[cc] = ev;
-    }
-    const rSf = {};
-    const rUc = {};
-    for (const rc of COSTS) {
-      const rareEv = gev('rare', rc, bl, gpd, 'nrb');
-      let bestMarg = -Infinity;
-      let bestUc = 8;
-      for (const uc of COSTS) {
-        const uOpp = ucValue[uc];
-        const outEv = rc === uc ? fuseEvByCost[rc] : (1 / 3) * fuseEvByCost[rc] + (2 / 3) * fuseEvByCost[uc];
-        const marg = outEv - CONST.FUSION_COST - 2 * uOpp;
-        if (marg > bestMarg) {
-          bestMarg = marg;
-          bestUc = uc;
+    // Output EV by cost for the two "+2 Uncommon" recipes (1R+2UC and 1E+2UC). Same shape, different
+    // rarity mix; the epic recipe returns fewer epics but is the only way to move an epic's cost.
+    const outEvByCost = (mix) => {
+      const by = {};
+      for (const cc of COSTS) {
+        let ev = 0;
+        for (const or2 of RARITIES) {
+          const rt = mix[or2];
+          ev += Math.max(gev(or2, cc, bl, gpd, 'nrb'), 0) * rt * 0.5;
+          ev += Math.max(secondHalfGev(or2, cc, bl, gpd), 0) * rt * 0.5;
         }
+        by[cc] = ev;
       }
-      rSf[rc] = bestMarg > rareEv;
-      rUc[rc] = bestUc;
-    }
-    return { uc: ucSf, rare: rSf, rareUcCost: rUc };
+      return by;
+    };
+    // Best "+2 Uncommon" fuse for one gem of `rarity` at each cost: pick the Uncommon cost to add
+    // (the output lands there 2/3 of the time), net of the fee and the 2 Uncommons' opportunity
+    // cost. Fuse iff that beats cutting the gem directly.
+    const plusTwoUc = (rarity, byCost) => {
+      const sf = {};
+      const pick = {};
+      for (const oc of COSTS) {
+        const openEv = gev(rarity, oc, bl, gpd, 'nrb');
+        let bestMarg = -Infinity;
+        let bestUc = 8;
+        for (const uc of COSTS) {
+          const uOpp = ucValue[uc];
+          const outEv = oc === uc ? byCost[oc] : (1 / 3) * byCost[oc] + (2 / 3) * byCost[uc];
+          const marg = outEv - CONST.FUSION_COST - 2 * uOpp;
+          if (marg > bestMarg) {
+            bestMarg = marg;
+            bestUc = uc;
+          }
+        }
+        sf[oc] = bestMarg > openEv;
+        pick[oc] = bestUc;
+      }
+      return { sf, uc: pick };
+    };
+    const rare = plusTwoUc('rare', outEvByCost(RARE_FUSE));
+    const epic = plusTwoUc('epic', outEvByCost(EPIC_FUSE));
+    return { uc: ucSf, rare: rare.sf, rareUcCost: rare.uc, epic: epic.sf, epicUcCost: epic.uc };
   }
 
   const pTierAbove = (cost, tier, bl) => {
@@ -124,7 +142,12 @@ function bakeEconomy(Astrogem, axis, srcCells, bakedBaselines, anchorGpd) {
   let cpBaseScore = 0;
   for (const c of COSTS) cpBaseScore += CONST.COST_MIX[c] * baseFn(c);
 
-  // COND_SCORE is absent, so score-when-above degrades to the baseline (his own fallback).
+  // Conditional score-when-above per cell. His COND_SCORE table (the exact offline solve) is not
+  // baked yet even upstream; his condScoreFor then falls back to the cell's expScore, then baseline.
+  // DELIBERATE DIVERGENCE (2026-08-24, see .claude/DECISIONS.md "foundation, not a ceiling"): the
+  // true quantity is E[score | score > baseline], which is >= bl by definition and >= expScore
+  // always, so max(expScore, bl) is the tighter lower bound of the two fallbacks. Re-evaluate when
+  // his COND_SCORE bake ships (pipeline.js /*__COND_SCORE__*/): that is the exact quantity and wins.
   function avgScore(bl, gpd) {
     let ta = 0;
     let ss = 0;
@@ -135,7 +158,7 @@ function bakeEconomy(Astrogem, axis, srcCells, bakedBaselines, anchorGpd) {
           if (!rec) continue;
           const p = rec.pAbove || 0;
           if (p <= 0) continue;
-          const s = bl; // condScoreFor fallback (COND_SCORE absent)
+          const s = Math.max(rec.expScore ?? bl, bl);
           const w = ((CONST.COST_MIX[cost] * BW[bucket]) / BW_TOTAL) * p;
           ta += w;
           ss += w * s;
@@ -291,7 +314,42 @@ function bakeEconomy(Astrogem, axis, srcCells, bakedBaselines, anchorGpd) {
       for (const c of COSTS) pgb(trr * CONST.COST_MIX[c], 'rare', c);
     }
 
-    for (const c of COSTS) pgb(tep * CONST.COST_MIX[c], 'epic', c);
+    // Epic processing (with pre-cut fuse where decided; the cost-steer play, his 2026-08 lane).
+    if (fd.epic[8] || fd.epic[9] || fd.epic[10]) {
+      const eToFuse = { 8: 0, 9: 0, 10: 0 };
+      for (const c4 of COSTS) {
+        const cnt4 = tep * CONST.COST_MIX[c4];
+        if (fd.epic[c4]) {
+          const bd4 = ba[`epic_${c4}`];
+          for (const bucket of BUCKETS) {
+            const r4 = bd4[bucket];
+            if (!r4) continue;
+            const b4 = (cnt4 * BW[bucket]) / BW_TOTAL;
+            at += b4 * (r4.pAbove || 0);
+            cg += b4 * (r4.expSpend || 0);
+            eToFuse[c4] += b4 * (1 - (r4.pAbove || 0));
+          }
+        } else {
+          pgb(cnt4, 'epic', c4);
+        }
+      }
+      for (const ecst of COSTS) {
+        const nfe = eToFuse[ecst];
+        if (nfe <= 0) continue;
+        const eucc = fd.epicUcCost[ecst];
+        fg += nfe * CONST.FUSION_COST;
+        const eCostDist = ecst === eucc ? [[ecst, 1.0]] : [[ecst, 1 / 3], [eucc, 2 / 3]];
+        for (const orar4 of RARITIES) {
+          const rate4 = EPIC_FUSE[orar4];
+          for (const [oc2, cprob2] of eCostDist) {
+            pgb(nfe * rate4 * cprob2 * 0.5, orar4, oc2);
+            pgb(nfe * rate4 * cprob2 * 0.5, orar4, oc2);
+          }
+        }
+      }
+    } else {
+      for (const c of COSTS) pgb(tep * CONST.COST_MIX[c], 'epic', c);
+    }
 
     const ha = fusionHit(bl, FUSE_A2L);
     const hr = fusionHit(bl, FUSE_R2L);

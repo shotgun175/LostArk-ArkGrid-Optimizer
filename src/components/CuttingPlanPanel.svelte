@@ -27,8 +27,9 @@
     RARITY_LABEL,
     type Rarity,
   } from '../lib/cutplan/types';
+  import { type StopVerdict, productionCosts, stopVerdict } from '../lib/cutplan/stopFloors';
   import type { ArkGridGem } from '../lib/models/arkGridGems';
-  import { type GemRole } from '../lib/scoring/gemScore';
+  import { type GemRole, rankFromGrade } from '../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../lib/state/appConfig.state.svelte';
   import {
@@ -109,6 +110,30 @@
   // CP% headroom = how much CP the active build can still gain (from the solve's scoreSet).
   let scoreSet = $derived(build.solveInfo.after?.scoreSet);
   let cpHeadroom = $derived(scoreSet ? scoreSet.bestScore - scoreSet.score : null);
+
+  // Per-cost "still worth cutting?" verdicts vs the equipped loadout (needs a solve to know it), and
+  // the production-cost table (nrb only: production is a gold-spend concept, rb bakes spend as 0).
+  let stopVerdicts = $derived(
+    data && equipped.length > 0
+      ? COSTS.map((cost) => ({
+          cost,
+          v: stopVerdict(data!, axis, cost, binding, goldPerDamage, equipped, role),
+        }))
+      : null
+  );
+  let production = $derived(data && binding === 'nrb' ? productionCosts(data, axis, goldPerDamage) : null);
+
+  const stopChipLabel = (v: StopVerdict) =>
+    v.kind === 'no-slot' ? 'no slot' : v.kind === 'pays' ? 'keep cutting' : 'stopped paying';
+  const stopChipTitle = (cost: number, v: StopVerdict) => {
+    const pair = role === 'support' ? 'double-support pair' : 'double-damage pair';
+    if (v.kind === 'no-slot')
+      return `No equipped gem has willpower requirement ${cost - 5}+, so a fresh ${cost}-cost cut has nothing it can replace like-for-like.`;
+    const floor = `${v.floorGrade.toFixed(1)} (${rankFromGrade(v.floorGrade, role)})`;
+    if (v.kind === 'pays')
+      return `Your worst equipped gem a ${cost}-cost can replace (willpower requirement ${cost - 5}+) grades ${floor}. A fresh ${cost}-cost cut is still +EV against it: ${fmtGold(v.cut)} best case (epic, ${pair}; worse pairs stop earlier).`;
+    return `Your worst equipped gem a ${cost}-cost can replace (willpower requirement ${cost - 5}+) grades ${floor}. Even the best ${cost}-cost cut (epic, ${pair}) is no longer +EV against that floor.`;
+  };
 
   function onBracket(e: Event) {
     updateGoldPer1Pct((e.target as HTMLSelectElement).value as GoldBracket);
@@ -258,6 +283,16 @@
                 </p>
               </section>
               <section>
+                <h4>Still worth cutting? / production cost</h4>
+                <p>
+                  Each cost is judged against the worst equipped gem it can legally replace (an
+                  8-cost fits where the willpower requirement is 3+, a 9-cost 4+, a 10-cost 5+).
+                  Cutting a cost has stopped paying once even its best archetype is no longer +EV
+                  against that floor. The production table is the expected total spend per gem that
+                  reaches a tier.
+                </p>
+              </section>
+              <section>
                 <h4>How to use</h4>
                 <ol>
                   <li>Pick your <strong>Gold / 1% damage</strong> bracket and <strong>Gold Type</strong>.</li>
@@ -268,7 +303,8 @@
             </div>
           </div>
           <p class="ch-note">
-            Values are shizukaziye's exact Bellman-DP pipeline, read at your baseline tier. Gold figures
+            Values come from an exact Bellman-DP pipeline built on shizukaziye's model, read at your
+            baseline tier. Gold figures
             are gold; the "avg value" in a cell's tooltip is the gem grading value (the same units the
             grade is built on), not % damage.
           </p>
@@ -294,6 +330,23 @@
           <BaselineControl {profile} />
         </div>
       </div>
+
+      {#if stopVerdicts}
+        <div class="stop-strip">
+          <span class="ss-title">Still worth cutting?</span>
+          {#each stopVerdicts as { cost, v } (cost)}
+            <span class="ss-chip" data-kind={v.kind} title={stopChipTitle(cost, v)}>
+              <b>{cost}-cost</b>
+              {stopChipLabel(v)}{v.kind === 'pays' ? ` (floor ${rankFromGrade(v.floorGrade, role)})` : ''}
+            </span>
+          {/each}
+          <span class="ss-sub">
+            per cost, vs the worst equipped gem it can replace ({binding === 'nrb'
+              ? 'non-roster-bound'
+              : 'roster-bound'}); hover a chip for the why
+          </span>
+        </div>
+      {/if}
 
       <div class="legend">
         <span class="act" data-action="cut-reset">↻ Reset</span>
@@ -419,6 +472,31 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      {/if}
+
+      {#if production}
+        <div class="prod">
+          <div class="prod-title">What a finished gem costs to produce (expected gold)</div>
+          <table class="prod-table">
+            <thead>
+              <tr><th>Target tier</th><th>8-cost</th><th>9-cost</th><th>10-cost</th></tr>
+            </thead>
+            <tbody>
+              {#each production as row (row.grade)}
+                <tr>
+                  <td class="pl">{row.rank} ({row.grade})</td>
+                  {#each [8, 9, 10] as c (c)}
+                    <td>{row.byCost[c] == null ? '—' : fmtGold(row.byCost[c])}</td>
+                  {/each}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <div class="prod-note">
+            Expected total cutting spend per gem that reaches the tier (epic cuts, best effect pair,
+            non-roster-bound). A dash means that cost cannot reach the tier at all.
+          </div>
         </div>
       {/if}
 
@@ -638,6 +716,60 @@
   }
   .baseline-group {
     flex: 1 1 100%;
+  }
+
+  /* Per-cost "still worth cutting?" verdict chips. */
+  .stop-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.55rem 0.75rem;
+    background: var(--card);
+  }
+  .ss-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .ss-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid var(--border);
+    cursor: help;
+  }
+  .ss-chip b {
+    font-weight: 700;
+  }
+  .ss-chip[data-kind='pays'] {
+    color: #2e7d32;
+    border-color: rgba(46, 125, 50, 0.5);
+    background: rgba(46, 125, 50, 0.12);
+  }
+  .ss-chip[data-kind='stopped'] {
+    color: #8a3a3a;
+    border-color: rgba(138, 58, 58, 0.5);
+    background: rgba(138, 58, 58, 0.12);
+  }
+  .ss-chip[data-kind='no-slot'] {
+    opacity: 0.75;
+  }
+  :global(.dark-mode) .ss-chip[data-kind='pays'] {
+    color: #4ade80;
+  }
+  :global(.dark-mode) .ss-chip[data-kind='stopped'] {
+    color: #ef8a8a;
+  }
+  .ss-sub {
+    flex-basis: 100%;
+    font-size: 0.72rem;
+    opacity: 0.7;
   }
 
   .legend {
@@ -939,6 +1071,40 @@
     text-align: left;
     opacity: 0.85;
   }
+  /* Production-cost table (mirrors the fusion table styling). */
+  .prod {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: var(--card);
+  }
+  .prod-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+  }
+  .prod-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .prod-table th,
+  .prod-table td {
+    text-align: right;
+    padding: 0.25rem 0.5rem;
+  }
+  .prod-table th:first-child,
+  .prod-table td.pl {
+    text-align: left;
+    opacity: 0.85;
+  }
+  .prod-note {
+    margin-top: 0.4rem;
+    font-size: 0.72rem;
+    opacity: 0.75;
+  }
+
   .cp-callout {
     align-self: flex-start;
     font-size: 0.9rem;

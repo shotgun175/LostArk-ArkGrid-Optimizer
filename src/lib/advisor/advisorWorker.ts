@@ -75,6 +75,9 @@ interface DpAdvice {
   allActions: DpAction[];
   currentValue: number;
   resetCost: number | null;
+  resetCombos?:
+    | { effect1: string; effect2: string; net: number; expectedScore: number; current: boolean }[]
+    | null;
 }
 const g = self as unknown as {
   OcrStructuralEngine?: { parseStructural: (r: Raster, f: unknown) => Promise<ParsedState> };
@@ -222,10 +225,16 @@ function adviseFrom(
  * comes back as ~1354 there. Best-effort — wrapped so a shape change upstream costs the note, not the
  * parse.
  */
-function attachPanelSize(raster: Raster, snapped: Record<string, unknown>) {
+function attachPanelSize(raster: Raster, raw: Record<string, unknown>, snapped: Record<string, unknown>) {
   try {
     const w = g.OcrLayout?.panelOrWhole(raster)?.rect?.w;
     if (typeof w === 'number' && w > 0) snapped.panelWidth = Math.round(w);
+    // The parser's own upscale factor (structural-engine _debug.norm.scaleF, 1|2|3), chosen from the
+    // wheel gap before any pixel is read. 3 = the capture is about a third of the wanted size, the
+    // one tier upstream's round-17 data shows never parses clean; the UI leads with "recapture
+    // larger" instead of asking the user to confirm field after field.
+    const sf = (raw as { _debug?: { norm?: { scaleF?: number } } })._debug?.norm?.scaleF;
+    if (typeof sf === 'number' && sf > 0) snapped.scaleF = sf;
   } catch {
     // diagnostic only; never fail a parse over it
   }
@@ -268,7 +277,7 @@ self.onmessage = async (ev: MessageEvent) => {
         outcomes: unknown;
       };
       applyGreyChargeRescue(raster, raw as Record<string, unknown>, snapped.state);
-      attachPanelSize(raster, snapped as Record<string, unknown>);
+      attachPanelSize(raster, raw as Record<string, unknown>, snapped as Record<string, unknown>);
       const applyOutcomeFn = g.AstrogemNested?.applyOutcome;
       const fusion = applyOutcomeFn
         ? fuse(
