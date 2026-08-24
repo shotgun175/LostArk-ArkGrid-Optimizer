@@ -10,7 +10,9 @@
 // records each source's sha256 + date so the committed table stays auditable from a clone.
 //
 // Per-gem VERDICTS are the baked cut-value bands (meta.verdict); the "fuse-first" (purple)
-// refinement needs his unbaked joint fusion-EV solve and is intentionally not reproduced.
+// refinement is computed client-side at read time (cutPlan.ts unopenedFusion, incl. the 1E+2UC
+// epic lane). The weekly economy's avg/cp% uses a max(expScore, baseline) conditional-score
+// bound, a deliberate divergence from his expScore fallback (see bake-economy.cjs avgScore).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -178,7 +180,7 @@ const out = {
     dps_sha256: dps.sha256,
     support_sha256: support.sha256,
     generated_at: generatedAt,
-    note: 'Per-bucket cut/fodder values are his baked DP output (his IP, used with attribution). Verdicts use meta.verdict cut-value bands; the fuse-first (purple) refinement is not reproduced.',
+    note: 'Per-bucket cut/fodder values are his baked DP output (his IP, used with attribution). Verdicts use meta.verdict cut-value bands; the fuse-first (purple) refinement incl. the 1E+2UC epic lane is computed client-side (cutPlan.ts). avg/cp% uses a max(expScore, baseline) conditional-score bound, a deliberate divergence from his expScore fallback.',
   },
   meta: {
     scoreUnit: meta.scoreUnit,
