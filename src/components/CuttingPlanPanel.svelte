@@ -1,16 +1,20 @@
 <script lang="ts">
   import {
     actionLabel,
+    bestFusePerGem,
     bracketLabel,
     cellBreakdown,
     effectPair,
     fuseRecipe,
+    type FusionRecipe,
+    fusionRecipes,
     getCutCell,
     getEconomy,
     getFusion,
     headerCut,
     isBlockFuse,
     pipelineBaselineForGrade,
+    type TierMix,
     unopenedFusion,
     weeksBand,
   } from '../lib/cutplan/cutPlan';
@@ -107,6 +111,39 @@
   let economy = $derived(data ? getEconomy(data, axis, goldPerDamage, baselinePct) : null);
   let fusion = $derived(data ? getFusion(data, axis, goldPerDamage, baselinePct) : null);
 
+  // Finished-gem fusion recipes (all 10 three-gem mixes) priced from the same baked tier EVs. The three
+  // standard mixes plus any recommended row show by default; the toggle opens all ten (per tab, not
+  // persisted, like the section folds).
+  let recipes = $derived(data ? fusionRecipes(data, axis, goldPerDamage, baselinePct) : null);
+  let bestFuse = $derived(recipes ? bestFusePerGem(recipes) : null);
+  let showAllRecipes = $state(false);
+  const isBestRow = (r: FusionRecipe) =>
+    !!bestFuse && COSTS.some((c) => bestFuse!.ancient[c] === r || bestFuse!.relic[c] === r);
+  let shownRecipes = $derived(
+    recipes ? recipes.filter((r) => showAllRecipes || r.std || isBestRow(r)) : []
+  );
+  const ODDS_WORD = [
+    ['legendary', 'Leg'],
+    ['relic', 'Relic'],
+    ['ancient', 'Anc'],
+  ] as const;
+  const oddsStr = (mix: TierMix) =>
+    ODDS_WORD.filter(([k]) => mix[k] > 0.005)
+      .map(([k, w]) => `${Math.round(mix[k] * 100)}% ${w}`)
+      .join(' · ');
+  // Hover text of a recipe's cost cell: the recommendation (if any) plus what one Ancient / Relic in
+  // the recipe adds over a Legendary in its place.
+  const recipeCellTitle = (r: FusionRecipe, cost: number) => {
+    const parts: string[] = [];
+    if (bestFuse?.ancient[cost] === r) parts.push(`Best fuse for an Ancient at ${cost}-cost.`);
+    if (bestFuse?.relic[cost] === r) parts.push(`Best fuse for a Relic at ${cost}-cost.`);
+    const per: string[] = [];
+    if (r.perGem.ancient) per.push(`${fmtSigned(r.perGem.ancient[cost])} per Ancient`);
+    if (r.perGem.relic) per.push(`${fmtSigned(r.perGem.relic[cost])} per Relic`);
+    if (per.length) parts.push(`${per.join(' · ')} (what one gem of that tier adds over a Legendary in its place).`);
+    return parts.join(' ');
+  };
+
   // CP% headroom = how much CP the active build can still gain (from the solve's scoreSet).
   let scoreSet = $derived(build.solveInfo.after?.scoreSet);
   let cpHeadroom = $derived(scoreSet ? scoreSet.bestScore - scoreSet.score : null);
@@ -167,6 +204,7 @@
 
   const fmtGold = (g: number | null | undefined) =>
     g == null ? '-' : Math.abs(g) >= 1000 ? `${(g / 1000).toFixed(1)}k` : String(Math.round(g));
+  const fmtSigned = (g: number) => (g < 0 ? fmtGold(g) : `+${fmtGold(g)}`);
   const pctOf = (n: number) => `${Math.round(n * 100)}%`;
   const statWord = $derived(role === 'support' ? 'support' : 'damage');
   const bucketLabelOf = (bkt: BucketKey) => {
@@ -275,11 +313,17 @@
               <section>
                 <h4>Fusion / fodder</h4>
                 <p>
-                  A cut that ends <em>below</em> baseline is fodder, recycled 3-into-1. The table
+                  A cut that ends <em>below</em> baseline is fodder, recycled 3-into-1. The first table
                   shows, per fodder tier, its <strong>value as fusion material</strong> and the
                   <strong>expected value of the fused output</strong> (cost-weighted, at your budget).
-                  Mixes: <strong>3L</strong> → 99L/1R, <strong>R+2L</strong> → 73L/25R/2A,
-                  <strong>A+2L</strong> → 35L/40R/25A (500g each).
+                  The recipes table prices every way to fuse three finished gems: the odds the output
+                  lands Legendary / Relic / Ancient and what that one gem is worth at 8, 9 and 10 cost
+                  (before the 500g fee and the inputs' own worth). The three standard mixes
+                  (<strong>3L</strong> → 99L/1R, <strong>R+2L</strong> → 73L/25R/2A,
+                  <strong>A+2L</strong> → 35L/40R/25A) and any recommended (dotted) row show by default;
+                  "Show all recipes" opens the rest. Hover a value for what one Ancient or Relic adds
+                  over a Legendary in its place; a gold dot marks the best fuse for an Ancient at that
+                  cost, a purple dot the best for a Relic.
                 </p>
               </section>
               <section>
@@ -472,6 +516,58 @@
               </tr>
             </tbody>
           </table>
+
+          {#if recipes && bestFuse}
+            <div class="recipes-head">
+              <div class="fusion-title">Fusion recipes: what the one gem you get back is worth</div>
+              <button
+                class="recipes-toggle"
+                aria-expanded={showAllRecipes}
+                onclick={() => (showAllRecipes = !showAllRecipes)}
+              >
+                {showAllRecipes
+                  ? 'Fewer'
+                  : `Show all recipes (${recipes.length - shownRecipes.length} more)`}
+              </button>
+            </div>
+            <div class="recipes-scroll">
+              <table class="fusion-table recipes-table">
+                <thead>
+                  <tr><th>Fuse</th><th>Output odds</th><th>8-cost</th><th>9-cost</th><th>10-cost</th></tr>
+                </thead>
+                <tbody>
+                  {#each shownRecipes as r (r.key)}
+                    <tr>
+                      <td class="fl">
+                        {r.label}
+                        <div class="odds-inline">{oddsStr(r.mix)}</div>
+                      </td>
+                      <td class="fl odds">{oddsStr(r.mix)}</td>
+                      {#each COSTS as c (c)}
+                        <td title={recipeCellTitle(r, c) || undefined}>
+                          {fmtGold(r.evByCost[c])}
+                          {#if bestFuse.ancient[c] === r}
+                            <span class="pip anc" role="img" aria-label="best fuse for an Ancient"></span>
+                          {/if}
+                          {#if bestFuse.relic[c] === r}
+                            <span class="pip rel" role="img" aria-label="best fuse for a Relic"></span>
+                          {/if}
+                        </td>
+                      {/each}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            <div class="recipes-note">
+              Each figure is the average value of the <strong>one gem you get back</strong> at that base
+              cost, before the 500g fuse fee and before what the three gems you feed in are worth. Hover a
+              value for what one Ancient or Relic in that recipe adds over a Legendary in its place.
+              <span class="pip anc" aria-hidden="true"></span> best fuse for an <strong>Ancient</strong>,
+              <span class="pip rel" aria-hidden="true"></span> best fuse for a <strong>Relic</strong> at that
+              cost.
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -1070,6 +1166,103 @@
   .fusion-table td.fl {
     text-align: left;
     opacity: 0.85;
+  }
+  /* Finished-gem fusion recipes (under the fodder table). */
+  .recipes-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+  }
+  .recipes-head .fusion-title {
+    margin-bottom: 0;
+  }
+  .recipes-toggle {
+    width: auto;
+    min-width: 0;
+    padding: 0.35rem 0.7rem;
+    border-radius: 99px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #b8860b;
+    border: 1px solid rgba(184, 134, 11, 0.55);
+    background: rgba(184, 134, 11, 0.1);
+  }
+  .recipes-toggle:hover {
+    background: rgba(184, 134, 11, 0.18);
+  }
+  :global(.dark-mode) .recipes-toggle {
+    color: #f0c040;
+    border-color: rgba(240, 192, 64, 0.55);
+    background: rgba(240, 192, 64, 0.12);
+  }
+  :global(.dark-mode) .recipes-toggle:hover {
+    background: rgba(240, 192, 64, 0.2);
+  }
+  .recipes-scroll {
+    overflow-x: auto;
+  }
+  .recipes-table {
+    margin-top: 0.4rem;
+  }
+  .recipes-table th:nth-child(2),
+  .recipes-table td.odds {
+    text-align: left;
+  }
+  .recipes-table td.odds {
+    font-size: 0.74rem;
+    opacity: 0.75;
+    white-space: nowrap;
+  }
+  .recipes-table td[title] {
+    cursor: help;
+    white-space: nowrap;
+  }
+  /* Phone width: the odds move under the recipe name so the three cost columns stay on screen
+     without sideways scrolling. */
+  .recipes-table .odds-inline {
+    display: none;
+  }
+  @media (max-width: 560px) {
+    .recipes-table th:nth-child(2),
+    .recipes-table td.odds {
+      display: none;
+    }
+    .recipes-table .odds-inline {
+      display: block;
+      font-size: 0.68rem;
+      opacity: 0.75;
+    }
+    .recipes-table th,
+    .recipes-table td {
+      padding: 0.25rem 0.3rem;
+    }
+  }
+  .pip {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-left: 4px;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+  .pip.anc {
+    background: #d9a441;
+  }
+  .pip.rel {
+    background: #c084fc;
+  }
+  .recipes-note {
+    margin-top: 0.4rem;
+    font-size: 0.72rem;
+    opacity: 0.75;
+  }
+  .recipes-note .pip {
+    margin: 0 2px 0 0;
   }
   /* Production-cost table (mirrors the fusion table styling). */
   .prod {
