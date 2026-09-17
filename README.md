@@ -26,6 +26,9 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
   sim-backed relative ranking of which archetypes are best to chase. A per-cost
   **"still worth cutting?"** strip judges each base cost against the worst equipped gem it can
   legally replace, and a production-cost table shows the expected gold to cut a gem of each tier.
+  A fusion-recipes table prices all ten ways to fuse three finished gems (output odds, value of
+  the one gem you get back at each cost, and which recipe makes the best use of a spare Ancient or
+  Relic).
 - **Cut Advisor** (work in progress): watches the Processing window live via screen share and
   recommends the best cutting move each turn. While watching, it remembers the cut in progress and
   checks each new frame against the game's legal moves, so misreads get caught and confirmed values

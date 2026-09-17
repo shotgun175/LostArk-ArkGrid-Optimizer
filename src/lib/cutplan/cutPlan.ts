@@ -10,6 +10,7 @@ import type {
   CutAxis,
   CutCell,
   EconomyRow,
+  FusionRow,
   GoldBracket,
   PipelineCellEntry,
   PipelineData,
@@ -431,6 +432,145 @@ export function getFusion(
     }
   }
   return acc;
+}
+
+// ---- Finished-gem fusion recipes (his pipeline.js fusionRecipes + the Grader's processed card, 2026-09-16) ----
+export type FodderTier = 'legendary' | 'relic' | 'ancient';
+export type TierMix = Record<FodderTier, number>;
+
+/**
+ * Output-tier odds of fusing finished gems (shizukaziye's model/astrogem.js fusionOutputDist): additive
+ * per-input shares (a Relic +25% R / +2% A, an Ancient +40% R / +25% A, a Legendary nothing), Ancient
+ * taken first and clamped to 100, Relic filling the remainder, Legendary absorbing what is left. All
+ * Legendaries is the one special case (99 / 1 / 0). fusionRecipes.test.ts pins this to the vendored file.
+ * A fuse takes three gems, so the counts must sum to 3; (0, 0, 0) is undefined here.
+ */
+export function fusionOutputDist(nA: number, nR: number, nL: number): TierMix {
+  if (nL > 0 && nR === 0 && nA === 0) return { legendary: 0.99, relic: 0.01, ancient: 0 };
+  const rawR = nR * 25 + nA * 40;
+  const rawA = nR * 2 + nA * 25;
+  const A = Math.min(100, rawA);
+  const R = Math.min(rawR, 100 - A);
+  const L = Math.max(0, 100 - A - R);
+  return { legendary: L / 100, relic: R / 100, ancient: A / 100 };
+}
+
+export interface FusionRecipe {
+  /** `${nA}a${nR}r${nL}l`, e.g. '1a0r2l'. */
+  key: string;
+  label: string;
+  counts: Record<FodderTier, number>;
+  /** One of the three recipes the pipeline's own fodder math is written against (3L, 1R+2L, 1A+2L). */
+  std: boolean;
+  mix: TierMix;
+  /** Value of the ONE output gem by its base cost, before the 500g fee and the inputs' own worth. */
+  evByCost: Record<number, number>;
+  /** What one Ancient / Relic in this recipe adds over a Legendary in its place, by cost. */
+  perGem: { ancient?: Record<number, number>; relic?: Record<number, number> };
+}
+
+const TIER_WORD: Record<FodderTier, string> = { ancient: 'Ancient', relic: 'Relic', legendary: 'Legendary' };
+function recipeLabel(nA: number, nR: number, nL: number): string {
+  if (nA === 3) return '3x Ancient';
+  if (nR === 3) return '3x Relic';
+  if (nL === 3) return '3x Legendary';
+  const parts: string[] = [];
+  if (nA) parts.push(`${nA} ${TIER_WORD.ancient}`);
+  if (nR) parts.push(`${nR} ${TIER_WORD.relic}`);
+  if (nL) parts.push(`${nL} ${TIER_WORD.legendary}`);
+  return parts.join(' + ');
+}
+
+/**
+ * Every way to fuse 3 finished gems (the 10 multisets of Legendary / Relic / Ancient), priced at the
+ * given axis / gpd / baseline from the baked per-cost tier EVs: evByCost[c] is the mix-weighted tierEV
+ * at cost c, the value of the one gem that comes out (his pipeline.js processed card). perGem is this
+ * recipe minus the same recipe with one gem of that tier swapped down to a Legendary; the mix clamps as
+ * Ancients pile up, so a per-recipe marginal is the honest per-gem number. Rows run from all-Legendary
+ * to all-Ancient. null when the axis has no fusion rows at this gpd.
+ */
+export function fusionRecipes(
+  data: PipelineData,
+  axis: CutAxis,
+  gpd: number,
+  baseline: number
+): FusionRecipe[] | null {
+  const byCost = data.axes[axis]?.fusion?.[String(gpd)];
+  if (!byCost) return null;
+  const idx = baselineIndex(data, axis, baseline);
+  const tev: Record<number, FusionRow['tierEV']> = {};
+  for (const cost of COSTS) {
+    const row = byCost[String(cost)]?.[idx];
+    if (!row) return null;
+    tev[cost] = row.tierEV;
+  }
+  const rows: FusionRecipe[] = [];
+  for (let nA = 0; nA <= 3; nA++) {
+    for (let nR = 0; nR <= 3 - nA; nR++) {
+      const nL = 3 - nA - nR;
+      const mix = fusionOutputDist(nA, nR, nL);
+      const evByCost: Record<number, number> = {};
+      for (const cost of COSTS) {
+        const t = tev[cost];
+        evByCost[cost] = mix.legendary * t.leg + mix.relic * t.relic + mix.ancient * t.anc;
+      }
+      rows.push({
+        key: `${nA}a${nR}r${nL}l`,
+        label: recipeLabel(nA, nR, nL),
+        counts: { ancient: nA, relic: nR, legendary: nL },
+        std: (nA === 0 && nR <= 1) || (nA === 1 && nR === 0),
+        mix,
+        evByCost,
+        perGem: {},
+      });
+    }
+  }
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  for (const r of rows) {
+    for (const tier of ['ancient', 'relic'] as const) {
+      if (!r.counts[tier]) continue;
+      const a = r.counts.ancient - (tier === 'ancient' ? 1 : 0);
+      const rr = r.counts.relic - (tier === 'relic' ? 1 : 0);
+      const below = byKey.get(`${a}a${rr}r${3 - a - rr}l`);
+      if (!below) continue;
+      const per: Record<number, number> = {};
+      for (const cost of COSTS) per[cost] = r.evByCost[cost] - below.evByCost[cost];
+      r.perGem[tier] = per;
+    }
+  }
+  return rows;
+}
+
+export type BestFuse = Record<'ancient' | 'relic', Record<number, FusionRecipe | null>>;
+// A lead under 2% counts as a tie: the 3x Legendary 99/1 special case shifts the plain recipes'
+// marginals by about 1%, and without the band that artifact would decide the pick.
+const BEST_TIE = 0.02;
+
+/**
+ * Per cost, the recipe where ONE Ancient (and, separately, one Relic) adds the most (his grader.js
+ * bestPerGem). Ties within the band go to the earlier row, the recipe with fewer rich inputs. null
+ * where no recipe carries that tier. The band is symmetric via Math.abs(tv); upstream multiplies tv by
+ * 1.02, which for a negative marginal would let a slightly worse row win. Deliberate divergence
+ * (identical for every non-negative marginal, which is all the committed bake produces).
+ */
+export function bestFusePerGem(rows: FusionRecipe[]): BestFuse {
+  const best: BestFuse = { ancient: {}, relic: {} };
+  for (const tier of ['ancient', 'relic'] as const) {
+    for (const cost of COSTS) {
+      let top: FusionRecipe | null = null;
+      let tv = 0;
+      for (const r of rows) {
+        const v = r.perGem[tier]?.[cost];
+        if (v == null || !Number.isFinite(v)) continue;
+        if (top === null || v > tv + Math.abs(tv) * BEST_TIE) {
+          tv = v;
+          top = r;
+        }
+      }
+      best[tier][cost] = top;
+    }
+  }
+  return best;
 }
 
 /** The two effects that define a bucket at a base cost, for the given axis (for tooltips). */

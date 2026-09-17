@@ -7,13 +7,19 @@
 // bookmarklet that redirects with the data in the URL hash) and we parse it right here —
 // no server, no network.
 //
-// The site-format decoding (effect-id map, gem-id digit rules, the arkGridCores bracket
-// scan, the lopec regex) is re-implemented in TypeScript from shizukaziye's
-// astrogem-calculator (worker/astrogem-bible.js + bible-import.js, MIT). Attribution is in
-// the app footer. We map each gem straight onto our canonical ArkGridGem shape.
+// The site-format decoding (effect-id map, gem-id digit rules, the known-ids override table
+// and the option-pool repair, the arkGridCores bracket scan, the lopec regex) is re-implemented
+// in TypeScript from shizukaziye's loastuff (loa-astrogem-calc/worker/astrogem-bible.js +
+// bible-import.js, MIT; id-family fix of 2026-09-16). Attribution is in the app footer. We map
+// each gem straight onto our canonical ArkGridGem shape.
 import type { ArkGridAttr } from '../constants/enums';
 import type { ArkGridGem, ArkGridGemOption } from '../models/arkGridGems';
-import { type ArkGridGemName, type ArkGridGemOptionName, ArkGridGemSpecs } from '../models/arkGridGemSpecs';
+import {
+  type ArkGridGemName,
+  type ArkGridGemOptionName,
+  ArkGridGemOptionTypes,
+  ArkGridGemSpecs,
+} from '../models/arkGridGemSpecs';
 
 export interface ImportResult {
   source: 'lostark.bible' | 'lopec.kr';
@@ -22,7 +28,10 @@ export interface ImportResult {
   itemLevel: number | null;
   className: string | null;
   gems: ArkGridGem[];
+  /** Gems that could not be imported (unknown effect, unreadable id), one line each. */
   warnings: string[];
+  /** Gems that WERE imported but whose cost/type had to be corrected or guessed, one line each. */
+  notes: string[];
 }
 
 // lostark.bible effect id -> our option enum.
@@ -54,6 +63,7 @@ function specName(attr: ArkGridAttr, baseCost: number): ArkGridGemName | undefin
   return SPEC_BY_ATTR_COST.get(`${attr}_${baseCost}`);
 }
 
+// ---- cost + type from the gem id ----
 // Gem id digits: id[5] (shape) -> base cost 8/9/10; id[3] === '0' -> Order, else Chaos.
 function costFromGemId(idStr: string): number | null {
   const shape = parseInt(idStr[5], 10);
@@ -62,6 +72,92 @@ function costFromGemId(idStr: string): number | null {
 }
 function attrFromGemId(idStr: string): ArkGridAttr {
   return idStr[3] === '0' ? 'Order' : 'Chaos';
+}
+
+// The id shape the digit rule was read off: 674 [type 0/1] 1 [shape 0-5] 2 [variant].
+const GEM_ID_674 = /^674[01]1[0-5]2\d$/;
+// Ids the digit rule gets wrong, with what they really are. A second id family appeared on
+// lostark.bible on 2026-09-16 (fixed 5/5/5/5 event gems) that the digits read as 9-cost Chaos; they
+// are 8-cost, 173/74 Order and 175/76 Chaos (shizukaziye's evidence: all 200 pool-violating gems in a
+// 530k-gem leaderboard snapshot are these four ids, icon elimination on ten characters, and they only
+// ever sit in Order / Chaos cores respectively). Add a row whenever a new family shows up.
+const GEM_ID_OVERRIDES: Record<string, { baseCost: number; attr: ArkGridAttr }> = {
+  '40621173': { baseCost: 8, attr: 'Order' }, // Atk. Power + Additional Damage, 5/5/5/5
+  '40621174': { baseCost: 8, attr: 'Order' }, // Brand Power + Ally Damage Enh., 5/5/5/5
+  '40621175': { baseCost: 8, attr: 'Chaos' }, // Atk. Power + Additional Damage, 5/5/5/5
+  '40621176': { baseCost: 8, attr: 'Chaos' }, // Brand Power + Ally Damage Enh., 5/5/5/5
+};
+
+// Legal option pool per base cost (Order and Chaos share it), from the canonical gem specs.
+const POOL_BY_COST = new Map<number, ReadonlySet<ArkGridGemOptionName>>();
+for (const spec of Object.values(ArkGridGemSpecs)) {
+  if (!POOL_BY_COST.has(spec.req)) POOL_BY_COST.set(spec.req, new Set(spec.availableOptions));
+}
+function poolHolds(cost: number, o1: ArkGridGemOptionName, o2: ArkGridGemOptionName): boolean {
+  const pool = POOL_BY_COST.get(cost);
+  return !!pool && pool.has(o1) && pool.has(o2);
+}
+// The ONE cost whose pool holds both options, or null when none or more than one does. Every distinct
+// pair fits at least one pool; twelve fit exactly one, and three (Atk+AllyDmg, Add+Brand, Boss+AllyAtk)
+// fit two, so only those stay ambiguous and the id keeps the last word.
+function costFromOptions(o1: ArkGridGemOptionName, o2: ArkGridGemOptionName): number | null {
+  if (o1 === o2) return null;
+  let hit: number | null = null;
+  for (const cost of POOL_BY_COST.keys()) {
+    if (!poolHolds(cost, o1, o2)) continue;
+    if (hit !== null) return null;
+    hit = cost;
+  }
+  return hit;
+}
+const optionLabel = (o: ArkGridGemOptionName) => ArkGridGemOptionTypes[o].name.en_us;
+
+// Pool repair shared by the bible and lopec paths: when `baseCost` cannot hold the pair, move to the
+// ONE cost that can, or leave it when two pools could. Either way a note says what happened.
+function repairCostFromPool(
+  baseCost: number,
+  o1: ArkGridGemOptionName,
+  o2: ArkGridGemOptionName,
+  what: string,
+  notes: string[]
+): number {
+  if (poolHolds(baseCost, o1, o2)) return baseCost;
+  const pair = `${optionLabel(o1)} + ${optionLabel(o2)}`;
+  const fix = costFromOptions(o1, o2);
+  if (fix != null) {
+    notes.push(`${what} reads as ${baseCost}-cost, but ${pair} only fit the ${fix}-cost pool; read as ${fix}-cost`);
+    return fix;
+  }
+  notes.push(`${what} reads as ${baseCost}-cost, but no single pool holds ${pair}; cost left as derived`);
+  return baseCost;
+}
+
+// Cost + type for one gem: the override table first, then the id digits, then a repair from the
+// option pools. Every correction, and every id we cannot trust, leaves a note so the change is
+// visible instead of silent. Returns null only when the digits give no cost at all.
+function gemIdentity(
+  idStr: string,
+  o1: ArkGridGemOptionName,
+  o2: ArkGridGemOptionName,
+  notes: string[]
+): { baseCost: number; attr: ArkGridAttr } | null {
+  const ov = GEM_ID_OVERRIDES[idStr];
+  const digitCost = costFromGemId(idStr);
+  const digitAttr = attrFromGemId(idStr);
+  let baseCost = ov ? ov.baseCost : digitCost;
+  const attr = ov ? ov.attr : digitAttr;
+  if (baseCost == null) return null;
+  if (ov) {
+    if (digitCost !== ov.baseCost || digitAttr !== ov.attr) {
+      notes.push(
+        `gem id ${idStr} reads as ${digitCost}-cost ${digitAttr} by its digits; the known-ids table says ${ov.baseCost}-cost ${ov.attr}`
+      );
+    }
+  } else if (!GEM_ID_674.test(idStr)) {
+    notes.push(`gem id ${idStr} is not in the known 674xxxxx format, so its cost/type are a guess`);
+  }
+  baseCost = repairCostFromPool(baseCost, o1, o2, `gem id ${idStr}`, notes);
+  return { baseCost, attr };
 }
 
 interface RawCore {
@@ -148,18 +244,18 @@ interface RawGem {
   opts?: { id?: number; level?: number }[];
 }
 
-function mapBibleGem(rawGem: RawGem, warnings: string[]): ArkGridGem | null {
+function mapBibleGem(rawGem: RawGem, warnings: string[], notes: string[]): ArkGridGem | null {
   const idStr = String(rawGem?.id ?? '');
-  const baseCost = costFromGemId(idStr);
-  if (baseCost == null) {
-    warnings.push(`could not derive cost from gem id ${idStr}`);
-    return null;
-  }
-  const attr = attrFromGemId(idStr);
   const opts = Array.isArray(rawGem.opts) ? rawGem.opts : [];
   const option1 = optionFromBible(opts[0], idStr, warnings);
   const option2 = optionFromBible(opts[1], idStr, warnings);
   if (!option1 || !option2) return null;
+  const ident = gemIdentity(idStr, option1.optionType, option2.optionType, notes);
+  if (!ident) {
+    warnings.push(`could not derive cost from gem id ${idStr}`);
+    return null;
+  }
+  const { baseCost, attr } = ident;
   return {
     name: specName(attr, baseCost),
     gemAttr: attr,
@@ -170,12 +266,12 @@ function mapBibleGem(rawGem: RawGem, warnings: string[]): ArkGridGem | null {
   };
 }
 
-function coresToGems(cores: RawCore[], warnings: string[]): ArkGridGem[] {
+function coresToGems(cores: RawCore[], warnings: string[], notes: string[]): ArkGridGem[] {
   const gems: ArkGridGem[] = [];
   for (const core of cores) {
     const rawGems = Array.isArray(core?.gems) ? (core.gems as RawGem[]) : [];
     for (const rg of rawGems) {
-      const g = mapBibleGem(rg, warnings);
+      const g = mapBibleGem(rg, warnings, notes);
       if (g) gems.push(g);
     }
   }
@@ -184,7 +280,7 @@ function coresToGems(cores: RawCore[], warnings: string[]): ArkGridGem[] {
 
 // lopec.kr stores gems in a Next.js RSC payload. Icon use_13_(202..207) encodes cost+attr;
 // requiredWillpower IS the actual willpower cost; effects carry Korean names + levels.
-function parseLopecGems(html: string, warnings: string[]): ArkGridGem[] {
+function parseLopecGems(html: string, warnings: string[], notes: string[]): ArkGridGem[] {
   const u = html.replace(/\\"/g, '"');
   const gemRe =
     /use_13_(\d+)\.png","requiredWillpower":(\d+),"orderChaosPoint":(\d+),"effects":\[(.*?)\]\}/g;
@@ -197,7 +293,7 @@ function parseLopecGems(html: string, warnings: string[]): ArkGridGem[] {
       warnings.push(`unexpected gem icon ${icon}`);
       continue;
     }
-    const baseCost = 8 + (rel % 3);
+    let baseCost = 8 + (rel % 3);
     const attr: ArkGridAttr = rel < 3 ? 'Order' : 'Chaos';
     const opts: ArkGridGemOption[] = [];
     const effRe = /\{"name":"([^"]*)","level":(\d+)/g;
@@ -214,6 +310,8 @@ function parseLopecGems(html: string, warnings: string[]): ArkGridGem[] {
       warnings.push(`gem icon ${icon}: fewer than 2 known effects`);
       continue;
     }
+    // Same pool check the bible path gets (requiredWillpower is the real cost, so nothing else moves).
+    baseCost = repairCostFromPool(baseCost, opts[0].optionType, opts[1].optionType, `gem icon ${icon}`, notes);
     gems.push({
       name: specName(attr, baseCost),
       gemAttr: attr,
@@ -323,6 +421,7 @@ export function parseLoadout(
   if (!isBible && !isKR) return null;
 
   const warnings: string[] = [];
+  const notes: string[] = [];
   let gems: ArkGridGem[] = [];
   let source: ImportResult['source'];
   let isKrPage = false;
@@ -331,10 +430,10 @@ export function parseLoadout(
     // not-yet-refreshed SvelteKit page) yields no cores. Return a recognized result with no gems
     // rather than null, so the UI can guide the user (refresh) instead of "not a character page".
     const cores = extractArkGridCores(text);
-    gems = cores ? coresToGems(cores, warnings) : [];
+    gems = cores ? coresToGems(cores, warnings, notes) : [];
     source = 'lostark.bible';
   } else {
-    gems = parseLopecGems(text, warnings);
+    gems = parseLopecGems(text, warnings, notes);
     source = 'lopec.kr';
     isKrPage = true;
   }
@@ -349,6 +448,7 @@ export function parseLoadout(
     className: meta.className,
     gems,
     warnings,
+    notes,
   };
 }
 

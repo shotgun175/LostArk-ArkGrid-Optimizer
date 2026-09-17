@@ -112,6 +112,8 @@
   let importText = $state<string>('');
   let isImportDragging = $state<boolean>(false);
   let importMsg = $state<string | null>(null);
+  // One line per gem the last import had to correct or could not fully trust (listed under the message).
+  let importNotes = $state<string[]>([]);
   let bookmarklet = $state<string>('');
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
@@ -283,6 +285,7 @@
       : result.source;
     const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
     importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}`;
+    importNotes = result.notes;
   }
 
   async function onImportDrop(e: DragEvent) {
@@ -623,6 +626,19 @@
         </button>
         {#if importMsg}
           <p class="owned-note">✅ {importMsg}</p>
+          {#if importNotes.length}
+            <details class="import-notes">
+              <summary>
+                {importNotes.length} import note{importNotes.length === 1 ? '' : 's'} (gems corrected or
+                flagged)
+              </summary>
+              <ul>
+                {#each importNotes as note, i (i)}
+                  <li>{note}</li>
+                {/each}
+              </ul>
+            </details>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -795,6 +811,19 @@
     color: var(--text);
     opacity: 0.9;
     font-size: 0.9rem;
+  }
+  /* Per-gem notes from the last import (cost/type corrected or flagged), folded under the message. */
+  .import-notes {
+    margin: 0.2rem 0 0;
+    font-size: 0.8rem;
+    opacity: 0.85;
+  }
+  .import-notes summary {
+    cursor: pointer;
+  }
+  .import-notes ul {
+    margin: 0.3rem 0 0;
+    padding-left: 1.2rem;
   }
 
   .import-panel {
