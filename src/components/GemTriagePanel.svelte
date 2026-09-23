@@ -11,6 +11,8 @@
     type GemRank,
     type GemRole,
     SUPPORT_EFFECT_D,
+    SUPPORT_ORDER_D,
+    SUPPORT_WILLPOWER_FACTOR,
     type ScoreFactor,
     computeGemScore,
     explainGemScore,
@@ -202,14 +204,14 @@
         <ul class="sh-list">
           <li>
             Each line is real <strong>% damage</strong> (D = 100·ln of its multiplier), so they add up
-            to the gem's approximate total % damage. A perfect gem is ≈ 1.4%.
+            to the gem's approximate total % damage. A perfect gem is ≈ {role === 'support' ? '0.3' : '1.4'}%.
           </li>
           <li>
-            <strong>Willpower</strong> = (4 - req) × {f4(D_WILLPOWER)} per cost-level - a lower willpower
+            <strong>Willpower</strong> = (4 - req) × {f4(D_WILLPOWER * (role === 'support' ? SUPPORT_WILLPOWER_FACTOR : 1))} per cost-level - a lower willpower
             requirement scores higher.
           </li>
           <li>
-            <strong>Order Points</strong> = level × {f4(D_ORDER)} - flat per point.
+            <strong>Order Points</strong> = level × {f4(role === 'support' ? SUPPORT_ORDER_D : D_ORDER)} - flat per point.
           </li>
           <li>
             <strong>Each option</strong> = its level × the per-level % damage below (depends on your
@@ -337,7 +339,7 @@
           <span class="note">
             Gems below your baseline tier are kept, not flagged for removal, as long as your current
             grid or a fully-maxed (all-Ancient) grid would still slot them. Removal only appears for
-            gems no grid — current or maxed — would use.
+            gems no grid (current or maxed) would use.
           </span>
         {/if}
         {#if profile.dualRole}

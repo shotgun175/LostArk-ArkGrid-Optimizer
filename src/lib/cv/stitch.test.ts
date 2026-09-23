@@ -45,7 +45,7 @@ describe('assembleScreenshots (count-driven, B-with-A-fallback)', () => {
     expect(r.status.complete).toBe(true);
   });
 
-  it('B: order-tolerant — assembles regardless of upload order', () => {
+  it('B: order-tolerant: assembles regardless of upload order', () => {
     const r = assembleScreenshots([seq(6, 7, 8, 9, 10, 11, 12, 13, 14), seq(1, 2, 3, 4, 5, 6, 7, 8, 9)], 14);
     expect(r.method).toBe('count-confirmed');
     expect(reqs(r.gems)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);

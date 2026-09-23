@@ -42,8 +42,8 @@
       </p>
       <p>
         Q. Which clients work?<br />
-        A. Any client and language. The gems are read by their shapes, not by matching one client's
-        exact text.
+        A. Any English-language client, at any resolution. Korean and Russian clients: use live
+        screen sharing (desktop Chrome or Edge) on a standard 16:9 screen, not Forced 21:9.
       </p>
     {:else if mode === 'import'}
       <h2>Import a loadout</h2>
@@ -69,7 +69,7 @@
       <p>
         2. Press the [🖥️ Start Screen Sharing] button to share your Lost Ark game screen.<br />
         <b>On an ultrawide / forced 21:9 screen</b>, toggle [Forced 21:9] on before sharing so
-        recognition primes the right scale right away. On a standard 16:9 screen, leave it off —
+        recognition primes the right scale right away. On a standard 16:9 screen, leave it off;
         recognition still adapts on its own, just a moment slower to lock on.
       </p>
       <p>3. Scroll down and check that recognized astrogems are being added to the list.</p>
@@ -90,7 +90,7 @@
       <ol>
         <li>Make sure the game screen is updating properly.</li>
         <li>
-          Recognition adapts to your resolution and aspect ratio automatically — standard 16:9,
+          Recognition adapts to your resolution and aspect ratio automatically: standard 16:9,
           ultrawide / forced 21:9, and windowed all work, so you no longer need to switch the game to
           windowed mode. If a region still looks misaligned, use [📷 Upload Screenshot], which reads
           gems from a screenshot on any client.

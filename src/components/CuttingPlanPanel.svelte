@@ -254,7 +254,7 @@
               <section>
                 <h4>Baseline (tier)</h4>
                 <p>
-                  The letter tier you're targeting — one rank above your stronger 3rd-lowest equipped
+                  The letter tier you're targeting: one rank above your stronger 3rd-lowest equipped
                   astrogem (the same baseline the Gem Triage uses). A fresh cut must reach this tier to
                   be an upgrade; step it with the slider to plan more or less aggressively.
                 </p>

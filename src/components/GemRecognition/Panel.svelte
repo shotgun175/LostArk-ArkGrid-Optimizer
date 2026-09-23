@@ -212,7 +212,7 @@
       controller.onImageProgress = null;
       if (recognized === 0) {
         window.alert(
-          'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot.'
+          'No gems were recognized in that screenshot. Make sure the full gem list is visible and the image is an uncropped game screenshot. Upload reads English clients only.'
         );
         return;
       }

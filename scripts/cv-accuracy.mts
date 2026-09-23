@@ -116,7 +116,7 @@ function pct(num: number, den: number): string {
 
 async function main(): Promise<void> {
   if (!fs.existsSync(fixturesDir)) {
-    console.log(`cv-accuracy: no fixtures at ${path.relative(root, fixturesDir)} — skipping (dev-only).`);
+    console.log(`cv-accuracy: no fixtures at ${path.relative(root, fixturesDir)}: skipping (dev-only).`);
     process.exit(0);
   }
 
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     .filter((f) => /\.jpe?g$/i.test(f))
     .sort();
   if (files.length === 0) {
-    console.log('cv-accuracy: fixtures folder has no .jpg images — nothing to do.');
+    console.log('cv-accuracy: fixtures folder has no .jpg images: nothing to do.');
     process.exit(0);
   }
 

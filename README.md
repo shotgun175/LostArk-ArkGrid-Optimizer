@@ -15,12 +15,14 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 
 ## Features
 
-- **On-screen gem recognition** — reads your astrogem inventory straight from a screenshot via OpenCV
-  template matching (runs in a Web Worker; resolution-flexible).
-- **Gem Triage** — scores every owned gem (additive quality model), assigns a tier
-  (Excellent / Very Good / Good for now / Priority to Replace), and marks each gem **Upgrade / Keep / Remove**
-  against the score of your weakest equipped gem. Works for DPS and Support.
-- **Cutting Plan** — a forward-looking "what to farm next" advisor. For DPS it surfaces the
+- **On-screen gem recognition**: reads your astrogem inventory from uploaded screenshots (tesseract
+  OCR) or a live screen share (OpenCV template matching), in a Web Worker; resolution-flexible.
+- **Loadout import**: brings in your character's equipped gems from lostark.bible or lopec.kr via a
+  one-click bookmarklet, a dropped saved `.html` of the character page, or its pasted source.
+- **Gem Triage**: scores every owned gem (additive quality model), gives it a letter rank (S+ to F-),
+  and marks each gem **Equipped / Upgrade / Keep / Remove** from what the solves of your current grid
+  and a fully maxed (all-Ancient) grid actually slot. Works for DPS and Support.
+- **Cutting Plan**: a forward-looking "what to farm next" advisor. For DPS it surfaces the
   cut / reset / fuse / don't-cut action and pipeline outlook (weeks-to-complete, gold/week, projected cp% gain)
   per gem archetype, driven by your gold-per-1%-damage budget and binding mode. For Support it shows a
   sim-backed relative ranking of which archetypes are best to chase. A per-cost
@@ -41,9 +43,9 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 - **Frontend:** Svelte 5 (runes) + TypeScript, Vite
 - **Solver (internal):** custom backtracking with upper-bound pruning (TypeScript); it no longer has
   its own UI section and instead supplies the evidence behind Gem Triage and the Cutting Plan
-- **Image processing:** OpenCV (template matching) in a Web Worker; the screenshot-upload OCR path
-  adds tesseract.js, whose engine + English data are fetched from a CDN (jsdelivr) on first use — the
-  only assets not served from the app's own origin
+- **Image processing:** OpenCV (template matching) in a Web Worker; screenshot upload and the Cut
+  Advisor both add tesseract.js, whose engine + English data are fetched from a CDN (jsdelivr) on
+  first use. Those are the only assets not served from the app's own origin
 - **Deployment:** GitHub Pages (client-side; no backend or SSR)
 
 ## Running locally
@@ -56,7 +58,7 @@ npm run preview    # serve the production build
 ```
 
 Open the URL the dev/preview server prints (it includes the `/LostArk-ArkGrid-Optimizer/` base path).
-Note: opening `dist/index.html` directly from disk won't work — the app uses ES-module workers and absolute
+Note: opening `dist/index.html` directly from disk won't work: the app uses ES-module workers and absolute
 asset paths, so it must be served over HTTP (`npm run dev` or `npm run preview`).
 
 ## Tests & checks
@@ -66,6 +68,7 @@ npm run test:unit  # pure-logic unit tests (Vitest)
 npm run test:cv    # OpenCV-dependent tests (run via tsx; Vitest hangs on the WASM bundle)
 npm run test       # both of the above
 npm run check      # svelte-check (warnings fail it) + tsc type checking
+npm run lint       # ESLint (CI gate)
 npm run knip       # reports orphaned exports / files / dependencies; must exit clean (CI gate)
 ```
 
@@ -80,7 +83,7 @@ npm run generate:pipeline # Cutting-plan dataset (DPS + Support) -> src/lib/cutp
 
 Note: `generate:pipeline` reads shizukaziye's astrogem-calculator pipeline data
 (`loa-astrogem-calc/data/pipeline.json` + `data/pipeline-support.json` from his `loastuff` repo) from
-under `Reference Projects/`, third-party content that is deliberately **not** tracked — the command
+under `Reference Projects/`, third-party content that is deliberately **not** tracked, so the command
 only runs on a machine that has it. The committed `pipeline.json` (his exact Bellman-DP over the
 2026-08 roster-bound grading model, used with attribution) carries a `_provenance` block (each
 source's sha256 + date) so it stays auditable.
@@ -102,7 +105,7 @@ boundaries are.
 **Confirmed**
 
 - **On-screen recognition is resolution-flexible.** Real English-client screenshots read identically
-  across setups — 2560×1440 (forced 21:9 and 16:9) and 1920×1080 windowed all gave 9/9 gems, the
+  across setups: 2560×1440 (forced 21:9 and 16:9) and 1920×1080 windowed all gave 9/9 gems, the
   Chaos tab read 9/9, and locale + Order/Chaos attribute auto-detected.
 - **Solver pruning is exact.** A single astrogem contributes at most 5 will-points and a core holds
   at most 4 gems, so the branch-and-bound's upper bounds never discard a reachable best loadout.
@@ -121,18 +124,16 @@ boundaries are.
 
 - **True 4K (3840×2160) and real ultrawide monitors.** Designed for (they reuse the same scale-snap
   mechanism) but not yet confirmed against actual captures.
-- **Windowed sizes between resolution tiers** fall back to a raw measured scale (±~1–2%) and aren't
+- **Windowed sizes between resolution tiers** fall back to a raw measured scale (±~1 to 2%) and aren't
   stress-tested.
-- **Support cut-value rate.** `SUPPORT_VALUE_RATE = 1.0` treats one Support score-point as worth one
-  DPS score-point — a deliberate, tunable assumption, not an empirically pinned number.
 - **Duplicate-heavy inventories.** A scrolled capture with many identical gems can over-count; enter
   those manually if a count looks off.
 
 **Out of scope**
 
-- **Recognition is desktop-only** (it needs screen capture + the OpenCV bundle). On mobile the
-  recognition step is hidden and you enter gems by hand; gem triage and the cutting plan still work.
-- **No accounts or cloud sync** — profiles live only in your browser's local storage.
+- **Live screen sharing needs desktop Chromium** (Chrome or Edge). Screenshot upload and loadout
+  import work everywhere, mobile included.
+- **No accounts or cloud sync**: profiles live only in your browser's local storage.
 - **Not a rotation/DPS simulator:** gems are valued by the in-game combat-power formula, not a
   full damage simulation.
 
@@ -141,4 +142,4 @@ Games. "Lost Ark" and all related names and assets belong to their respective ow
 
 ## License
 
-MIT — see [LICENSE](LICENSE). All game-related assets are property of their respective owners.
+MIT: see [LICENSE](LICENSE). All game-related assets are property of their respective owners.

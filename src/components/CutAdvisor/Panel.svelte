@@ -418,7 +418,7 @@
             {#if hasAdvice && unconfirmed > 0}
               <div class="rec-unconfirmed" role="status">
                 Based on {unconfirmed} value{unconfirmed > 1 ? 's' : ''} the reader wasn't sure of. Check
-                the highlighted field{unconfirmed > 1 ? 's' : ''} on the gem first — correcting one can
+                the highlighted field{unconfirmed > 1 ? 's' : ''} on the gem first. Correcting one can
                 change which action wins.
               </div>
             {/if}

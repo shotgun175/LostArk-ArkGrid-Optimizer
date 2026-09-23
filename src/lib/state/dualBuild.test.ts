@@ -80,7 +80,7 @@ describe('migrateProfileToDualBuild', () => {
     expect(builds.dps.cores.Order.Sun.grade).toBe('Epic');
   });
 
-  it('is idempotent — an already-migrated profile is untouched', () => {
+  it('is idempotent: an already-migrated profile is untouched', () => {
     const p: Record<string, unknown> = {
       builds: { dps: { marker: 1 } },
       activeBuild: 'dps',
