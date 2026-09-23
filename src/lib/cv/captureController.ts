@@ -42,6 +42,9 @@ export class CaptureController {
     resolve: () => void;
     reject: (reason: StartCaptureErrorType) => void;
   } | null = null;
+  // The in-flight init round, shared by every caller that needs the worker initialized, so a second
+  // caller before init:done joins the round instead of overwriting the single resolver slot.
+  private initRound: Promise<void> | null = null;
   private awaitFrameCompletion: (() => void) | null = null;
   // Resolver for an in-flight recognizeImage() call (static-image upload path).
   private awaitImageCompletion: ((result: ImageRecognition | null) => void) | null = null;
@@ -85,6 +88,7 @@ export class CaptureController {
         this.workerInitialized = true;
         this.awaitWorkerInitialization?.resolve();
         this.awaitWorkerInitialization = null;
+        this.initRound = null;
         const onLoad = this.onLoad;
         if (onLoad) {
           queueMicrotask(() => onLoad());
@@ -142,6 +146,7 @@ export class CaptureController {
           this.awaitWorkerInitialization.reject('worker-init-failed');
           this.awaitWorkerInitialization = null;
         }
+        this.initRound = null;
         break;
 
       case 'debug':
@@ -169,6 +174,13 @@ export class CaptureController {
       this.awaitWorkerInitialization.reject('worker-init-failed');
       this.awaitWorkerInitialization = null;
     }
+    this.initRound = null;
+    // A worker that never initialized (e.g. its chunk failed to load after a redeploy) drops every
+    // later message, so discard it and let the next call load a fresh one.
+    if (!this.workerInitialized) {
+      this.worker?.terminate();
+      this.worker = null;
+    }
     if (this.awaitImageCompletion) {
       this.awaitImageCompletion(null);
       this.awaitImageCompletion = null;
@@ -177,6 +189,14 @@ export class CaptureController {
       this.awaitFrameCompletion();
       this.awaitFrameCompletion = null;
     }
+  }
+
+  // Join the in-flight init round, or post init and start one.
+  private waitInit(): Promise<void> {
+    return (this.initRound ??= new Promise<void>((resolve, reject) => {
+      this.awaitWorkerInitialization = { resolve, reject };
+      this.postMessage({ type: 'init' });
+    }));
   }
 
   private async requestDisplayMedia() {
@@ -248,13 +268,7 @@ export class CaptureController {
       if (!this.worker) {
         this.worker = this.createWorker();
       }
-      if (!this.workerInitialized) {
-        const waitForInit = new Promise<void>((resolve, reject) => {
-          this.awaitWorkerInitialization = { resolve, reject };
-        });
-        this.postMessage({ type: 'init' });
-        await waitForInit;
-      }
+      if (!this.workerInitialized) await this.waitInit();
       return await new Promise<ImageRecognition | null>((resolve) => {
         this.awaitImageCompletion = resolve;
         this.worker!.postMessage(
@@ -297,12 +311,9 @@ export class CaptureController {
       if (!this.worker) {
         this.worker = this.createWorker();
       }
-      // Create a promise that waits for the worker's init, then send the init request
+      // Wait for the worker's init, sending the init request unless a round is already in flight
       // (it may be rejected depending on the worker's response!)
-      const waitForInit = new Promise<void>((resolve, reject) => {
-        this.awaitWorkerInitialization = { resolve, reject };
-      });
-      this.postMessage({ type: 'init' });
+      const waitForInit = this.waitInit();
 
       // Request screen sharing from the user WHILE the ~10.8MB OpenCV WASM downloads/compiles, and wait
       // for both. Firing the picker in parallel hides the compile behind the user's window-picking time;
@@ -400,6 +411,7 @@ export class CaptureController {
     // Once the loop exits, set state to idle
     this.track?.stop();
     this.track = null;
+    this.reader = null;
     const onStop = this.onStop;
     if (onStop) {
       queueMicrotask(() => {
@@ -416,6 +428,10 @@ export class CaptureController {
     // That felt too verbose, so we just end the loop instead...
     if (this.state === 'recording') {
       this.state = 'closing'; // expect to reach idle later, after the loop exits
+      // A static shared window sends no new frame, so the loop could sit on reader.read() with the
+      // share still live. Stop the track and cancel the reader: read() resolves done and the loop exits.
+      this.track?.stop();
+      void this.reader?.cancel().catch(() => {});
     }
   }
   isRecording() {

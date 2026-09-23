@@ -213,6 +213,9 @@ export class AdvisorController {
   private pending = new Map<number, (r: AdvisorResult | null) => void>();
   private initialized = false;
   private awaitInit: { resolve: () => void; reject: (e: unknown) => void } | null = null;
+  // The in-flight init round, shared by every caller that needs the worker initialized, so a second
+  // caller before init:done joins the round instead of overwriting the single resolver slot.
+  private initRound: Promise<void> | null = null;
 
   private createWorker(): Worker {
     const w = new Worker(new URL('./advisorWorker.ts', import.meta.url), { type: 'module' });
@@ -227,6 +230,7 @@ export class AdvisorController {
       this.initialized = true;
       this.awaitInit?.resolve();
       this.awaitInit = null;
+      this.initRound = null;
       return;
     }
     // The read landed but the DP is still running (it is 85-90% of a re-read's wall time). Surface
@@ -261,8 +265,23 @@ export class AdvisorController {
   private onError() {
     this.awaitInit?.reject(new Error('advisor worker crashed'));
     this.awaitInit = null;
+    this.initRound = null;
     for (const cb of this.pending.values()) cb(null);
     this.pending.clear();
+    // A worker that never initialized (e.g. its chunk failed to load after a redeploy) drops every
+    // later message, so discard it and let the next call load a fresh one.
+    if (!this.initialized) {
+      this.worker?.terminate();
+      this.worker = null;
+    }
+  }
+
+  // Join the in-flight init round, or post init and start one.
+  private waitInit(): Promise<void> {
+    return (this.initRound ??= new Promise<void>((resolve, reject) => {
+      this.awaitInit = { resolve, reject };
+      this.worker!.postMessage({ type: 'init' });
+    }));
   }
 
   /** Pre-create the worker and boot tesseract ahead of the first parse (called on section open). */
@@ -593,12 +612,7 @@ export class AdvisorController {
   ): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
-      if (!this.initialized) {
-        await new Promise<void>((resolve, reject) => {
-          this.awaitInit = { resolve, reject };
-          this.worker!.postMessage({ type: 'init' });
-        });
-      }
+      if (!this.initialized) await this.waitInit();
       const id = ++this.seq;
       return await new Promise<AdvisorResult | null>((resolve) => {
         this.pending.set(id, resolve);
@@ -645,12 +659,7 @@ export class AdvisorController {
   ): Promise<AdvisorResult | null> {
     try {
       if (!this.worker) this.worker = this.createWorker();
-      if (!this.initialized) {
-        await new Promise<void>((resolve, reject) => {
-          this.awaitInit = { resolve, reject };
-          this.worker!.postMessage({ type: 'init' });
-        });
-      }
+      if (!this.initialized) await this.waitInit();
       const id = ++this.seq;
       const gen = this.watchGen;
       const res = await new Promise<AdvisorResult | null>((resolve) => {

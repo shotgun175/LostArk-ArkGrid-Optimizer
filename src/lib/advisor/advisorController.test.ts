@@ -3,7 +3,13 @@
 // via advisorWatchDebug during a missed gem swap on a 677px Force-21:9 window (2026-08-04).
 import { describe, expect, it } from 'vitest';
 
-import { type AdvisorAdvice, adviceMargin, spikeBarFor, watchReadGate } from './advisorController';
+import {
+  type AdvisorAdvice,
+  AdvisorController,
+  adviceMargin,
+  spikeBarFor,
+  watchReadGate,
+} from './advisorController';
 
 /** Shorthand: a polled frame after the first read, not busy, in the shape the gate takes. */
 const frame = (motion: number, content: number, stableFor: number, spikeSeen = true) => ({
@@ -107,6 +113,79 @@ describe('watchReadGate', () => {
     };
     expect(watchReadGate(first)).toBe(true);
     expect(watchReadGate({ ...first, stableFor: 300 })).toBe(false);
+  });
+});
+
+// --- worker load failure and the shared init round ------------------------------------------------
+// onError / onMessage and the worker field are private; tests reach them via `any`.
+
+// True if the promise settles before a short timer fires; false if it is still pending (a hang).
+async function settlesWithin(p: Promise<unknown>, ms = 50): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), ms)));
+  const settled = p.then(
+    () => true as const,
+    () => true as const
+  );
+  const result = await Promise.race([settled, timedOut]);
+  clearTimeout(timer);
+  return result;
+}
+
+// A fake worker that answers every parse / advise request with an empty parse:done.
+function fakeAdvisorWorker(c: any) {
+  const w = {
+    terminated: false,
+    postMessage(msg: { type: string; id?: number }) {
+      if (msg.type === 'parse' || msg.type === 'advise')
+        queueMicrotask(() =>
+          c.onMessage({ data: { type: 'parse:done', id: msg.id, result: {}, fusion: null } })
+        );
+    },
+    terminate() {
+      w.terminated = true;
+    },
+  };
+  return w;
+}
+
+describe('advisor worker load failure and init sharing', () => {
+  it('drops a worker that failed before init so the next call loads a fresh one', () => {
+    const c = new AdvisorController() as any;
+    const dead = fakeAdvisorWorker(c);
+    c.worker = dead;
+
+    c.onError();
+
+    expect(c.worker).toBeNull();
+    expect(dead.terminated).toBe(true);
+  });
+
+  it('keeps an initialized worker on a later error', () => {
+    const c = new AdvisorController() as any;
+    const live = fakeAdvisorWorker(c);
+    c.worker = live;
+    c.initialized = true;
+
+    c.onError();
+
+    expect(c.worker).toBe(live);
+    expect(live.terminated).toBe(false);
+  });
+
+  it('settles both parseImage and advise started before init:done', async () => {
+    const c = new AdvisorController() as any;
+    c.worker = fakeAdvisorWorker(c);
+    const bitmap = { close() {} } as unknown as ImageBitmap;
+
+    const parse = c.parseImage(bitmap);
+    const advise = c.advise({ config: {}, state: {}, outcomes: [], rarity: 'legendary' });
+    c.onMessage({ data: { type: 'init:done' } });
+
+    expect(await settlesWithin(parse)).toBe(true);
+    expect(await settlesWithin(advise)).toBe(true);
+    await expect(parse).resolves.not.toBeNull();
+    await expect(advise).resolves.not.toBeNull();
   });
 });
 
