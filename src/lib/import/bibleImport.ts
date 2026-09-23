@@ -132,20 +132,28 @@ function repairCostFromPool(
   return baseCost;
 }
 
+// The side of the core a gem sits in: bases 10001-10003 are the Order cores, 10004-10006 Chaos.
+function attrFromCoreBase(base: number | undefined): ArkGridAttr | null {
+  if (base == null || base < 10001 || base > 10006) return null;
+  return base <= 10003 ? 'Order' : 'Chaos';
+}
+
 // Cost + type for one gem: the override table first, then the id digits, then a repair from the
-// option pools. Every correction, and every id we cannot trust, leaves a note so the change is
-// visible instead of silent. Returns null only when the digits give no cost at all.
+// option pools. The core holding the gem has the last word on its side. Every correction, and every
+// id we cannot trust, leaves a note so the change is visible instead of silent. Returns null only
+// when the digits give no cost at all.
 function gemIdentity(
   idStr: string,
   o1: ArkGridGemOptionName,
   o2: ArkGridGemOptionName,
-  notes: string[]
+  notes: string[],
+  coreBase?: number
 ): { baseCost: number; attr: ArkGridAttr } | null {
   const ov = GEM_ID_OVERRIDES[idStr];
   const digitCost = costFromGemId(idStr);
   const digitAttr = attrFromGemId(idStr);
   let baseCost = ov ? ov.baseCost : digitCost;
-  const attr = ov ? ov.attr : digitAttr;
+  let attr = ov ? ov.attr : digitAttr;
   if (baseCost == null) return null;
   if (ov) {
     if (digitCost !== ov.baseCost || digitAttr !== ov.attr) {
@@ -155,6 +163,11 @@ function gemIdentity(
     }
   } else if (!GEM_ID_674.test(idStr)) {
     notes.push(`gem id ${idStr} is not in the known 674xxxxx format, so its cost/type are a guess`);
+  }
+  const coreAttr = attrFromCoreBase(coreBase);
+  if (coreAttr && coreAttr !== attr) {
+    notes.push(`gem id ${idStr} reads as ${attr}, but its core is on the ${coreAttr} side; read as ${coreAttr}`);
+    attr = coreAttr;
   }
   baseCost = repairCostFromPool(baseCost, o1, o2, `gem id ${idStr}`, notes);
   return { baseCost, attr };
@@ -220,6 +233,8 @@ function extractArkGridCores(html: string): RawCore[] | null {
   return raid;
 }
 
+const isIntIn = (n: number, lo: number, hi: number) => Number.isInteger(n) && n >= lo && n <= hi;
+
 function optionFromBible(
   o: { id?: number; level?: number } | undefined,
   idStr: string,
@@ -234,7 +249,12 @@ function optionFromBible(
     warnings.push(`unknown effect id ${o.id} on gem ${idStr}`);
     return null;
   }
-  return { optionType, value: Number(o.level) || 0 };
+  const level = Number(o.level);
+  if (!isIntIn(level, 1, 5)) {
+    warnings.push(`gem ${idStr}: implausible effect level ${o.level}`);
+    return null;
+  }
+  return { optionType, value: level };
 }
 
 interface RawGem {
@@ -244,13 +264,26 @@ interface RawGem {
   opts?: { id?: number; level?: number }[];
 }
 
-function mapBibleGem(rawGem: RawGem, warnings: string[], notes: string[]): ArkGridGem | null {
+function mapBibleGem(
+  rawGem: RawGem,
+  coreBase: number | undefined,
+  warnings: string[],
+  notes: string[]
+): ArkGridGem | null {
   const idStr = String(rawGem?.id ?? '');
   const opts = Array.isArray(rawGem.opts) ? rawGem.opts : [];
   const option1 = optionFromBible(opts[0], idStr, warnings);
   const option2 = optionFromBible(opts[1], idStr, warnings);
   if (!option1 || !option2) return null;
-  const ident = gemIdentity(idStr, option1.optionType, option2.optionType, notes);
+  // The page is untrusted input: a gem worth more than 5 points can push a core past what the solver
+  // accepts and break every later Optimize, so an out-of-range gem is skipped rather than guessed.
+  const costReduc = Number(rawGem.costReduc ?? 0);
+  const point = Number(rawGem.corePoints);
+  if (!isIntIn(costReduc, 0, 5) || !isIntIn(point, 1, 5)) {
+    warnings.push(`gem ${idStr}: implausible values`);
+    return null;
+  }
+  const ident = gemIdentity(idStr, option1.optionType, option2.optionType, notes, coreBase);
   if (!ident) {
     warnings.push(`could not derive cost from gem id ${idStr}`);
     return null;
@@ -259,8 +292,8 @@ function mapBibleGem(rawGem: RawGem, warnings: string[], notes: string[]): ArkGr
   return {
     name: specName(attr, baseCost),
     gemAttr: attr,
-    req: baseCost - (Number(rawGem.costReduc) || 0),
-    point: Number(rawGem.corePoints) || 0,
+    req: baseCost - costReduc,
+    point,
     option1,
     option2,
   };
@@ -271,7 +304,7 @@ function coresToGems(cores: RawCore[], warnings: string[], notes: string[]): Ark
   for (const core of cores) {
     const rawGems = Array.isArray(core?.gems) ? (core.gems as RawGem[]) : [];
     for (const rg of rawGems) {
-      const g = mapBibleGem(rg, warnings, notes);
+      const g = mapBibleGem(rg, core?.base, warnings, notes);
       if (g) gems.push(g);
     }
   }
@@ -312,11 +345,18 @@ function parseLopecGems(html: string, warnings: string[], notes: string[]): ArkG
     }
     // Same pool check the bible path gets (requiredWillpower is the real cost, so nothing else moves).
     baseCost = repairCostFromPool(baseCost, opts[0].optionType, opts[1].optionType, `gem icon ${icon}`, notes);
+    const req = parseInt(m[2], 10);
+    const point = parseInt(m[3], 10);
+    const levelsOk = isIntIn(opts[0].value, 1, 5) && isIntIn(opts[1].value, 1, 5);
+    if (!isIntIn(req, baseCost - 5, baseCost) || !isIntIn(point, 1, 5) || !levelsOk) {
+      warnings.push(`gem icon ${icon}: implausible values`);
+      continue;
+    }
     gems.push({
       name: specName(attr, baseCost),
       gemAttr: attr,
-      req: parseInt(m[2], 10),
-      point: parseInt(m[3], 10),
+      req,
+      point,
       option1: opts[0],
       option2: opts[1],
     });

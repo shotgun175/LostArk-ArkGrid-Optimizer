@@ -16,6 +16,7 @@
     imgRoleCombat,
     imgRoleSupporter,
     initNewProfile,
+    isImportableProfile,
     migrateProfile,
     setCurrentProfileName,
     updateProfileCharacterName,
@@ -199,6 +200,7 @@
             try {
               const data: CharacterProfile = bigIntSerializer.parse(e.target?.result as string);
               migrateProfile(data);
+              if (!isImportableProfile(data)) throw Error('Not a profile file');
               if (addNewProfile(data)) {
                 currentProfileName.current = data.characterName;
               } else if (

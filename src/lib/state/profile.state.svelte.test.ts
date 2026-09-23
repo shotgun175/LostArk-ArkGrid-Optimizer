@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_NAME } from '../constants/enums';
 import { gradeRows, rankFromGrade } from '../scoring/gemScore';
-import { addNewProfile, appConfig, getProfile } from './appConfig.state.svelte';
+import { addNewProfile, appConfig, bigIntSerializer, getProfile } from './appConfig.state.svelte';
 import { initBuildCores } from './dualBuild';
 import {
   deleteProfile,
   initNewProfile,
+  isImportableProfile,
   migrateProfile,
   setCurrentProfileName,
   updateProfileCharacterName,
@@ -187,5 +188,36 @@ describe('migrateProfile', () => {
     migrateProfile(profile);
     expect(profile.builds.dps.baselineOverride).toBeUndefined();
     expect(profile.builds.support.baselineOverride).toBeUndefined();
+  });
+});
+
+describe('isImportableProfile (profile file import guard)', () => {
+  // The import handler runs migrateProfile first, then this guard, exactly as here.
+  const imported = (payload: unknown) => {
+    const data = JSON.parse(JSON.stringify(payload));
+    migrateProfile(data);
+    return isImportableProfile(data);
+  };
+
+  it('rejects a profile with no gem pool', () => {
+    expect(imported({ characterName: 'x' })).toBe(false);
+  });
+
+  it('rejects a profile whose builds are empty', () => {
+    expect(
+      imported({ characterName: 'x', gems: { orderGems: [], chaosGems: [] }, builds: {} })
+    ).toBe(false);
+  });
+
+  it('accepts a profile the app exported', () => {
+    const exported = initNewProfile('Exported');
+    exported.gems.orderGems.push({
+      gemAttr: 'Order',
+      req: 4,
+      point: 5,
+      option1: { optionType: 'AtkPower', value: 5 },
+      option2: { optionType: 'AddDamage', value: 5 },
+    });
+    expect(imported(bigIntSerializer.parse(bigIntSerializer.stringify(exported)))).toBe(true);
   });
 });

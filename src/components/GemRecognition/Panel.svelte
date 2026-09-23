@@ -12,7 +12,8 @@
     parseImportHash,
     parseLoadout,
   } from '../../lib/import/bibleImport';
-  import { type ArkGridGem, isSameArkGridGem } from '../../lib/models/arkGridGems';
+  import { mergeImportedGems } from '../../lib/import/mergeImportedGems';
+  import { type ArkGridGem } from '../../lib/models/arkGridGems';
   import {
     appConfig,
     sectionUI,
@@ -245,14 +246,13 @@
   }
 
   // Merge an imported loadout into the working gem lists (same store recognition fills), deduping
-  // against gems already present. Returns how many new gems were added.
+  // copy for copy against gems already present. Returns how many new gems were added.
   function applyImportedGems(result: ImportResult): number {
     let added = 0;
     let addedOrder = false;
     let addedChaos = false;
-    for (const gem of result.gems) {
+    for (const gem of mergeImportedGems([...totalOrderGems, ...totalChaosGems], result.gems)) {
       const list = gem.gemAttr === 'Order' ? totalOrderGems : totalChaosGems;
-      if (list.some((g) => isSameArkGridGem(g, gem))) continue;
       list.push(gem);
       added++;
       if (gem.gemAttr === 'Order') addedOrder = true;

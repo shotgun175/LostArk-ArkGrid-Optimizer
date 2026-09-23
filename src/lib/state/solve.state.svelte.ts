@@ -11,6 +11,7 @@ import {
   type BuildRole,
   type CharacterProfile,
   buildState,
+  getCurrentProfile,
   setBuildEndgame,
   setBuildSolveAfter,
 } from './profile.state.svelte';
@@ -110,6 +111,32 @@ function buildAssignedGems(
   });
 }
 
+// The pool's gem fingerprints in position order. `sig` ignores order, but a result's gem indexes are
+// positions, so a pool swapped for the same gems in another order must also count as changed.
+function gemPoolOrder(profile: CharacterProfile): string {
+  return JSON.stringify([
+    profile.gems.orderGems.map(gemFingerprint),
+    profile.gems.chaosGems.map(gemFingerprint),
+  ]);
+}
+
+// A pass's result indexes into the exact pool it was sent and is written into the current profile,
+// so it is only kept when the user has not switched profile or edited this build's cores or the gem
+// pool (including its order) while the worker ran. Otherwise nothing is written: the old result
+// stays and shows stale.
+function solvedInputsUnchanged(
+  profile: CharacterProfile,
+  role: BuildRole,
+  sig: string,
+  poolOrder: string
+): boolean {
+  return (
+    profile === getCurrentProfile() &&
+    solveInputSignature(buildState(role, profile).cores, profile.gems) === sig &&
+    gemPoolOrder(profile) === poolOrder
+  );
+}
+
 export function getProgressLabel(progress: SolverProgress | null) {
   if (!progress) {
     return '';
@@ -143,7 +170,10 @@ async function solveOne(profile: CharacterProfile, role: BuildRole) {
   // Per-slot previous assignment for isNew + replaces detection (this build's prior result).
   const previousAssigned = buildState(role, profile).solveInfo.after?.solveAnswer?.assignedGems;
 
+  const sig = solveInputSignature(buildState(role, profile).cores, profile.gems);
+  const poolOrder = gemPoolOrder(profile);
   const result = await controller.runSolve(profile, role);
+  if (!solvedInputsUnchanged(profile, role, sig, poolOrder)) return;
 
   const assignedGems = buildAssignedGems(profile, result.assignedGemIndexes, previousAssigned);
   let swapIdx = 1;
@@ -162,18 +192,21 @@ async function solveOne(profile: CharacterProfile, role: BuildRole) {
     answerCores: JSON.parse(JSON.stringify(buildState(role, profile).cores)),
     additionalGemResult: result.additionalGemResult,
     needLauncherGem: result.needLauncherGem,
-    inputSig: solveInputSignature(buildState(role, profile).cores, profile.gems),
+    inputSig: sig,
   });
 }
 
 async function solveEndgame(profile: CharacterProfile, role: BuildRole) {
+  const sig = solveInputSignature(buildState(role, profile).cores, profile.gems);
+  const poolOrder = gemPoolOrder(profile);
   const result = await controller.runSolve(profile, role, { endgame: true });
+  if (!solvedInputsUnchanged(profile, role, sig, poolOrder)) return;
   // No previous assignment to diff against — buildAssignedGems(_, _, undefined) just resolves the
   // indexes to clean gem copies (no isNew/replaces markers, which the triage does not read).
   const assignedGems = buildAssignedGems(profile, result.assignedGemIndexes, undefined);
   setBuildEndgame(role, {
     assignedGems,
-    inputSig: solveInputSignature(buildState(role, profile).cores, profile.gems),
+    inputSig: sig,
   });
 }
 
