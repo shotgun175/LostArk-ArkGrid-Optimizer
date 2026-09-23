@@ -4,8 +4,10 @@
 // state. The full image-in -> parse-out accuracy is measured OUTSIDE the unit lane, by the harness under
 // Reference Projects/advisor-fixtures/groundtruth (needs image decode + tesseract); see the vendored
 // structural-engine.js header for the numbers pinned at the last re-sync. These checks need neither.
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-
+import { sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
@@ -23,14 +25,41 @@ describe('advisor parser stack wiring', () => {
 
   // The 2026-08 re-sync added three GENERATED trained models the engine consults for its joint level,
   // name and tile solves. The engine swallows a missing model silently (try/catch at load), which would
-  // quietly degrade accuracy, so pin that each one exists, exports its table, and is in the worker's
-  // load list (advisorWorker.ts raw-imports + evals them in order before structural-engine).
+  // quietly degrade accuracy, so pin that each one exists and exports its table. Under Node the require
+  // chain loads them all; the worker's own load list is pinned by the next test.
   it('ships the level, name and tile models the engine consults', () => {
     expect(require('./vendor/ocr/level-model.js').LEVEL_MODEL).toBeTruthy();
     const nm = require('./vendor/ocr/name-model.js');
     expect(nm.NAME_MODEL).toBeTruthy();
     expect(Array.isArray(nm.NAME_MODEL_NAMES)).toBe(true);
     expect(require('./vendor/ocr/tile-model.js').TILE_MODEL).toBeTruthy();
+  });
+
+  // In the browser the worker evals a hand-kept list of ?raw sources and structural-engine reads each
+  // model off self, so a vendored file missing from that list (or evaluated after structural-engine)
+  // degrades accuracy with no error. Read advisorWorker.ts as text and pin the list to the vendor tree.
+  it('the worker imports and evals every vendored file, astrogem first and structural-engine last', () => {
+    const worker = readFileSync(new URL('./advisorWorker.ts', import.meta.url), 'utf8');
+    const imports = new Map(
+      [...worker.matchAll(/^import (\w+) from '\.\/vendor\/(.+\.js)\?raw';$/gm)].map((m) => [
+        m[2],
+        m[1],
+      ])
+    );
+    const vendorDir = fileURLToPath(new URL('./vendor', import.meta.url));
+    const vendored = readdirSync(vendorDir, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.js'))
+      .map((f) => f.split(sep).join('/'));
+    expect([...imports.keys()].sort()).toEqual(vendored.sort());
+
+    const list = worker.match(/for \(const src of \[([^\]]*)\]\)/)?.[1] ?? '';
+    const evaled = list
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    expect([...evaled].sort()).toEqual([...imports.values()].sort());
+    expect(evaled[0]).toBe('astrogemSrc');
+    expect(evaled.at(-1)).toBe('structuralSrc');
   });
 });
 

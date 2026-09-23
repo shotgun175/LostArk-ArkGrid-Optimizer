@@ -1,6 +1,7 @@
 /**
- * Single-image gem recognition core, factored out of the live capture worker so it can run
- * BOTH in the worker (static-image uploads) and in plain Node (the accuracy harness).
+ * Single-image gem recognition core, factored out of the live capture worker. `recognizeGems` runs
+ * in plain Node for the accuracy harness (scripts/cv-accuracy.mts); uploads in the app go through
+ * the OCR path (recognizeOcr.ts) instead.
  *
  * Deliberately free of browser-only runtime APIs (`self`, `OffscreenCanvas`, `createImageBitmap`):
  * the caller hands in an already-decoded grayscale `cv.Mat` plus the loaded atlas, and gets back

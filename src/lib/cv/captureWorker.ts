@@ -535,8 +535,8 @@ class FrameProcessor {
         detectionMargin,
         debugCtx ?? undefined
       );
-      // owned-count is read only on the static-image upload path (recognizeGems); the live frame
-      // stream doesn't need the checksum, so leave it null here.
+      // owned-count is read only by recognizeGems, which only the Node accuracy harness runs (uploads
+      // use the OCR path); the live frame stream doesn't need the checksum, so leave it null here.
       return {
         found: true,
         result: { locale: currentLocale, gemAttr: gemAttr.key, gems: currentGems, owned: null },
