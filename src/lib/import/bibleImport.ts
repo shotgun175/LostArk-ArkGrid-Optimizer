@@ -178,16 +178,16 @@ interface RawCore {
   gems?: unknown;
 }
 
-// Pull every `arkGridCores:[ ... ]` array out of the page (one per loadout preset). Prefer the
-// raid loadout (the equipped grid); fall back to whichever preset actually has gems.
-function extractArkGridCores(html: string): RawCore[] | null {
+// Every `arkGridCores:[ ... ]` literal in the page, in order: `at` is the marker, `start` its '['
+// and `end` one past the matching ']'. Stops at the first literal that never closes.
+function arkGridCoresSpans(html: string): { at: number; start: number; end: number }[] {
   const marker = 'arkGridCores:[';
-  const occ: { at: number; cores: RawCore[] }[] = [];
+  const spans: { at: number; start: number; end: number }[] = [];
   let from = 0;
   for (;;) {
     const at = html.indexOf(marker, from);
     if (at === -1) break;
-    const start = at + 'arkGridCores:'.length; // points at the '['
+    const start = at + marker.length - 1; // points at the '['
     let depth = 0;
     let end = -1;
     for (let k = start; k < html.length; k++) {
@@ -202,6 +202,17 @@ function extractArkGridCores(html: string): RawCore[] | null {
       }
     }
     if (end === -1) break;
+    spans.push({ at, start, end });
+    from = end;
+  }
+  return spans;
+}
+
+// Pull every `arkGridCores:[ ... ]` array out of the page (one per loadout preset). Prefer the
+// raid loadout (the equipped grid); fall back to whichever preset actually has gems.
+function extractArkGridCores(html: string): RawCore[] | null {
+  const occ: { at: number; cores: RawCore[] }[] = [];
+  for (const { at, start, end } of arkGridCoresSpans(html)) {
     const literal = html.slice(start, end);
     // The page embeds bare (unquoted) keys; quote them so it parses as JSON.
     const jsonish = literal.replace(/([{,])\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":');
@@ -211,7 +222,6 @@ function extractArkGridCores(html: string): RawCore[] | null {
     } catch {
       // not valid after quoting — skip this occurrence
     }
-    from = end;
   }
   if (!occ.length) return null;
 
@@ -515,30 +525,10 @@ export function parseImportHash(
  * `arkGridCores:[` occurrences — an empty one plus the real loadout — so picking the first is wrong.
  */
 export function pickArkGridCoresSlice(html: string): string | null {
-  const k = 'arkGridCores:[';
   let best = '';
-  let from = 0;
-  for (;;) {
-    const a = html.indexOf(k, from);
-    if (a < 0) break;
-    const s = a + k.length - 1; // points at the '['
-    let depth = 0;
-    let end = -1;
-    for (let i = s; i < html.length; i++) {
-      const c = html[i];
-      if (c === '[') depth++;
-      else if (c === ']') {
-        depth--;
-        if (depth === 0) {
-          end = i + 1;
-          break;
-        }
-      }
-    }
-    if (end === -1) break;
-    const slice = html.slice(s, end);
+  for (const { start, end } of arkGridCoresSpans(html)) {
+    const slice = html.slice(start, end);
     if (slice.length > best.length) best = slice;
-    from = end;
   }
   return best.length > 2 ? 'arkGridCores:' + best : null;
 }
@@ -562,6 +552,7 @@ export function buildBookmarklet(appUrl: string): string {
     "if(ci<0||!pp[ci+2]){alert('Open a lostark.bible character page first (lostark.bible/character/REGION/NAME).');return;}" +
     "var region=pp[ci+1].toUpperCase();if(region=='CE')region='EU';var name=decodeURIComponent(pp[ci+2]);" +
     "fetch(location.href,{credentials:'include'}).then(function(r){return r.text();}).then(function(h){" +
+    // Same walk as pickArkGridCoresSlice, its tested TypeScript mirror: keep the two in step.
     "var k='arkGridCores:[',f=0,best='';" +
     'for(;;){var a=h.indexOf(k,f);if(a<0)break;' +
     "var s=a+k.length-1,p=0,e=-1;for(var i=s;i<h.length;i++){var c=h[i];if(c=='[')p++;else if(c==']'){p--;if(!p){e=i+1;break;}}}" +

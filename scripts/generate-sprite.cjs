@@ -32,12 +32,14 @@ templateFolders.forEach(({ folder, lang }) => {
 
   if (files.length === 0) {
     console.warn(`No PNG files found in ${folder}, skipping...`);
+    process.exitCode = 1;
     return;
   }
 
   Spritesmith.run({ src: files, padding: 2 }, (err, result) => {
     if (err) {
       console.error(`Error generating sprite for ${lang}:`, err);
+      process.exitCode = 1;
       return;
     }
 

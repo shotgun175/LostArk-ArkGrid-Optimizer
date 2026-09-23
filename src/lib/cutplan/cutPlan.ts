@@ -25,10 +25,9 @@ import { COSTS, GOLD_PER_DAMAGE, RARITIES } from './types';
 
 export { GOLD_PER_DAMAGE };
 
-// Economy constants that OVERRIDE the baked legacy meta (shizukaziye's pipeline.js CONST block does
-// the same: the committed bake still carries his old deployed-page bands, these are the current ones).
-// No re-bake needed. Both equal model/astrogem.js COSTS.reset.
-export const RESET_COST = 20000; // gold to reset a finished gem for a fresh cut
+// Economy constant that OVERRIDES the baked legacy meta (shizukaziye's pipeline.js CONST block does
+// the same: the committed bake still carries his old deployed-page bands, this is the current one).
+// No re-bake needed. Equals model/astrogem.js COSTS.reset.
 export const RESET_THRESHOLD = 20000; // green band: a below-baseline finished gem is worth resetting iff cut-EV >= this
 
 /**

@@ -363,7 +363,7 @@
     {/if}
 
     {#if result}
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="advisor-layout" onpointerenter={engage} onfocusin={engage}>
         <!-- LEFT: the interactive visualizer -->
         <div class="advisor-window">
@@ -850,7 +850,7 @@
     color: #ffe08a;
   }
   .rc-pill {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter Variable', system-ui, sans-serif;
     font-size: 0.6rem;
     font-weight: 700;
     text-transform: uppercase;

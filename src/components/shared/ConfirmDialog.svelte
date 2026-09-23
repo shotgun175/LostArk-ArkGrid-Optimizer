@@ -41,6 +41,9 @@
     onclick={confirmDismiss}
     transition:fade={{ duration: 120 }}
   >
+    <!-- The click only keeps a click inside the card from reaching the backdrop's dismiss. Keyboard
+         use is handled by the window keydown listener and focus goes to the confirm button. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
     <div
       class="confirm-card"
       class:danger={confirmStore.active.tone === 'danger'}

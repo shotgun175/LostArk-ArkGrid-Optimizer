@@ -65,8 +65,8 @@ asset paths, so it must be served over HTTP (`npm run dev` or `npm run preview`)
 npm run test:unit  # pure-logic unit tests (Vitest)
 npm run test:cv    # OpenCV-dependent tests (run via tsx; Vitest hangs on the WASM bundle)
 npm run test       # both of the above
-npm run check      # svelte-check + tsc type checking
-npm run knip       # advisory: reports orphaned exports / files / dependencies (not a CI gate)
+npm run check      # svelte-check (warnings fail it) + tsc type checking
+npm run knip       # reports orphaned exports / files / dependencies; must exit clean (CI gate)
 ```
 
 ## Data generators

@@ -1,10 +1,9 @@
 /* Self-hosted webfonts — no external CDN. Inter = UI text; JetBrains Mono = solver numerics/code.
-   Latin subset only (the app is English-only). Shipped via @fontsource (runtime dependency). Per the
-   CSS spec, @import must precede every other rule, so these stay at the very top of the file. */
-@import '@fontsource/inter/latin-400.css';
-@import '@fontsource/inter/latin-500.css';
-@import '@fontsource/inter/latin-600.css';
-@import '@fontsource/inter/latin-700.css';
+   Inter is the variable font (one file covers every weight); all its subsets are registered and the
+   browser loads only those the page's text needs, by unicode-range. JetBrains Mono is latin only.
+   Shipped via @fontsource (runtime dependency). Per the CSS spec, @import must precede every other
+   rule, so these stay at the very top of the file. */
+@import '@fontsource-variable/inter/wght.css';
 @import '@fontsource/jetbrains-mono/latin-400.css';
 @import '@fontsource/jetbrains-mono/latin-600.css';
 
@@ -54,7 +53,7 @@
 :root {
   --global-gap: clamp(1rem, 2vw, 2rem);
   /* Inter for UI text, JetBrains Mono for solver numerics (see @fontsource imports above). */
-  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 

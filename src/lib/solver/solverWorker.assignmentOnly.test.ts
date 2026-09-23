@@ -28,8 +28,7 @@ function gem(
   };
 }
 
-// Under-saturated all-Ancient (energy-17) cores with only a few gems each: mirrors the endgame pass
-// and leaves cores short of their 17-point cap, so the full run has real launcher-gem work to skip.
+// Under-saturated all-Ancient (energy-17) cores with only a few gems each: mirrors the endgame pass.
 const payload: SolverRunPayload = {
   orderCores: [core(17, 0), core(17, 0), core(17, 0)],
   chaosCores: [core(17, 0), core(17, 0), core(17, 0)],
@@ -53,22 +52,31 @@ describe('runSolve assignmentOnly', () => {
   it('produces the same gem assignment as a full solve', () => {
     const full = runSolve(payload, noop);
     const assignmentOnly = runSolve({ ...payload, assignmentOnly: true }, noop);
-    // The assignment is what the endgame pass consumes; skipping the score/launcher work must not
-    // change it.
+    // The assignment is what the endgame pass consumes; skipping the score work must not change it.
     expect(assignmentOnly.assignedGemIndexes).toEqual(full.assignedGemIndexes);
-    expect(assignmentOnly.needLauncherGem).toEqual(full.needLauncherGem);
   });
 
-  it('the full run actually has launcher-gem work to skip (non-vacuity)', () => {
-    // If the cores were already saturated, the full run would skip the simulation too and the
-    // equivalence above would be trivial. This proves the skipped path was live.
+  it('the full run actually does the work the endgame pass skips (non-vacuity)', () => {
+    // If the full run also returned a zeroed score set, the equivalence above would be trivial.
     const full = runSolve(payload, noop);
-    expect(full.needLauncherGem.Order || full.needLauncherGem.Chaos).toBe(true);
+    const assignmentOnly = runSolve({ ...payload, assignmentOnly: true }, noop);
+    expect(full.scoreSet.bestScore).toBeGreaterThan(0);
+    expect(full.scoreSet).not.toEqual(assignmentOnly.scoreSet);
+  });
+
+  it('the full run keeps its pinned assignment and score set', () => {
+    // Pinned from v0.3.12 so removing work the result does not depend on cannot move either.
+    const full = runSolve(payload, noop);
+    expect(full.assignedGemIndexes).toEqual([[1, 2], [0], [3], [0], [1], [2]]);
+    expect(full.scoreSet).toEqual({
+      score: 25.787659158939903,
+      bestScore: 127.79221444552297,
+      perfectScore: 63.48940736893609,
+    });
   });
 
   it('zeroes the fields the endgame pass discards', () => {
     const assignmentOnly = runSolve({ ...payload, assignmentOnly: true }, noop);
     expect(assignmentOnly.scoreSet).toEqual({ score: 0, bestScore: 0, perfectScore: 0 });
-    expect(assignmentOnly.additionalGemResult).toEqual({ Order: {}, Chaos: {} });
   });
 });

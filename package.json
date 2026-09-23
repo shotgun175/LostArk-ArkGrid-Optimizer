@@ -1,13 +1,13 @@
 {
   "name": "lostark-arkgrid-optimizer",
   "private": true,
-  "version": "0.3.12",
+  "version": "0.3.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
     "test": "vitest run && tsx scripts/cv-tests.mts",
     "test:unit": "vitest run",
     "test:cv": "tsx scripts/cv-tests.mts",
@@ -43,9 +43,9 @@
     "vitest": "^3.2.6"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/cinzel": "^5.3.0",
     "@fontsource/eb-garamond": "^5.3.0",
-    "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@techstark/opencv-js": "^4.12.0-release.1",
     "@zerodevx/svelte-toast": "^0.9.6",

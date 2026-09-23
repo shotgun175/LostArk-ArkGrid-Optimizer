@@ -1,5 +1,5 @@
 <!-- Synced from shotgun175.github.io/snippets/hub-badge.html
-     (local change: font stacks use the app's shipped Inter/JetBrains Mono
+     (local change: font stacks use the app's shipped Inter Variable/JetBrains Mono
      instead of the hub's Cinzel/IBM Plex Mono, which this app never loads). -->
 <a class="lat-badge" href="https://shotgun175.github.io/" target="_blank" rel="noopener"
    aria-label="Part of Lost Ark Tools, see all tools">
@@ -26,6 +26,6 @@
   .lat-badge:focus-visible { outline:2px solid #54d8d2; outline-offset:3px; }
   .lat-badge__text { display:flex; flex-direction:column; }
   .lat-badge__kicker { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#aab0d2; }
-  .lat-badge__name { font-family:"Inter",system-ui,sans-serif; font-size:14px; font-weight:600; color:#f0b94d; }
+  .lat-badge__name { font-family:"Inter Variable",system-ui,sans-serif; font-size:14px; font-weight:600; color:#f0b94d; }
   .lat-badge__arrow { color:#54d8d2; }
 </style>

@@ -3,7 +3,11 @@
 
   import type { AppLocale, ArkGridAttr, LocalizationName } from '../../lib/constants/enums';
   import { LCancel, LConfirm } from '../../lib/constants/localization';
-  import type { ArkGridGemName, ArkGridGemOption } from '../../lib/models/arkGridGems';
+  import {
+    type ArkGridGemName,
+    type ArkGridGemOption,
+    ArkGridGemSpecs,
+  } from '../../lib/models/arkGridGems';
   import { appConfig, updateUI } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import { addGem } from '../../lib/state/profile.state.svelte';
@@ -75,6 +79,55 @@
       optionType: 'AddDamage',
       value: 1,
     },
+  });
+
+  // Keep gemInput a legal gem for both input styles: a name of this attribute, two distinct options
+  // the gem can roll, and a willpower cost inside its range.
+  let availableGemSpecs = $derived(
+    Object.entries(ArkGridGemSpecs)
+      .filter(([, spec]) => spec.attr === gemAttr)
+      .map(([key, spec]) => ({
+        key: key as ArkGridGemName,
+        spec,
+      }))
+  );
+  $effect(() => {
+    // If the current name is not an available name, reset to the first one (Stability, Erosion)
+    if (!availableGemSpecs.some((v) => v.key === gemInput.name)) {
+      gemInput.name = availableGemSpecs[0]?.key;
+    }
+  });
+
+  let availableGemOptionTypes = $derived(ArkGridGemSpecs[gemInput.name].availableOptions);
+
+  $effect(() => {
+    // If the current option is not available, initialize it to an available option.
+    // When initializing, ensure it does not match the opposite option.
+    if (!availableGemOptionTypes.some((v) => v === gemInput.optionA.optionType)) {
+      gemInput.optionA.optionType =
+        gemInput.optionB.optionType === availableGemOptionTypes[0]
+          ? availableGemOptionTypes[1]
+          : availableGemOptionTypes[0];
+      gemInput.optionA.value = 1;
+    }
+    if (!availableGemOptionTypes.some((v) => v === gemInput.optionB.optionType)) {
+      // For B, initialize to an option that does not overlap with A.
+      gemInput.optionB.optionType =
+        gemInput.optionA.optionType === availableGemOptionTypes[0]
+          ? availableGemOptionTypes[1]
+          : availableGemOptionTypes[0];
+      gemInput.optionB.value = 1;
+    }
+  });
+
+  // Reset if the gem's willpower is out of the allowed range
+  $effect(() => {
+    if (gemInput.willPower < ArkGridGemSpecs[gemInput.name].req - 5) {
+      gemInput.willPower = ArkGridGemSpecs[gemInput.name].req - 5;
+    }
+    if (gemInput.willPower > ArkGridGemSpecs[gemInput.name].req - 1) {
+      gemInput.willPower = ArkGridGemSpecs[gemInput.name].req - 1;
+    }
   });
 </script>
 

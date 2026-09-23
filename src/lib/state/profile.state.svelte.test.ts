@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_NAME } from '../constants/enums';
 import { gradeRows, rankFromGrade } from '../scoring/gemScore';
-import { addNewProfile, appConfig, bigIntSerializer, getProfile } from './appConfig.state.svelte';
+import { addNewProfile, appConfig, getProfile } from './appConfig.state.svelte';
 import { initBuildCores } from './dualBuild';
 import {
   deleteProfile,
@@ -81,6 +81,37 @@ describe('migrateProfile', () => {
 
     expect('before' in profile.builds.dps.solveInfo).toBe(false);
     expect('before' in profile.builds.support.solveInfo).toBe(false);
+  });
+
+  it('strips the retired next-gem simulation fields from a saved solve', () => {
+    const mk = (after: Record<string, unknown>) =>
+      ({
+        characterName: 'Sim',
+        gems: { orderGems: [], chaosGems: [] },
+        builds: {
+          dps: { cores: initBuildCores(false), solveInfo: { after } },
+          support: { cores: initBuildCores(true), solveInfo: {} },
+        },
+        activeBuild: 'dps',
+        dualRole: false,
+      }) as any;
+
+    const withFields = mk({
+      inputSig: 'sig',
+      additionalGemResult: { Order: {}, Chaos: {} },
+      needLauncherGem: { Order: true, Chaos: false },
+    });
+    migrateProfile(withFields);
+    expect(withFields.builds.dps.solveInfo.after).toEqual({ inputSig: 'sig' });
+
+    const withoutFields = mk({ inputSig: 'sig' });
+    migrateProfile(withoutFields);
+    expect(withoutFields.builds.dps.solveInfo.after).toEqual({ inputSig: 'sig' });
+
+    // Idempotent: a second pass changes nothing.
+    const snapshot = JSON.parse(JSON.stringify(withFields));
+    migrateProfile(withFields);
+    expect(withFields).toEqual(snapshot);
   });
 
   it('resets saved Minimum Core Points to 0 (feature retired with the Optimization section)', () => {
@@ -218,6 +249,6 @@ describe('isImportableProfile (profile file import guard)', () => {
       option1: { optionType: 'AtkPower', value: 5 },
       option2: { optionType: 'AddDamage', value: 5 },
     });
-    expect(imported(bigIntSerializer.parse(bigIntSerializer.stringify(exported)))).toBe(true);
+    expect(imported(JSON.parse(JSON.stringify(exported)))).toBe(true);
   });
 });

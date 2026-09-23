@@ -6,14 +6,12 @@ import {
   baselineMaxGrade,
   bumpedBaselineGrade,
   computeGemScore,
-  rankFromGrade,
 } from './gemScore';
 
 export type TriageAction = 'equipped' | 'upgrade' | 'keep' | 'remove';
 
 export interface TriageResult {
   action: TriageAction;
-  rationale: string;
 }
 
 // The baseline is a GRADE on shizukaziye's per-axis baseline ladder (gradeRows(role), C- … S+), shown as a
@@ -123,18 +121,13 @@ export function triageOwnedGems(
     retainAssignments: (ArkGridGem[][] | undefined)[];
     baseline: number;
     hasEndgameEvidence: boolean;
-    /** Which axis's rank ladder to read tiers on (the two differ only in where S+ starts). */
-    role?: GemRole;
   }
 ): TriageResult[] {
-  const role: GemRole = opts.role ?? 'dps';
   const equippedRemaining = solveKeyCounts(opts.activeCurrent);
   const retainedRemaining = retainedCounts([opts.activeCurrent, ...opts.retainAssignments]);
-  const baseTier = rankFromGrade(opts.baseline, role);
 
   return owned.map(({ gem, grade }) => {
     const key = gemKey(gem);
-    const gemTier = rankFromGrade(grade, role);
     const retained = retainedRemaining.get(key) ?? 0;
 
     if (retained > 0) {
@@ -142,33 +135,17 @@ export function triageOwnedGems(
       const eq = equippedRemaining.get(key) ?? 0;
       if (eq > 0) {
         equippedRemaining.set(key, eq - 1);
-        return {
-          action: 'equipped',
-          rationale: 'Currently equipped, part of your solved loadout.',
-        };
+        return { action: 'equipped' };
       }
       if (grade >= opts.baseline) {
-        return {
-          action: 'upgrade',
-          rationale: `Tier ${gemTier} reaches your baseline ${baseTier} and a maxed grid slots it — a slot-able upgrade.`,
-        };
+        return { action: 'upgrade' };
       }
-      return {
-        action: 'keep',
-        rationale: `Tier ${gemTier} is below your baseline ${baseTier}, but a fully-maxed (Ancient) grid still uses it, so keep.`,
-      };
+      return { action: 'keep' };
     }
 
     if (!opts.hasEndgameEvidence) {
-      return {
-        action: 'keep',
-        rationale:
-          'Use Optimize to check whether a maxed grid would use this gem before removing it.',
-      };
+      return { action: 'keep' };
     }
-    return {
-      action: 'remove',
-      rationale: `Tier ${gemTier} isn't used by your current grid or a fully-maxed (Ancient) grid — surplus, safe to drop.`,
-    };
+    return { action: 'remove' };
   });
 }

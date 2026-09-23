@@ -19,11 +19,10 @@ export function getMaxStat(gss: GemSet[], statType: 'att' | 'skill' | 'boss') {
 }
 
 // Upper bound on the will-points a single astrogem can contribute. The game's gem-point domain is
-// 1-5: every "perfect" gem in solverWorker.ts uses point 5, and the launcher-gem simulation sweeps
-// gemPoint from 5 down to 1. getPossibleGemSets enumerates at most 4 gems per core (the i/j/k/m loop
-// nest), so after placing N gems the (4 - N) remaining slots can add at most (4 - N) * MAX_GEM_POINT
-// more points. The branch-and-bound below prunes a branch as soon as even that optimistic remainder
-// cannot reach the core's required `point`.
+// 1-5: every "perfect" gem in solverWorker.ts uses point 5. getPossibleGemSets enumerates at most
+// 4 gems per core (the i/j/k/m loop nest), so after placing N gems the (4 - N) remaining slots can
+// add at most (4 - N) * MAX_GEM_POINT more points. The branch-and-bound below prunes a branch as
+// soon as even that optimistic remainder cannot reach the core's required `point`.
 const MAX_GEM_POINT = 5;
 
 export function getPossibleGemSets(core: Core, gems: Gem[]): GemSet[] {

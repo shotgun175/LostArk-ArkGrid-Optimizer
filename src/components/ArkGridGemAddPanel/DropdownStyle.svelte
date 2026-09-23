@@ -35,46 +35,10 @@
         spec,
       }))
   );
-  $effect(() => {
-    // If the current name is not an available name, reset to the first one (Stability, Erosion)
-    if (!availableGemSpecs.some((v) => v.key === gemInput.name)) {
-      gemInput.name = availableGemSpecs[0]?.key;
-    }
-  });
 
   // 2. Get the options available for the current gemSpec
   let gemSpec = $derived(ArkGridGemSpecs[gemInput.name]);
   let availableGemOptionTypes = $derived(gemSpec.availableOptions);
-
-  $effect(() => {
-    // If the current option is not available, initialize it to an available option.
-    // When initializing, ensure it does not match the opposite option.
-    if (!availableGemOptionTypes.some((v) => v === gemInput.optionA.optionType)) {
-      gemInput.optionA.optionType =
-        gemInput.optionB.optionType === availableGemOptionTypes[0]
-          ? availableGemOptionTypes[1]
-          : availableGemOptionTypes[0];
-      gemInput.optionA.value = 1;
-    }
-    if (!availableGemOptionTypes.some((v) => v === gemInput.optionB.optionType)) {
-      // For B, initialize to an option that does not overlap with A.
-      gemInput.optionB.optionType =
-        gemInput.optionA.optionType === availableGemOptionTypes[0]
-          ? availableGemOptionTypes[1]
-          : availableGemOptionTypes[0];
-      gemInput.optionB.value = 1;
-    }
-  });
-
-  // Reset if the gem's willpower is out of the allowed range
-  $effect(() => {
-    if (gemInput.willPower < ArkGridGemSpecs[gemInput.name].req - 5) {
-      gemInput.willPower = ArkGridGemSpecs[gemInput.name].req - 5;
-    }
-    if (gemInput.willPower > ArkGridGemSpecs[gemInput.name].req - 1) {
-      gemInput.willPower = ArkGridGemSpecs[gemInput.name].req - 1;
-    }
-  });
 </script>
 
 <div class="content">

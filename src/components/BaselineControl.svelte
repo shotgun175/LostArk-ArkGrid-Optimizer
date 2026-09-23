@@ -137,7 +137,7 @@
     padding: 0.1rem 0.55rem;
     border-radius: 0.5rem;
     font-size: 1.05rem;
-    font-weight: 800;
+    font-weight: 700;
     color: #fff;
     font-variant-numeric: tabular-nums;
     min-width: 2.5rem;

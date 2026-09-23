@@ -4,7 +4,7 @@ name: CI
 # The regression gate is this workflow's check on the pull request, before merge. The Deploy
 # workflow (deploy.yml) runs independently on the same push to main and does not wait for CI,
 # so a red run on main does not stop a publish; main is reached through PRs by convention, not
-# by a branch protection rule. Mirrors the local `npm run check` + `npm test` gate.
+# by a branch protection rule. Mirrors the local `npm run check` + `lint` + `knip` + `npm test` gate.
 #
 # Note on data-drift: the cutting-plan dataset (src/lib/cutplan/pipeline.json) is baked
 # by scripts/extract-pipeline.cjs from shizukaziye's astrogem-calculator pipeline data,
@@ -42,4 +42,5 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run lint
+      - run: npm run knip
       - run: npm test

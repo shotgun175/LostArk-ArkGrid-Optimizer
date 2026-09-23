@@ -1,6 +1,4 @@
-import type { ArkGridAttr } from '../constants/enums';
 import type { ArkGridGem } from '../models/arkGridGems';
-import type { GemSetPackTuple } from './models';
 
 export type WorkerCore = {
   energy: number;
@@ -19,29 +17,15 @@ export type SolverProgressStage =
   | 'searching_order_packs'
   | 'searching_chaos_packs'
   | 'combining_results'
-  | 'simulating_launcher_gems'
   | 'finalizing';
 
 export type SolverProgress = {
   stage: SolverProgressStage;
   totalPercent: number;
   stagePercent: number;
-  attr?: ArkGridAttr;
   current?: number;
   total?: number;
 };
-
-export type SolverAdditionalGemResult = Record<
-  ArkGridAttr,
-  Record<
-    string,
-    {
-      corePointTuple: [number, number, number];
-      gems: ArkGridGem[];
-      score: number;
-    }
-  >
->;
 
 export type SolverRunPayload = {
   orderCores: WorkerCore[];
@@ -53,20 +37,16 @@ export type SolverRunPayload = {
   // independent arrays, so a single shared bitmask would be meaningless for both sides.
   orderCurrentBitmasks?: bigint[];
   chaosCurrentBitmasks?: bigint[];
-  // Compute only the gem assignment: skip the perfect-gems "best score" solve and the launcher-gem
-  // simulation. The endgame pass sets this because it consumes only `assignedGemIndexes` — the score
-  // set, additional-gem result, and launcher flags it would otherwise produce are discarded. The
-  // skipped work never feeds the assignment, so the result is identical to a full run (see
-  // solverWorker.assignmentOnly.test.ts).
+  // Compute only the gem assignment: skip the perfect-gems "best score" solve. The endgame pass sets
+  // this because it consumes only `assignedGemIndexes`; the score set it would otherwise produce is
+  // discarded. The skipped work never feeds the assignment, so the result is identical to a full run
+  // (see solverWorker.assignmentOnly.test.ts).
   assignmentOnly?: boolean;
 };
 
 export type SolverRunResult = {
   assignedGemIndexes: number[][];
-  gemSetPackTuple: GemSetPackTuple;
   scoreSet: SolverScoreSet;
-  additionalGemResult: SolverAdditionalGemResult;
-  needLauncherGem: Record<ArkGridAttr, boolean>;
 };
 
 export type SolverWorkerRequest = {
