@@ -161,7 +161,6 @@
     >
     <button
       title={LExportProfile}
-      disabled={currentProfileName.current === DEFAULT_PROFILE_NAME}
       onclick={() => {
         const jsonStr = JSON.stringify(getProfile(currentProfileName.current));
 
