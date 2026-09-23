@@ -73,6 +73,25 @@ describe('runSolve writes nothing when its inputs changed mid-solve', () => {
     expect(build.solveInfo.endgame).toBeUndefined();
   });
 
+  it('pool reordered during the endgame pass: the endgame result is not written', async () => {
+    addNewProfile(initNewProfile('race-reorder'));
+    setCurrentProfileName('race-reorder');
+    addGem(gem(5)); // index 0: the gem both passes slot
+    addGem(gem(1));
+    const run = runSolve(getCurrentProfile());
+    await resolveNext([0]); // live pass, inputs unchanged
+    // Endgame pass in flight: Apply replaces the pool with the same gems in reversed order, so the
+    // staleness signature (order-independent) still matches but index 0 is now the point-1 gem.
+    clearGems('Order');
+    addGem(gem(1));
+    addGem(gem(5));
+    await resolveNext([0]); // endgame solved the OLD order, where index 0 was the point-5 gem
+    await run;
+    const build = getCurrentProfile().builds.dps;
+    expect(build.solveInfo.after).toBeDefined();
+    expect(build.solveInfo.endgame).toBeUndefined();
+  });
+
   it('pool shrunk during the live pass: no gem-less slot is persisted', async () => {
     addNewProfile(initNewProfile('race-shrink'));
     setCurrentProfileName('race-shrink');
