@@ -60,7 +60,6 @@ function triageActions(profile: CharacterProfile, role: BuildRole) {
       ],
       baseline,
       hasEndgameEvidence: fresh(build) && (!dual || fresh(other)),
-      role,
     }
   ).map((r) => r.action);
 }

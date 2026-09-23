@@ -94,20 +94,17 @@
     // Solves whose usage should KEEP a gem: active endgame + (hybrid) the other build's current & endgame.
     const retainAssignments = [activeEndgame?.assignedGems, oCurrent, oEndgame?.assignedGems];
 
-    const inputs: OwnedTriageInput[] = owned.map((gem) => ({
-      gem,
-      grade: computeGemScore(gem, role).grade,
-    }));
+    const scores = owned.map((gem) => computeGemScore(gem, role));
+    const inputs: OwnedTriageInput[] = owned.map((gem, i) => ({ gem, grade: scores[i].grade }));
     const results = triageOwnedGems(inputs, {
       activeCurrent,
       retainAssignments,
       baseline,
       hasEndgameEvidence,
-      role,
     });
 
     const scored = owned.map((gem, i) => {
-      const { score, grade, rank } = computeGemScore(gem, role);
+      const { score, grade, rank } = scores[i];
       return { gem, score, grade, rank, action: results[i].action };
     });
     // 'default' leaves the Astrogems inventory order (orderGems then chaosGems) untouched.
