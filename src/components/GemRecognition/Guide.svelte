@@ -42,8 +42,8 @@
       </p>
       <p>
         Q. Which clients work?<br />
-        A. Any English-language client, at any resolution. Korean and Russian clients: use live
-        screen sharing (desktop Chrome or Edge) on a standard 16:9 screen, not Forced 21:9.
+        A. Any English-language client, at any resolution. Korean and Russian clients: use live screen
+        sharing (desktop Chrome or Edge) on a standard 16:9 screen, not Forced 21:9.
       </p>
     {:else if mode === 'import'}
       <h2>Import a loadout</h2>
@@ -91,9 +91,9 @@
         <li>Make sure the game screen is updating properly.</li>
         <li>
           Recognition adapts to your resolution and aspect ratio automatically: standard 16:9,
-          ultrawide / forced 21:9, and windowed all work, so you no longer need to switch the game to
-          windowed mode. If a region still looks misaligned, use [📷 Upload Screenshot], which reads
-          gems from a screenshot on any client.
+          ultrawide / forced 21:9, and windowed all work, so you no longer need to switch the game
+          to windowed mode. If a region still looks misaligned, use [📷 Upload Screenshot], which
+          reads gems from a screenshot on any English-language client.
         </li>
         <li>
           If parts of the extraction area are highlighted in red, try increasing the “Recognition

@@ -203,15 +203,20 @@
         </p>
         <ul class="sh-list">
           <li>
-            Each line is real <strong>% damage</strong> (D = 100·ln of its multiplier), so they add up
-            to the gem's approximate total % damage. A perfect gem is ≈ {role === 'support' ? '0.3' : '1.4'}%.
+            Each line is real <strong>% damage</strong> (D = 100·ln of its multiplier), so they add
+            up to the gem's approximate total % damage. A perfect gem is ≈ {role === 'support'
+              ? '0.3'
+              : '1.4'}%.
           </li>
           <li>
-            <strong>Willpower</strong> = (4 - req) × {f4(D_WILLPOWER * (role === 'support' ? SUPPORT_WILLPOWER_FACTOR : 1))} per cost-level - a lower willpower
-            requirement scores higher.
+            <strong>Willpower</strong> = (4 - req) × {f4(
+              D_WILLPOWER * (role === 'support' ? SUPPORT_WILLPOWER_FACTOR : 1)
+            )} per cost-level - a lower willpower requirement scores higher.
           </li>
           <li>
-            <strong>Order Points</strong> = level × {f4(role === 'support' ? SUPPORT_ORDER_D : D_ORDER)} - flat per point.
+            <strong>Order Points</strong> = level × {f4(
+              role === 'support' ? SUPPORT_ORDER_D : D_ORDER
+            )} - flat per point.
           </li>
           <li>
             <strong>Each option</strong> = its level × the per-level % damage below (depends on your
