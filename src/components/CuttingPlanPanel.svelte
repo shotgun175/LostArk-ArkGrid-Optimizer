@@ -864,8 +864,25 @@
     border-color: rgba(138, 58, 58, 0.5);
     background: rgba(138, 58, 58, 0.12);
   }
+  /* Dim with color, not opacity: opacity would make the chip a stacking context and trap its
+     tooltip card under the mobile backdrop. */
   .ss-chip[data-kind='no-slot'] {
-    opacity: 0.75;
+    color: color-mix(in srgb, var(--text) 75%, transparent);
+    border-color: color-mix(in srgb, var(--border) 75%, transparent);
+  }
+  /* Desktop: open every chip tooltip from the strip's left edge, so a chip near either side never
+     pushes it off screen or widens the page. Phones keep the fixed centered card. */
+  @media (min-width: 768px) {
+    .stop-strip {
+      position: relative;
+    }
+    .ss-chip.tooltip {
+      position: static;
+    }
+    .ss-chip .tooltip-text {
+      left: 0;
+      transform: none;
+    }
   }
   :global(.dark-mode) .ss-chip[data-kind='pays'] {
     color: #4ade80;
