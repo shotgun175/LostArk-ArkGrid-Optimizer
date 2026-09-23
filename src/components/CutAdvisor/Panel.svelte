@@ -363,7 +363,7 @@
     {/if}
 
     {#if result}
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="advisor-layout" onpointerenter={engage} onfocusin={engage}>
         <!-- LEFT: the interactive visualizer -->
         <div class="advisor-window">

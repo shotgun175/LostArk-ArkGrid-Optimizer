@@ -118,6 +118,8 @@
 
 {#if open}
   {#if hoverCapable}
+    <!-- Pointer handlers only keep the hover popover open while the pointer is over it. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="pop-float"
       bind:this={popEl}

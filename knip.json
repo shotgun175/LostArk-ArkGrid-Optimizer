@@ -6,5 +6,6 @@
     "scripts/*.{mts,cjs}"
   ],
   "project": ["src/**/*.{ts,svelte}", "scripts/**/*.{mts,cjs}"],
-  "ignoreDependencies": ["@fontsource-variable/inter", "@fontsource/jetbrains-mono", "pngjs"]
+  "ignoreDependencies": ["@fontsource-variable/inter", "@fontsource/jetbrains-mono"],
+  "ignoreExportsUsedInFile": true
 }

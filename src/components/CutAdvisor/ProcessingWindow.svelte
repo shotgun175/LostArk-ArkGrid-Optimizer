@@ -8,7 +8,7 @@
   // top icon is the real per-type gem art; the name is tinted by rarity (uncommon green / rare blue /
   // epic purple). Fields the parser was unsure about (confidence < 0.8) glow amber to "please verify".
   // A comprehensive dropdown editor lives below as the manual backup. Both drive the same `edit` model.
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type {
     AdvisorOutcome,
     EditedAdvisorState,
@@ -74,7 +74,7 @@
     outcomes: { type: string; target: string; amount: number; change: number }[];
   };
   let editing = $state(false);
-  let edit = $state<Edit>(seedEdit(parsed));
+  let edit = $state<Edit>(seedEdit(untrack(() => parsed)));
   function seedEdit(p: ParsedAdvisorState): Edit {
     const rr = p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic');
     return {
@@ -134,7 +134,7 @@
     if ((cf?.state?.processCostMultiplier ?? 1) < 0.8) u['state.cost'] = true;
     return u;
   }
-  let unconfirmed = $state<Record<string, true>>(seedUnconfirmed(parsed));
+  let unconfirmed = $state<Record<string, true>>(seedUnconfirmed(untrack(() => parsed)));
   const lowConfig = (f: string) => !!unconfirmed['config.' + f];
   const lowOutcome = (i: number) => !!unconfirmed['outcomes.' + i];
   const lowCost = () => !!unconfirmed['state.cost'];
