@@ -66,6 +66,17 @@ describe('runSolve assignmentOnly', () => {
     expect(full.needLauncherGem.Order || full.needLauncherGem.Chaos).toBe(true);
   });
 
+  it('the full run keeps its pinned assignment and score set', () => {
+    // Pinned from v0.3.12 so removing work the result does not depend on cannot move either.
+    const full = runSolve(payload, noop);
+    expect(full.assignedGemIndexes).toEqual([[1, 2], [0], [3], [0], [1], [2]]);
+    expect(full.scoreSet).toEqual({
+      score: 25.787659158939903,
+      bestScore: 127.79221444552297,
+      perfectScore: 63.48940736893609,
+    });
+  });
+
   it('zeroes the fields the endgame pass discards', () => {
     const assignmentOnly = runSolve({ ...payload, assignmentOnly: true }, noop);
     expect(assignmentOnly.scoreSet).toEqual({ score: 0, bestScore: 0, perfectScore: 0 });
