@@ -50,7 +50,14 @@ class BrowserOcrRunner implements OcrRunner {
         });
       })();
     }
-    await this.initPromise;
+    try {
+      await this.initPromise;
+    } catch (e) {
+      // Forget a failed load (blocked CDN, stale chunk) so the next upload retries instead of
+      // failing instantly until reload. Mirrors FrameProcessor.init.
+      this.initPromise = null;
+      throw e;
+    }
   }
 
   async recognizeMat(
@@ -873,7 +880,8 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
       try {
         await processor.init();
         postToMain({ type: 'init:done' });
-      } catch {
+      } catch (err) {
+        console.error('[capture] init failed:', err);
         postToMain({ type: 'init:error' });
       }
       break;
@@ -900,7 +908,8 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
             image: processor.debugCanvas.transferToImageBitmap(),
           });
         }
-      } catch {
+      } catch (err) {
+        console.error('[capture] frame failed:', err);
         postToMain({ type: 'frame:done', result: undefined });
       }
       break;
@@ -913,7 +922,8 @@ self.onmessage = async (e: MessageEvent<CaptureWorkerRequest>) => {
       try {
         const result = await processor.processImage(data.bitmap);
         postToMain({ type: 'image:done', result });
-      } catch {
+      } catch (err) {
+        console.error('[capture] image failed:', err);
         postToMain({ type: 'image:done', result: undefined });
       }
       break;

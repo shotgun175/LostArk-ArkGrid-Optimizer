@@ -50,31 +50,38 @@ export function getBestMatch<K extends string>(
   let bestMm: MinMaxLoc | null = null;
   let bestKey: K | null = null;
 
-  for (const key of Object.keys(matchingAtlas.entries) as K[]) {
-    if (option?.excludeKey && key === option.excludeKey) continue;
-    const template = matchingAtlas.entries[key].template;
-    const result = new cv.Mat();
-    // if (template.cols > targetFrame.cols && template.rows > targetFrame.rows) {
-    //   // When both exceed, swap image and template and compute that way.
-    //   throw Error(
-    //     `Template size ${template.cols}x${template.rows} is larger than ROI ${targetFrame.cols}x${targetFrame.rows}. matchTemplate skipped.`
-    //   );
-    // }
-    cv.matchTemplate(
-      targetFrame,
-      template,
-      result,
-      option?.method ? option.method : cv.TM_CCOEFF_NORMED
-    );
-    const mm = minMaxLocOf(cv, result);
-    if (!bestMm || mm.maxVal > bestMm.maxVal) {
-      bestMm = mm;
-      bestKey = key;
+  // try/finally so a throwing matchTemplate cannot leak the result Mat or the ROI view (WASM heap,
+  // never GC'd) on the ~30fps live path. targetFrame is the caller's frame when there is no roi.
+  try {
+    for (const key of Object.keys(matchingAtlas.entries) as K[]) {
+      if (option?.excludeKey && key === option.excludeKey) continue;
+      const template = matchingAtlas.entries[key].template;
+      const result = new cv.Mat();
+      try {
+        // if (template.cols > targetFrame.cols && template.rows > targetFrame.rows) {
+        //   // When both exceed, swap image and template and compute that way.
+        //   throw Error(
+        //     `Template size ${template.cols}x${template.rows} is larger than ROI ${targetFrame.cols}x${targetFrame.rows}. matchTemplate skipped.`
+        //   );
+        // }
+        cv.matchTemplate(
+          targetFrame,
+          template,
+          result,
+          option?.method ? option.method : cv.TM_CCOEFF_NORMED
+        );
+        const mm = minMaxLocOf(cv, result);
+        if (!bestMm || mm.maxVal > bestMm.maxVal) {
+          bestMm = mm;
+          bestKey = key;
+        }
+      } finally {
+        result.delete();
+      }
     }
-    result.delete();
+  } finally {
+    if (roi) targetFrame.delete();
   }
-
-  if (roi) targetFrame.delete();
 
   if (!bestMm || !bestKey) throw Error('matchingAtlas is empty');
 
