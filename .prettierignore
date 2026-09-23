@@ -19,3 +19,6 @@ build
 
 # Generated, minified data modules — keep them compact, don't reformat
 src/lib/cutplan/pipeline.json
+
+# Saved appConfig exactly as v0.3.12 wrote it (savedProfile.test.ts); must stay byte-exact
+src/lib/state/fixtures/appConfig-v0.3.12.json

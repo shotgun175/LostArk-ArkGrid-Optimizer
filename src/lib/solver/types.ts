@@ -1,4 +1,3 @@
-import type { ArkGridAttr } from '../constants/enums';
 import type { ArkGridGem } from '../models/arkGridGems';
 
 export type WorkerCore = {
@@ -24,7 +23,6 @@ export type SolverProgress = {
   stage: SolverProgressStage;
   totalPercent: number;
   stagePercent: number;
-  attr?: ArkGridAttr;
   current?: number;
   total?: number;
 };

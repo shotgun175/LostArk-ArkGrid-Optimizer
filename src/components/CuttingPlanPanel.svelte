@@ -56,7 +56,8 @@
   let loadFailed = $state(false);
   let dataRequested = false;
 
-  // The ~1.8MB (about 180KB gzipped) cutting-plan dataset is split into its own chunk, so it never bloats the initial
+  // The ~1.8MB (about 180KB gzipped) cutting-plan dataset is split into its own chunk, so it never
+  // bloats the initial
   // bundle. It loads lazily via the $effect below when the Cutting Plan section is open — but that
   // section defaults to expanded (and isn't persisted), so in practice every visitor fetches it
   // shortly after load, not only those who use it. Gating the import on real intent (e.g. the panel
