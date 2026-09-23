@@ -230,6 +230,20 @@ export function migrateProfile(profile: Partial<CharacterProfile>) {
     }
   }
 }
+/**
+ * Whether an imported (already migrated) profile file has the shape the UI dereferences on first
+ * render: a name, both gem pools, and cores for both builds. A file that fails this would be saved
+ * and then blank the page on every load.
+ */
+export function isImportableProfile(data: any): data is CharacterProfile {
+  return (
+    typeof data?.characterName === 'string' &&
+    Array.isArray(data.gems?.orderGems) &&
+    Array.isArray(data.gems?.chaosGems) &&
+    !!data.builds?.dps?.cores &&
+    !!data.builds?.support?.cores
+  );
+}
 /** The retired baseline ladder (before the 2026-08 grading re-sync): 12 rows, one rank each C- ... S+. */
 const OLD_GRADE_ROWS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95];
 
