@@ -789,7 +789,6 @@
   .upload-zone:hover,
   .upload-zone:focus-visible {
     opacity: 1;
-    outline: none;
   }
   .upload-zone.dragging {
     border-color: #22c55e;
