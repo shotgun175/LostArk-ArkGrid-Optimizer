@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { ArkGridGemSpecs } from '../models/arkGridGemSpecs';
 import { buildBookmarklet, parseImportHash, parseLoadout, pickArkGridCoresSlice } from './bibleImport';
 
-// A REAL lostark.bible slice (Valslayer/NA, first 2 cores) captured from the live page — guards
+// A REAL lostark.bible slice (an NA character, first 2 cores) captured from the live page; guards
 // against the parser drifting from the actual site format.
-const VALSLAYER_REAL =
+const REAL_NA_SLICE =
   'arkGridCores:[{id:673005066,base:10001,gems:[{id:67401025,idx:0,costReduc:4,corePoints:5,opts:[{id:2002,level:3},{id:2001,level:4}]},{id:67401124,idx:1,costReduc:5,corePoints:5,opts:[{id:2003,level:3},{id:2011,level:2}]},{id:67401124,idx:2,costReduc:5,corePoints:4,opts:[{id:2003,level:3},{id:2001,level:3}]},{id:67401226,idx:3,costReduc:5,corePoints:4,opts:[{id:2003,level:5},{id:2012,level:5}]}]},{id:673015065,base:10002,gems:[{id:67401024,idx:0,costReduc:5,corePoints:5,opts:[{id:2002,level:3},{id:2001,level:2}]},{id:67401024,idx:1,costReduc:4,corePoints:5,opts:[{id:2011,level:3},{id:2002,level:3}]},{id:67401124,idx:2,costReduc:5,corePoints:5,opts:[{id:2011,level:1},{id:2003,level:2}]},{id:67401024,idx:3,costReduc:4,corePoints:5,opts:[{id:2011,level:2},{id:2001,level:4}]}]}]';
 
 // A minimal lostark.bible page source: bare (unquoted) keys inside an `arkGridCores:[...]`
@@ -61,8 +61,8 @@ describe('parseLoadout (lostark.bible / global)', () => {
 });
 
 describe('parseLoadout (real lostark.bible data)', () => {
-  it('maps a real 2-core Valslayer slice to 8 gems', () => {
-    const r = parseLoadout(VALSLAYER_REAL)!;
+  it('maps a real 2-core NA slice to 8 gems', () => {
+    const r = parseLoadout(REAL_NA_SLICE)!;
     expect(r.source).toBe('lostark.bible');
     expect(r.gems.length).toBe(8); // 2 cores × 4 gems
     // First real gem: id 67401025 → Order, cost 8, costReduc 4 → req 4; AddDamage L3 + AtkPower L4.
@@ -80,7 +80,7 @@ describe('parseLoadout (real lostark.bible data)', () => {
 
   it('recognizes a page with an EMPTY Ark Grid as a bible page with no gems (not an unrecognized page)', () => {
     // A character with no Ark Grid, OR a non-refreshed SvelteKit page, embeds `arkGridCores:[]`.
-    const r = parseLoadout('<title>Valcroft (NA)</title> arkGridCores:[],type:"ark_passive",engravings:[]');
+    const r = parseLoadout('<title>Testchar (NA)</title> arkGridCores:[],type:"ark_passive",engravings:[]');
     expect(r).not.toBeNull();
     expect(r!.source).toBe('lostark.bible');
     expect(r!.gems).toEqual([]);
