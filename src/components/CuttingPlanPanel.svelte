@@ -322,7 +322,7 @@
                   (before the 500g fee and the inputs' own worth). The three standard mixes
                   (<strong>3L</strong> → 99L/1R, <strong>R+2L</strong> → 73L/25R/2A,
                   <strong>A+2L</strong> → 35L/40R/25A) and any recommended (dotted) row show by default;
-                  "Show all recipes" opens the rest. Hover a value for what one Ancient or Relic adds
+                  "Show all recipes" opens the rest. Hover or tap a value for what one Ancient or Relic adds
                   over a Legendary in its place; a gold dot marks the best fuse for an Ancient at that
                   cost, a purple dot the best for a Relic.
                 </p>
@@ -357,14 +357,14 @@
       {/if}
 
       <div class="controls">
-        <div class="control-group">
+        <label class="control-group">
           <span class="cg-label">Gold / 1% damage</span>
           <select value={bracket} onchange={onBracket}>
             {#each GOLD_BRACKETS as b}
               <option value={b}>{bracketLabel(b)}</option>
             {/each}
           </select>
-        </div>
+        </label>
         <div class="control-group">
           <span class="cg-label">Gold Type</span>
           <button class="cg-toggle" onclick={onBinding}>
@@ -380,15 +380,17 @@
         <div class="stop-strip">
           <span class="ss-title">Still worth cutting?</span>
           {#each stopVerdicts as { cost, v } (cost)}
-            <span class="ss-chip" data-kind={v.kind} title={stopChipTitle(cost, v)}>
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <span class="ss-chip tooltip" data-kind={v.kind} tabindex="0">
               <b>{cost}-cost</b>
               {stopChipLabel(v)}{v.kind === 'pays' ? ` (floor ${rankFromGrade(v.floorGrade, role)})` : ''}
+              <span class="tooltip-text">{stopChipTitle(cost, v)}</span>
             </span>
           {/each}
           <span class="ss-sub">
             per cost, vs the worst equipped gem it can replace ({binding === 'nrb'
               ? 'non-roster-bound'
-              : 'roster-bound'}); hover a chip for the why
+              : 'roster-bound'}); hover or tap a chip for the why
           </span>
         </div>
       {/if}
@@ -545,8 +547,16 @@
                       </td>
                       <td class="fl odds">{oddsStr(r.mix)}</td>
                       {#each COSTS as c (c)}
-                        <td title={recipeCellTitle(r, c) || undefined}>
-                          {fmtGold(r.evByCost[c])}
+                        <td>
+                          {#if recipeCellTitle(r, c)}
+                            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                            <span class="tooltip" tabindex="0">
+                              {fmtGold(r.evByCost[c])}
+                              <span class="tooltip-text">{recipeCellTitle(r, c)}</span>
+                            </span>
+                          {:else}
+                            {fmtGold(r.evByCost[c])}
+                          {/if}
                           {#if bestFuse.ancient[c] === r}
                             <span class="pip anc" role="img" aria-label="best fuse for an Ancient"></span>
                           {/if}
@@ -562,7 +572,7 @@
             </div>
             <div class="recipes-note">
               Each figure is the average value of the <strong>one gem you get back</strong> at that base
-              cost, before the 500g fuse fee and before what the three gems you feed in are worth. Hover a
+              cost, before the 500g fuse fee and before what the three gems you feed in are worth. Hover or tap a
               value for what one Ancient or Relic in that recipe adds over a Legendary in its place.
               <span class="pip anc" aria-hidden="true"></span> best fuse for an <strong>Ancient</strong>,
               <span class="pip rel" aria-hidden="true"></span> best fuse for a <strong>Relic</strong> at that
@@ -1202,8 +1212,12 @@
   :global(.dark-mode) .recipes-toggle:hover {
     background: rgba(240, 192, 64, 0.2);
   }
-  .recipes-scroll {
-    overflow-x: auto;
+  /* Scroll box on phones only: there the value tooltips are fixed-position cards it cannot clip.
+     At 768px and up the table fits, and an overflow box would clip the top row's tooltip. */
+  @media (max-width: 767px) {
+    .recipes-scroll {
+      overflow-x: auto;
+    }
   }
   .recipes-table {
     margin-top: 0.4rem;
@@ -1217,9 +1231,23 @@
     opacity: 0.75;
     white-space: nowrap;
   }
-  .recipes-table td[title] {
-    cursor: help;
+  .recipes-table td:has(> .tooltip) {
     white-space: nowrap;
+  }
+  .recipes-table .tooltip {
+    cursor: help;
+  }
+  .recipes-table .tooltip-text {
+    text-align: left;
+  }
+  /* Desktop: open the value tooltip leftward from the value, so the right-hand columns' tooltips
+     stay on screen instead of widening the page. */
+  @media (min-width: 768px) {
+    .recipes-table .tooltip-text {
+      left: auto;
+      right: 0;
+      transform: none;
+    }
   }
   /* Phone width: the odds move under the recipe name so the three cost columns stay on screen
      without sideways scrolling. */

@@ -117,6 +117,7 @@
     {/each}
     <button
       title={LNewProfile}
+      aria-label={LNewProfile}
       onclick={async () => {
         const profileName = window.prompt(LAddNewProfile)?.trim();
         if (profileName === undefined || profileName.length == 0) return;
@@ -129,6 +130,7 @@
     >
     <button
       title={LEditProfile}
+      aria-label={LEditProfile}
       disabled={currentProfileName.current === DEFAULT_PROFILE_NAME}
       onclick={async () => {
         // Pre-fill the current name so the user can tweak it instead of retyping the whole thing.
@@ -145,6 +147,7 @@
     >
     <button
       title={LDeleteProfile}
+      aria-label={LDeleteProfile}
       onclick={async () => {
         if (
           await confirmDialog({
@@ -161,6 +164,7 @@
     >
     <button
       title={LExportProfile}
+      aria-label={LExportProfile}
       onclick={() => {
         const jsonStr = JSON.stringify(getProfile(currentProfileName.current));
 
@@ -182,6 +186,7 @@
     >
     <button
       title={LImportProfile}
+      aria-label={LImportProfile}
       onclick={() => {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';

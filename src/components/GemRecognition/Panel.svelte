@@ -112,6 +112,7 @@
   let showImport = $derived(mode === 'import');
   let importText = $state<string>('');
   let isImportDragging = $state<boolean>(false);
+  let importFileInput = $state<HTMLInputElement | null>(null);
   let importMsg = $state<string | null>(null);
   // One line per gem the last import had to correct or could not fully trust (listed under the message).
   let importNotes = $state<string[]>([]);
@@ -460,6 +461,7 @@
     </span>
     <button
       class="fold-button"
+      aria-label={sectionUI.showGemRecognitionPanel ? 'Collapse section' : 'Expand section'}
       onclick={() => toggleSection('showGemRecognitionPanel')}
       disabled={isRecording}>{sectionUI.showGemRecognitionPanel ? '▼' : '▲'}</button
     >
@@ -601,7 +603,14 @@
           class:dragging={isImportDragging}
           role="button"
           tabindex="0"
-          aria-label="Drop a saved character page (.html)"
+          aria-label="Drop or click to choose a saved character page (.html)"
+          onclick={() => importFileInput?.click()}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              importFileInput?.click();
+            }
+          }}
           ondragover={(e) => {
             e.preventDefault();
             isImportDragging = true;
@@ -609,7 +618,19 @@
           ondragleave={() => (isImportDragging = false)}
           ondrop={onImportDrop}
         >
-          <span class="upload-zone-text">Drop a saved .html of the character page here</span>
+          <span class="upload-zone-text">Drop or click to choose a saved .html</span>
+          <input
+            bind:this={importFileInput}
+            class="upload-file-input"
+            type="file"
+            accept=".html,.htm,text/html"
+            onchange={async (e) => {
+              const input = e.currentTarget;
+              const f = input.files?.[0];
+              input.value = '';
+              if (f) importFromText(await f.text());
+            }}
+          />
         </div>
         <textarea
           class="import-textarea"
