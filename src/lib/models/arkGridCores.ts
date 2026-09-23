@@ -416,7 +416,7 @@ export function createCore(
   return core;
 }
 
-export const coreImages = import.meta.glob<string>('/src/assets/cores/*.png', {
+export const coreImages = import.meta.glob<string>('/src/assets/cores/*.webp', {
   eager: true,
   import: 'default',
 });
@@ -431,6 +431,6 @@ export function getCoreImage(attr: ArkGridAttr, ctype: ArkGridCoreType) {
     Moon: 'moon',
     Star: 'star',
   };
-  const key = `/src/assets/cores/${attrMap[attr]}_${typeMap[ctype]}.png`;
+  const key = `/src/assets/cores/${attrMap[attr]}_${typeMap[ctype]}.webp`;
   return coreImages[key];
 }

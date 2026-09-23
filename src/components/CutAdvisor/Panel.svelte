@@ -850,7 +850,7 @@
     color: #ffe08a;
   }
   .rc-pill {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter Variable', system-ui, sans-serif;
     font-size: 0.6rem;
     font-weight: 700;
     text-transform: uppercase;

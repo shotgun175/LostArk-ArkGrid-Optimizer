@@ -825,7 +825,7 @@
     padding: 0.1rem 0.5rem;
     border-radius: 0.5rem;
     font-size: 0.8rem;
-    font-weight: 800;
+    font-weight: 700;
     white-space: nowrap;
     min-width: 2.5rem;
     text-align: center;

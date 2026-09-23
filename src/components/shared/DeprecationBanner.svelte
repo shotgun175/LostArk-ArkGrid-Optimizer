@@ -28,7 +28,7 @@
     border-radius: 10px;
     background: #14172a;
     color: #ece8df;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter Variable', system-ui, sans-serif;
     font-size: 0.9rem;
     line-height: 1.4;
   }

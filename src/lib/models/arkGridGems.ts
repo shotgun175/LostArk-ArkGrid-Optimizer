@@ -51,7 +51,7 @@ const MapGemNameImage: Record<ArkGridGemName, string> = {
   'Chaos Astrogem: Distortion': 'chaos_1',
   'Chaos Astrogem: Destruction': 'chaos_2',
 };
-const gemImages = import.meta.glob<string>('/src/assets/gems/*.png', {
+const gemImages = import.meta.glob<string>('/src/assets/gems/*.webp', {
   eager: true,
   import: 'default',
 });
@@ -59,8 +59,8 @@ const gemImages = import.meta.glob<string>('/src/assets/gems/*.png', {
 export function getGemImage(gemAttr?: ArkGridAttr, gemName?: ArkGridGemName): string {
   if (!gemName) {
     return gemAttr == 'Order'
-      ? gemImages['/src/assets/gems/order_0.png']
-      : gemImages['/src/assets/gems/chaos_0.png'];
+      ? gemImages['/src/assets/gems/order_0.webp']
+      : gemImages['/src/assets/gems/chaos_0.webp'];
   }
-  return gemImages[`/src/assets/gems/${MapGemNameImage[gemName] ?? 'order_0'}.png`];
+  return gemImages[`/src/assets/gems/${MapGemNameImage[gemName] ?? 'order_0'}.webp`];
 }
