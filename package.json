@@ -1,7 +1,7 @@
 {
   "name": "lostark-arkgrid-optimizer",
   "private": true,
-  "version": "0.3.9",
+  "version": "0.3.10",
   "type": "module",
   "scripts": {
     "dev": "vite",
