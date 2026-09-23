@@ -82,24 +82,10 @@ export type SolveAnswer = {
   assignedGems: ArkGridGem[][];
   gemSetPackTuple: GemSetPackTuple;
 };
-export type AdditionalGemResult = Record<
-  ArkGridAttr,
-  Record<
-    string, // corePointTuple stringified, e.g. "10,17,17"
-    {
-      corePointTuple: [number, number, number];
-      gems: ArkGridGem[];
-      score: number;
-    }
-  >
->;
-export type NeedLauncherGem = Record<ArkGridAttr, boolean>;
 export type SolveAfter = {
   solveAnswer?: SolveAnswer;
   scoreSet?: SolveAnswerScoreSet;
   answerCores?: Record<ArkGridAttr, Record<ArkGridCoreType, ArkGridCore | null>>;
-  additionalGemResult?: AdditionalGemResult;
-  needLauncherGem?: NeedLauncherGem;
   /** Signature of the solve inputs (this build's cores + shared gems); see solveInputSignature. */
   inputSig?: string;
 };
@@ -186,6 +172,16 @@ export function migrateProfile(profile: Partial<CharacterProfile>) {
     const solveInfo = profile.builds?.[role]?.solveInfo as Record<string, unknown> | undefined;
     if (solveInfo && 'before' in solveInfo) {
       delete solveInfo.before;
+    }
+  }
+
+  // Drop the retired next-gem simulation's result (its only screen went with the Optimization
+  // section in 0.3.0 and the worker no longer computes it) from saved solves.
+  for (const role of ['dps', 'support'] as BuildRole[]) {
+    const after = profile.builds?.[role]?.solveInfo?.after as Record<string, unknown> | undefined;
+    if (after) {
+      delete after.additionalGemResult;
+      delete after.needLauncherGem;
     }
   }
 

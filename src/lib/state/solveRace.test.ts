@@ -37,8 +37,6 @@ const result = (orderSunIndexes: number[]) => ({
   assignedGemIndexes: [orderSunIndexes, [], [], [], [], []],
   gemSetPackTuple: {},
   scoreSet: {},
-  additionalGemResult: {},
-  needLauncherGem: { Order: false, Chaos: false },
 });
 const gem = (a: number): ArkGridGem => ({
   gemAttr: 'Order',

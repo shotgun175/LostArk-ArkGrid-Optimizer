@@ -83,6 +83,37 @@ describe('migrateProfile', () => {
     expect('before' in profile.builds.support.solveInfo).toBe(false);
   });
 
+  it('strips the retired next-gem simulation fields from a saved solve', () => {
+    const mk = (after: Record<string, unknown>) =>
+      ({
+        characterName: 'Sim',
+        gems: { orderGems: [], chaosGems: [] },
+        builds: {
+          dps: { cores: initBuildCores(false), solveInfo: { after } },
+          support: { cores: initBuildCores(true), solveInfo: {} },
+        },
+        activeBuild: 'dps',
+        dualRole: false,
+      }) as any;
+
+    const withFields = mk({
+      inputSig: 'sig',
+      additionalGemResult: { Order: {}, Chaos: {} },
+      needLauncherGem: { Order: true, Chaos: false },
+    });
+    migrateProfile(withFields);
+    expect(withFields.builds.dps.solveInfo.after).toEqual({ inputSig: 'sig' });
+
+    const withoutFields = mk({ inputSig: 'sig' });
+    migrateProfile(withoutFields);
+    expect(withoutFields.builds.dps.solveInfo.after).toEqual({ inputSig: 'sig' });
+
+    // Idempotent: a second pass changes nothing.
+    const snapshot = JSON.parse(JSON.stringify(withFields));
+    migrateProfile(withFields);
+    expect(withFields).toEqual(snapshot);
+  });
+
   it('resets saved Minimum Core Points to 0 (feature retired with the Optimization section)', () => {
     const dpsCores = initBuildCores(false);
     const supportCores = initBuildCores(true);

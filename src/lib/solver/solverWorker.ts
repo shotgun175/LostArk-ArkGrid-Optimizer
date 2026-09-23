@@ -1,4 +1,3 @@
-import type { ArkGridAttr } from '../constants/enums';
 import type { ArkGridGem, ArkGridGemOptionName } from '../models/arkGridGems';
 import {
   Core,
@@ -12,7 +11,6 @@ import {
 } from './models';
 import { getBestGemSetPacks, getMaxStat, getPossibleGemSets } from './solver';
 import type {
-  SolverAdditionalGemResult,
   SolverProgress,
   SolverProgressStage,
   SolverRunPayload,
@@ -21,7 +19,6 @@ import type {
   SolverWorkerResponse,
   WorkerCore,
 } from './types';
-import { gemSetPackKey } from './utils';
 
 const perfectGems = [
   {
@@ -94,23 +91,14 @@ const STAGE_RANGES: Record<SolverProgressStage, [number, number]> = {
   searching_order_packs: [10, 50],
   searching_chaos_packs: [50, 90],
   combining_results: [90, 95],
-  simulating_launcher_gems: [95, 99],
   finalizing: [99, 100],
 };
 
-type PrecalculatedGspList = {
-  order?: GemSetPack[];
-  chaos?: GemSetPack[];
-};
-
-type StepCallback = (orderGspList: GemSetPack[], chaosGspList: GemSetPack[]) => void;
 type ProgressReporter = (progress: SolverProgress) => void;
 
 type SolveOptions = {
   isSupporter?: boolean;
   perfectSolve?: boolean;
-  precalculatedGsp?: PrecalculatedGspList;
-  onStep?: StepCallback;
   orderCurrentBitmasks?: bigint[];
   chaosCurrentBitmasks?: bigint[];
 };
@@ -118,7 +106,6 @@ type SolveOptions = {
 type SolveResultInternal = {
   answer: GemSetPackTuple;
   assignedGemIndexes: number[][];
-  needLauncherGem: Record<ArkGridAttr, boolean>;
 };
 
 function toCore(core: WorkerCore) {
@@ -172,38 +159,6 @@ function assignGemIndexes(gs: GemSet | null | undefined): number[] {
   return result;
 }
 
-function isGspNeedMoreGem(gsp: GemSetPack | null) {
-  if (!gsp) {
-    return false;
-  }
-
-  return [gsp.gs1, gsp.gs2, gsp.gs3].some((gs) => {
-    if (!gs) {
-      return false;
-    }
-
-    let maxPoint = 0;
-    switch (gs.core.energy) {
-      case 9:
-        maxPoint = 10;
-        break;
-      case 12:
-        maxPoint = 14;
-        break;
-      case 15:
-      case 17:
-        maxPoint = 17;
-        break;
-    }
-
-    if (maxPoint === 0) {
-      return false;
-    }
-
-    return gs.point < maxPoint;
-  });
-}
-
 function emitProgress(
   report: ProgressReporter | undefined,
   stage: SolverProgressStage,
@@ -234,8 +189,6 @@ function solve(
   {
     isSupporter = false,
     perfectSolve = false,
-    precalculatedGsp,
-    onStep,
     orderCurrentBitmasks,
     chaosCurrentBitmasks,
   }: SolveOptions = {},
@@ -303,42 +256,34 @@ function solve(
   emitProgress(report, 'preparing', 100);
 
   emitProgress(report, 'searching_order_packs', 0);
-  const orderGspList: GemSetPack[] = precalculatedGsp?.order
-    ? [...precalculatedGsp.order]
-    : getBestGemSetPacks(
-        orderGssList,
-        scoreMaps,
-        perfectSolve,
-        ({ current, total }) => {
-          emitProgress(report, 'searching_order_packs', (current / total) * 100, {
-            current,
-            total,
-          });
-        },
-        orderCurrentBitmasks
-      );
+  const orderGspList: GemSetPack[] = getBestGemSetPacks(
+    orderGssList,
+    scoreMaps,
+    perfectSolve,
+    ({ current, total }) => {
+      emitProgress(report, 'searching_order_packs', (current / total) * 100, {
+        current,
+        total,
+      });
+    },
+    orderCurrentBitmasks
+  );
   emitProgress(report, 'searching_order_packs', 100);
 
   emitProgress(report, 'searching_chaos_packs', 0);
-  const chaosGspList: GemSetPack[] = precalculatedGsp?.chaos
-    ? [...precalculatedGsp.chaos]
-    : getBestGemSetPacks(
-        chaosGssList,
-        scoreMaps,
-        perfectSolve,
-        ({ current, total }) => {
-          emitProgress(report, 'searching_chaos_packs', (current / total) * 100, {
-            current,
-            total,
-          });
-        },
-        chaosCurrentBitmasks
-      );
+  const chaosGspList: GemSetPack[] = getBestGemSetPacks(
+    chaosGssList,
+    scoreMaps,
+    perfectSolve,
+    ({ current, total }) => {
+      emitProgress(report, 'searching_chaos_packs', (current / total) * 100, {
+        current,
+        total,
+      });
+    },
+    chaosCurrentBitmasks
+  );
   emitProgress(report, 'searching_chaos_packs', 100);
-
-  if (onStep) {
-    onStep(orderGspList, chaosGspList);
-  }
 
   let answer = new GemSetPackTuple(orderGspList[0] ?? null, chaosGspList[0] ?? null, isSupporter);
 
@@ -396,10 +341,6 @@ function solve(
       assignGemIndexes(answer.gsp2?.gs2),
       assignGemIndexes(answer.gsp2?.gs3),
     ],
-    needLauncherGem: {
-      Order: isGspNeedMoreGem(answer.gsp1),
-      Chaos: isGspNeedMoreGem(answer.gsp2),
-    },
   };
 }
 
@@ -490,9 +431,6 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
     assignmentOnly,
   } = payload;
 
-  let precalculatedGspListOrder: PrecalculatedGspList | undefined;
-  let precalculatedGspListChaos: PrecalculatedGspList | undefined;
-
   const solved = solve(
     orderCores,
     chaosCores,
@@ -502,10 +440,6 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
       isSupporter,
       orderCurrentBitmasks,
       chaosCurrentBitmasks,
-      onStep: (order, chaos) => {
-        precalculatedGspListOrder = { order };
-        precalculatedGspListChaos = { chaos };
-      },
     },
     report
   );
@@ -513,17 +447,15 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
   const answer = solved.answer;
 
   // Endgame pass: downstream consumes only the assignment, so skip the perfect-gems best-score solve
-  // and the launcher-gem simulation below. Neither influences `assignedGemIndexes` (the assignment is
-  // fully decided by the main solve above), so this returns the same assignment a full run would —
-  // proven in solverWorker.assignmentOnly.test.ts. The discarded fields are returned zeroed.
+  // below. It does not influence `assignedGemIndexes` (the assignment is fully decided by the main
+  // solve above), so this returns the same assignment a full run would, proven in
+  // solverWorker.assignmentOnly.test.ts. The discarded score set is returned zeroed.
   if (assignmentOnly) {
     emitProgress(report, 'finalizing', 100);
     return {
       assignedGemIndexes: solved.assignedGemIndexes,
       gemSetPackTuple: answer,
       scoreSet: { score: 0, bestScore: 0, perfectScore: 0 },
-      additionalGemResult: { Order: {}, Chaos: {} },
-      needLauncherGem: solved.needLauncherGem,
     };
   }
 
@@ -545,83 +477,6 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
       1) *
     100;
 
-  const additionalGemResult: SolverAdditionalGemResult = {
-    Order: {},
-    Chaos: {},
-  };
-
-  const simulationTargets = [
-    { attr: 'Order' as ArkGridAttr, gsp: answer.gsp1 },
-    { attr: 'Chaos' as ArkGridAttr, gsp: answer.gsp2 },
-  ] satisfies { attr: ArkGridAttr; gsp: GemSetPack | null }[];
-
-  const shouldSimulateLauncherGems = simulationTargets.some(
-    ({ attr: a, gsp }) => solved.needLauncherGem[a] && gsp
-  );
-
-  if (shouldSimulateLauncherGems) {
-    emitProgress(report, 'simulating_launcher_gems', 0);
-  }
-
-  for (const { attr: simAttr, gsp } of simulationTargets) {
-    if (!solved.needLauncherGem[simAttr] || !gsp) {
-      continue;
-    }
-
-    const currentKey = gemSetPackKey(gsp).join(',');
-
-    for (let gemReq = 3; gemReq < 10; gemReq++) {
-      for (let gemPoint = 5; gemPoint >= 1; gemPoint--) {
-        const newGem: ArkGridGem = {
-          gemAttr: simAttr,
-          req: gemReq,
-          point: gemPoint,
-          option1: { optionType: 'AtkPower', value: 0 },
-          option2: { optionType: 'AddDamage', value: 0 },
-        };
-
-        const nextSolve = solve(
-          orderCores,
-          chaosCores,
-          simAttr === 'Order' ? [...orderGems, newGem] : orderGems,
-          simAttr === 'Chaos' ? [...chaosGems, newGem] : chaosGems,
-          {
-            isSupporter,
-            precalculatedGsp:
-              simAttr === 'Chaos' ? precalculatedGspListOrder : precalculatedGspListChaos,
-          }
-        );
-
-        const nextGsp = simAttr === 'Order' ? nextSolve.answer.gsp1 : nextSolve.answer.gsp2;
-        if (!nextGsp) {
-          continue;
-        }
-
-        const newKeyRaw = gemSetPackKey(nextGsp);
-        const newKey = newKeyRaw.join(',');
-        const targetAdditionalGem = additionalGemResult[simAttr];
-
-        if (newKey !== currentKey && nextSolve.answer.score > answer.score) {
-          if (targetAdditionalGem[newKey]) {
-            targetAdditionalGem[newKey].gems.push(newGem);
-            if (targetAdditionalGem[newKey].score < nextSolve.answer.score) {
-              targetAdditionalGem[newKey].score = nextSolve.answer.score;
-            }
-          } else {
-            targetAdditionalGem[newKey] = {
-              corePointTuple: newKeyRaw,
-              gems: [newGem],
-              score: nextSolve.answer.score,
-            };
-          }
-        }
-      }
-    }
-  }
-
-  if (shouldSimulateLauncherGems) {
-    emitProgress(report, 'simulating_launcher_gems', 100);
-  }
   emitProgress(report, 'finalizing', 100);
 
   return {
@@ -632,8 +487,6 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
       bestScore,
       perfectScore: getPerfectScore(isSupporter),
     },
-    additionalGemResult,
-    needLauncherGem: solved.needLauncherGem,
   };
 }
 

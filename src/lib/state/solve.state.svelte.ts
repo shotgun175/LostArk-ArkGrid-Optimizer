@@ -149,21 +149,10 @@ export function getProgressLabel(progress: SolverProgress | null) {
       searching_order_packs: 'Searching for Order combinations',
       searching_chaos_packs: 'Searching for Chaos combinations',
       combining_results: 'Merging both combinations',
-      simulating_launcher_gems: 'Simulating Next Astrogem Preview',
       finalizing: 'Finalizing result',
     },
   };
-  const baseLabel = LProgressStage[locale][progress.stage];
-
-  if (progress.stage !== 'simulating_launcher_gems' || !progress.total || !progress.current) {
-    return baseLabel;
-  }
-
-  const attrLabel = {
-    en_us: { Order: 'Order', Chaos: 'Chaos' },
-  }[locale][progress.attr ?? 'Order'];
-
-  return `${baseLabel} (${attrLabel} ${progress.current}/${progress.total})`;
+  return LProgressStage[locale][progress.stage];
 }
 
 async function solveOne(profile: CharacterProfile, role: BuildRole) {
@@ -190,8 +179,6 @@ async function solveOne(profile: CharacterProfile, role: BuildRole) {
     },
     scoreSet: result.scoreSet,
     answerCores: JSON.parse(JSON.stringify(buildState(role, profile).cores)),
-    additionalGemResult: result.additionalGemResult,
-    needLauncherGem: result.needLauncherGem,
     inputSig: sig,
   });
 }

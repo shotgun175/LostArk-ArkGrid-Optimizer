@@ -20,8 +20,6 @@ const { solveMock } = vi.hoisted(() => ({
     assignedGemIndexes: [[0], [], [], [], [], []],
     gemSetPackTuple: {},
     scoreSet: {},
-    additionalGemResult: {},
-    needLauncherGem: { Order: false, Chaos: false },
   })),
 }));
 // A constructor returning a plain object, not a class: a class field named `runSolve` here makes
