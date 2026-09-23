@@ -1,8 +1,10 @@
 name: CI
 
 # Type-check and run the test suite on every pull request and on pushes to main.
-# This is the regression gate that must pass before the Deploy workflow (deploy.yml)
-# publishes from main. Mirrors the local `npm run check` + `npm test` gate.
+# The regression gate is this workflow's check on the pull request, before merge. The Deploy
+# workflow (deploy.yml) runs independently on the same push to main and does not wait for CI,
+# so a red run on main does not stop a publish; main is reached through PRs by convention, not
+# by a branch protection rule. Mirrors the local `npm run check` + `npm test` gate.
 #
 # Note on data-drift: the cutting-plan dataset (src/lib/cutplan/pipeline.json) is baked
 # by scripts/extract-pipeline.cjs from shizukaziye's astrogem-calculator pipeline data,
@@ -16,16 +18,21 @@ on:
     branches: [main]
   pull_request:
 
-# Supersede an older in-progress run on the same ref — but only for pull requests. On pushes to
-# main this is the regression gate, so let those runs always complete rather than be cancelled by
-# a rapid follow-up merge.
+# Supersede an older in-progress run on the same ref, but only for pull requests. On pushes to
+# main the run is a post-merge health check of what was just deployed, so let those runs always
+# complete rather than be cancelled by a rapid follow-up merge.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Nothing here needs write access.
+permissions:
+  contents: read
+
 jobs:
   check-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
