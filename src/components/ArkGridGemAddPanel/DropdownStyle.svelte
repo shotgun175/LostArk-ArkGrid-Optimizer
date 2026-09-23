@@ -47,7 +47,7 @@
       <img src={getGemImage(gemAttr, gemInput.name)} alt={gemInput.name} />
     </div>
     <label>
-      <select bind:value={gemInput.name}>
+      <select bind:value={gemInput.name} aria-label="Astrogem type">
         {#each availableGemSpecs as spec}
           <option value={spec.key}>{spec.spec.name[locale].split(' ').at(-1)}</option>
         {/each}
@@ -59,6 +59,7 @@
       <label>
         <!-- svelte 5 function binding -->
         <input
+          aria-label="Willpower"
           bind:value={
             () => gemInput.willPower,
             (v) => (gemInput.willPower = enforceSingleDigit(v, gemSpec.req - 5, gemSpec.req - 1))
@@ -75,6 +76,7 @@
     <div class="row">
       <label>
         <input
+          aria-label="Points"
           bind:value={
             () => gemInput.corePoint, (v) => (gemInput.corePoint = enforceSingleDigit(v, 1, 5))
           }
@@ -89,10 +91,10 @@
     </div>
   </div>
   <div class="col">
-    {#each [gemInput.optionA, gemInput.optionB] as gemOption}
+    {#each [gemInput.optionA, gemInput.optionB] as gemOption, i}
       <div class="row">
         <label>
-          <select bind:value={gemOption.optionType}>
+          <select bind:value={gemOption.optionType} aria-label={`Option ${i + 1}`}>
             {#each Object.values(ArkGridGemOptionNames) as option}
               <option value={option} disabled={!availableGemOptionTypes.some((v) => v === option)}
                 >{ArkGridGemOptionTypes[option].name[locale]}</option

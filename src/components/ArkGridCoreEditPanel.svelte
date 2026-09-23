@@ -66,6 +66,7 @@
         <button
           class="seg-btn"
           class:active={roleMode === 'dps'}
+          aria-pressed={roleMode === 'dps'}
           onclick={() => selectRoleMode('dps')}
         >
           {LDealer[locale]} only
@@ -73,6 +74,7 @@
         <button
           class="seg-btn"
           class:active={roleMode === 'support'}
+          aria-pressed={roleMode === 'support'}
           onclick={() => selectRoleMode('support')}
         >
           {LSupporter[locale]} only
@@ -80,6 +82,7 @@
         <button
           class="seg-btn"
           class:active={roleMode === 'both'}
+          aria-pressed={roleMode === 'both'}
           onclick={() => selectRoleMode('both')}
         >
           {LBoth[locale]}

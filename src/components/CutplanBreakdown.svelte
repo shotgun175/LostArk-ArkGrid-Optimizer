@@ -35,7 +35,7 @@
         {#each breakdown.buckets as b (b.key)}
           <tr>
             <td class="cb-pair">
-              <b>{b.label}</b>{#if b.effects}<span class="cb-sep" aria-hidden="true">–</span><span
+              <b>{b.label}</b>{#if b.effects}<span class="cb-sep" aria-hidden="true">&middot;</span><span
                   class="cb-effects">{b.effects}</span>{/if}
             </td>
             <td class="cb-num">{fmtGold(b.cut)}</td>

@@ -167,7 +167,7 @@ function score(label: string, recognized: Record<string, FixtureResult>, gt: Gro
 }
 
 function dump(label: string, recognized: Record<string, { gemAttr: string; gems: ExpectedGem[] }>) {
-  console.log(`\n=== ${label} (recognized — review) ===`);
+  console.log(`\n=== ${label} (recognized, review) ===`);
   for (const key of Object.keys(recognized)) {
     const r = recognized[key];
     console.log(`--- ${key}  attr=${r.gemAttr}  gems=${r.gems.length} ---`);
@@ -179,7 +179,7 @@ async function main() {
   const fixturesDir = path.join(root, 'Reference Projects', 'cv-fixtures');
   const testDir = path.join(root, 'Reference Projects', 'Test shots');
   if (!fs.existsSync(fixturesDir) && !fs.existsSync(testDir)) {
-    console.log('cv-ocr: no fixtures — skipping (dev-only).');
+    console.log('cv-ocr: no fixtures: skipping (dev-only).');
     process.exit(0);
   }
   await initOpenCv();
@@ -197,8 +197,8 @@ async function main() {
     if (fs.existsSync(testDir)) {
       const rec = await recognizeDir(cv, asset, ocr, testDir);
       const gtPath = path.join(testDir, 'groundtruth.json');
-      if (fs.existsSync(gtPath)) score('Test shots (client 2 — user)', rec, JSON.parse(fs.readFileSync(gtPath, 'utf8')) as GroundTruth);
-      dump('Test shots (client 2 — user)', rec);
+      if (fs.existsSync(gtPath)) score('Test shots (client 2, user)', rec, JSON.parse(fs.readFileSync(gtPath, 'utf8')) as GroundTruth);
+      dump('Test shots (client 2, user)', rec);
     }
   } finally {
     await ocr.terminate();

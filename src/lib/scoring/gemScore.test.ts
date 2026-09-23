@@ -103,7 +103,7 @@ describe('computeGemScore (DPS, real % damage)', () => {
     expect(computeGemScore(g, 'dps').damagePercent).toBeCloseTo(expectedPct, 9);
   });
 
-  it('a perfect gem scores ≈ 1.34–1.44 % damage (the additive score, incl. willpower)', () => {
+  it('a perfect gem scores ≈ 1.34 to 1.44 % damage (the additive score, incl. willpower)', () => {
     const perfectC10 = gem(5, 5, { optionType: 'BossDamage', value: 5 }, { optionType: 'AddDamage', value: 5 });
     const score = computeGemScore(perfectC10, 'dps').score;
     expect(score).toBeGreaterThan(1.34);

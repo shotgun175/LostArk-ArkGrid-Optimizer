@@ -596,7 +596,7 @@
         <!-- cost; click = 0 / 900 / 1,800 -->
         <div class="pw-costrow">
           <span>Processing Cost</span>
-          <button type="button" class="pw-cost-val pw-edit" class:flag={lowCost()} title={lowCost() ? "The reader couldn't confirm the processing cost — check it, every gold figure in the advice depends on it" : 'Click to set the processing cost'} onclick={(e) => openPop({ kind: 'cost' }, e)}>
+          <button type="button" class="pw-cost-val pw-edit" class:flag={lowCost()} title={lowCost() ? "The reader couldn't confirm the processing cost. Check it: every gold figure in the advice depends on it" : 'Click to set the processing cost'} onclick={(e) => openPop({ kind: 'cost' }, e)}>
             {processCost.toLocaleString()}<span class="pw-coin"></span>
           </button>
         </div>

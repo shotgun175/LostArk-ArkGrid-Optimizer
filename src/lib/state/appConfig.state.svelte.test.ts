@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { DEFAULT_PROFILE_NAME } from '../constants/enums';
 import {
   appConfig,
   applyOsThemePreference,
+  getProfile,
   migrateAppConfig,
+  overwriteProfile,
   toggleDarkMode,
 } from './appConfig.state.svelte';
+import { initNewProfile } from './profile.state.svelte';
 
 describe('theme startup decision', () => {
   beforeEach(() => {
@@ -64,5 +68,13 @@ describe('forcedNonStandardClient migration', () => {
     const ui = (payload as { uiConfig: Record<string, unknown> }).uiConfig;
     expect('deferredScreenSharingInit' in ui).toBe(false);
     expect(ui.forcedNonStandardClient).toBe(false);
+  });
+});
+
+describe('overwriteProfile', () => {
+  it('accepts a profile named DEFAULT_PROFILE_NAME, so a Default export can be imported back', () => {
+    const imported = initNewProfile(DEFAULT_PROFILE_NAME);
+    expect(overwriteProfile(imported)).toBe(true);
+    expect(getProfile(DEFAULT_PROFILE_NAME)).toBe(imported);
   });
 });

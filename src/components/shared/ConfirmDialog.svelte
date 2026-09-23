@@ -4,14 +4,24 @@
   import { confirmAccept, confirmDismiss, confirmStore } from '../../lib/ui/confirmDialog.svelte';
 
   let confirmBtn = $state<HTMLButtonElement | null>(null);
+  let card = $state<HTMLDivElement | null>(null);
+  // The element that had focus when the dialog opened; focus goes back to it on close.
+  let opener: HTMLElement | null = null;
   // Split the message on newlines so multi-line confirms read as separate paragraphs.
   let lines = $derived(
     (confirmStore.active?.message ?? '').split('\n').filter((l) => l.length > 0)
   );
 
-  // Move keyboard focus to the confirm button when a dialog opens (entry point for keyboard / SR users).
+  // Move keyboard focus to the confirm button when a dialog opens (entry point for keyboard / SR users),
+  // and hand it back to the opener once no dialog is showing.
   $effect(() => {
-    if (confirmStore.active) confirmBtn?.focus();
+    if (confirmStore.active) {
+      if (!opener && document.activeElement instanceof HTMLElement) opener = document.activeElement;
+      confirmBtn?.focus();
+    } else if (opener) {
+      if (opener.isConnected) opener.focus({ preventScroll: true });
+      opener = null;
+    }
   });
 
   // Lock body scroll while a dialog is open so the page behind can't move under the backdrop.
@@ -28,6 +38,17 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       confirmDismiss();
+    } else if (e.key === 'Tab' && card) {
+      // Keep Tab and Shift+Tab cycling between the dialog's buttons, off the page behind it.
+      const buttons = [...card.querySelectorAll('button')];
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      const at = document.activeElement;
+      const inside = buttons.some((b) => b === at);
+      if (!inside || at === (e.shiftKey ? first : last)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      }
     }
   }
 </script>
@@ -38,19 +59,17 @@
   <div
     class="confirm-backdrop"
     role="presentation"
-    onclick={confirmDismiss}
+    onclick={(e) => e.target === e.currentTarget && confirmDismiss()}
     transition:fade={{ duration: 120 }}
   >
-    <!-- The click only keeps a click inside the card from reaching the backdrop's dismiss. Keyboard
-         use is handled by the window keydown listener and focus goes to the confirm button. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
     <div
+      bind:this={card}
       class="confirm-card"
       class:danger={confirmStore.active.tone === 'danger'}
       role="alertdialog"
       aria-modal="true"
       aria-label={confirmStore.active.title ?? 'Confirmation'}
-      onclick={(e) => e.stopPropagation()}
+      tabindex="-1"
       transition:scale={{ duration: 140, start: 0.96 }}
     >
       {#if confirmStore.active.title}
