@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_NAME } from '../constants/enums';
 import { gradeRows, rankFromGrade } from '../scoring/gemScore';
-import { addNewProfile, appConfig, bigIntSerializer, getProfile } from './appConfig.state.svelte';
+import { addNewProfile, appConfig, getProfile } from './appConfig.state.svelte';
 import { initBuildCores } from './dualBuild';
 import {
   deleteProfile,
@@ -249,6 +249,6 @@ describe('isImportableProfile (profile file import guard)', () => {
       option1: { optionType: 'AtkPower', value: 5 },
       option2: { optionType: 'AddDamage', value: 5 },
     });
-    expect(imported(bigIntSerializer.parse(bigIntSerializer.stringify(exported)))).toBe(true);
+    expect(imported(JSON.parse(JSON.stringify(exported)))).toBe(true);
   });
 });

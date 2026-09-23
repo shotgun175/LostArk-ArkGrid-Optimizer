@@ -454,7 +454,6 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
     emitProgress(report, 'finalizing', 100);
     return {
       assignedGemIndexes: solved.assignedGemIndexes,
-      gemSetPackTuple: answer,
       scoreSet: { score: 0, bestScore: 0, perfectScore: 0 },
     };
   }
@@ -481,7 +480,6 @@ export function runSolve(payload: SolverRunPayload, report: ProgressReporter): S
 
   return {
     assignedGemIndexes: solved.assignedGemIndexes,
-    gemSetPackTuple: answer,
     scoreSet: {
       score,
       bestScore,

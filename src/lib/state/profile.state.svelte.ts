@@ -1,15 +1,9 @@
 import { persistedState } from 'svelte-persisted-state';
 
 import { type ArkGridAttr, ArkGridAttrs, DEFAULT_PROFILE_NAME } from '../constants/enums';
-import {
-  type ArkGridCore,
-  type ArkGridCoreType,
-  ArkGridCoreTypes,
-  createCore,
-} from '../models/arkGridCores';
+import { type ArkGridCoreType, ArkGridCoreTypes, createCore } from '../models/arkGridCores';
 import { type ArkGridGem, determineGemGrade } from '../models/arkGridGems';
 import { BASELINE_MIN_GRADE, baselineMaxGrade, gradeRows } from '../scoring/gemScore';
-import type { GemSetPackTuple } from '../solver/models';
 import { addNewProfile, appConfig, getProfile } from './appConfig.state.svelte';
 import {
   type BuildRole,
@@ -80,12 +74,10 @@ export type SolveAnswerScoreSet = {
 };
 export type SolveAnswer = {
   assignedGems: ArkGridGem[][];
-  gemSetPackTuple: GemSetPackTuple;
 };
 export type SolveAfter = {
   solveAnswer?: SolveAnswer;
   scoreSet?: SolveAnswerScoreSet;
-  answerCores?: Record<ArkGridAttr, Record<ArkGridCoreType, ArkGridCore | null>>;
   /** Signature of the solve inputs (this build's cores + shared gems); see solveInputSignature. */
   inputSig?: string;
 };

@@ -4,7 +4,6 @@
   import {
     addNewProfile,
     appConfig,
-    bigIntSerializer,
     getProfile,
     overwriteProfile,
   } from '../../lib/state/appConfig.state.svelte';
@@ -164,7 +163,7 @@
       title={LExportProfile}
       disabled={currentProfileName.current === DEFAULT_PROFILE_NAME}
       onclick={() => {
-        const jsonStr = bigIntSerializer.stringify(getProfile(currentProfileName.current));
+        const jsonStr = JSON.stringify(getProfile(currentProfileName.current));
 
         // 2. Create the Blob
         const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -198,7 +197,7 @@
           const reader = new FileReader();
           reader.onload = async (e) => {
             try {
-              const data: CharacterProfile = bigIntSerializer.parse(e.target?.result as string);
+              const data: CharacterProfile = JSON.parse(e.target?.result as string);
               migrateProfile(data);
               if (!isImportableProfile(data)) throw Error('Not a profile file');
               if (addNewProfile(data)) {

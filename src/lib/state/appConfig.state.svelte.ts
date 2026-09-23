@@ -55,23 +55,6 @@ interface AppConfig {
   uiConfig: UIConfig;
 }
 
-// serializer object for svelte-persisted-state
-export const bigIntSerializer = {
-  // For bigInt, serialize as a string with an 'n' suffix appended
-  stringify: (value: any) => {
-    return JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? v.toString() + 'n' : v));
-  },
-
-  // If it's a string representing an integer ending in 'n', convert it back to BigInt
-  parse: (text: string) => {
-    return JSON.parse(text, (_, v) => {
-      if (typeof v === 'string' && /^\d+n$/.test(v)) {
-        return BigInt(v.slice(0, -1));
-      }
-      return v;
-    });
-  },
-};
 export function migrateAppConfig(appConfig: Partial<AppConfig>) {
   // themeSetByUser (added with the OS-preference fix; old payloads predate it).
   // Payloads that already carry a darkMode value are treated as an explicit
@@ -117,7 +100,6 @@ export const appConfig = persistedState<AppConfig>(
     uiConfig: defaultUIConfig,
   },
   {
-    serializer: bigIntSerializer,
     beforeRead: (value) => {
       migrateAppConfig(value);
       // What's in localStorage may not match the shape the app expects

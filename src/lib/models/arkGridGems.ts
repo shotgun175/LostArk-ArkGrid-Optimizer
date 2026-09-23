@@ -37,9 +37,6 @@ export interface ArkGridGem {
   /** Retired (write-only; equipped state derives from solveAnswer.assignedGems).
    *  Kept only because old persisted snapshots may still carry the key. */
   assign?: number;
-  isNew?: boolean;
-  replaces?: ArkGridGem;
-  swapIndex?: number;
 }
 
 export function gemFingerprint(gem: ArkGridGem): string {

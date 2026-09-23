@@ -35,7 +35,6 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 // Worker result slotting the given Order-pool indexes into Order Sun (single-role, dps build).
 const result = (orderSunIndexes: number[]) => ({
   assignedGemIndexes: [orderSunIndexes, [], [], [], [], []],
-  gemSetPackTuple: {},
   scoreSet: {},
 });
 const gem = (a: number): ArkGridGem => ({

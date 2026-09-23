@@ -1,6 +1,5 @@
 import type { ArkGridAttr } from '../constants/enums';
 import type { ArkGridGem } from '../models/arkGridGems';
-import type { GemSetPackTuple } from './models';
 
 export type WorkerCore = {
   energy: number;
@@ -49,7 +48,6 @@ export type SolverRunPayload = {
 
 export type SolverRunResult = {
   assignedGemIndexes: number[][];
-  gemSetPackTuple: GemSetPackTuple;
   scoreSet: SolverScoreSet;
 };
 

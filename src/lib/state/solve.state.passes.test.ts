@@ -18,7 +18,6 @@ const { solveMock } = vi.hoisted(() => ({
   // One Order gem in the pool, so slot 0 index 0 is the only valid assignment.
   solveMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
     assignedGemIndexes: [[0], [], [], [], [], []],
-    gemSetPackTuple: {},
     scoreSet: {},
   })),
 }));

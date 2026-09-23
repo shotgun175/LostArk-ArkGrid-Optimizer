@@ -9,17 +9,13 @@
   interface Props {
     gem: ArkGridGem;
     showDeleteButton?: boolean;
-    isReplaced?: boolean;
   }
 
-  let { gem, showDeleteButton = true, isReplaced = false }: Props = $props();
+  let { gem, showDeleteButton = true }: Props = $props();
   let locale: AppLocale = $derived(appLocale.current);
 </script>
 
-<div class="gem-box" class:is-new={gem.isNew} class:is-replaced={isReplaced}>
-  {#if gem.swapIndex !== undefined}
-    <div class="swap-badge">{gem.swapIndex}</div>
-  {/if}
+<div class="gem-box">
   <div class="gem" data-locale={locale}>
     <div class="gem-image" data-grade={gem.grade}>
       <img src={getGemImage(gem.gemAttr, gem.name)} alt={gem.name} />
@@ -65,31 +61,6 @@
 </div>
 
 <style>
-  .gem-box.is-new {
-    border-color: #e6a817;
-    box-shadow: 0 0 0 1px #e6a817;
-  }
-  .gem-box.is-replaced {
-    opacity: 0.5;
-  }
-  .swap-badge {
-    position: absolute;
-    top: 0.15rem;
-    right: 0.15rem;
-    width: 0.85rem;
-    height: 0.85rem;
-    border-radius: 50%;
-    background: var(--bg);
-    border: 2px solid #e6a817;
-    color: inherit;
-    font-size: 0.55rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    z-index: 10;
-  }
   .gem-box {
     position: relative;
     container-type: inline-size;
