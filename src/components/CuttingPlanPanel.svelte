@@ -379,14 +379,16 @@
       {#if stopVerdicts}
         <div class="stop-strip">
           <span class="ss-title">Still worth cutting?</span>
-          {#each stopVerdicts as { cost, v } (cost)}
-            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-            <span class="ss-chip tooltip" data-kind={v.kind} tabindex="0">
-              <b>{cost}-cost</b>
-              {stopChipLabel(v)}{v.kind === 'pays' ? ` (floor ${rankFromGrade(v.floorGrade, role)})` : ''}
-              <span class="tooltip-text">{stopChipTitle(cost, v)}</span>
-            </span>
-          {/each}
+          <span class="ss-chips">
+            {#each stopVerdicts as { cost, v } (cost)}
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <span class="ss-chip tooltip" data-kind={v.kind} tabindex="0">
+                <b>{cost}-cost</b>
+                {stopChipLabel(v)}{v.kind === 'pays' ? ` (floor ${rankFromGrade(v.floorGrade, role)})` : ''}
+                <span class="tooltip-text">{stopChipTitle(cost, v)}</span>
+              </span>
+            {/each}
+          </span>
           <span class="ss-sub">
             per cost, vs the worst equipped gem it can replace ({binding === 'nrb'
               ? 'non-roster-bound'
@@ -870,10 +872,20 @@
     color: color-mix(in srgb, var(--text) 75%, transparent);
     border-color: color-mix(in srgb, var(--border) 75%, transparent);
   }
-  /* Desktop: open every chip tooltip from the strip's left edge, so a chip near either side never
-     pushes it off screen or widens the page. Phones keep the fixed centered card. */
+  /* Phones: the chip group adds no box, so the chips wrap in the strip as before and keep the
+     fixed centered card. */
+  .ss-chips {
+    display: contents;
+  }
+  /* Desktop: open every chip tooltip from the start of the chip row, just above the strip. The
+     title is wider than the Baseline Tier label above it, so the tooltip clears that label, and it
+     stays inside the page at every width (a tooltip centered on a right-hand chip widened it). */
   @media (min-width: 768px) {
-    .stop-strip {
+    .ss-chips {
+      display: flex;
+      flex: 1;
+      flex-wrap: wrap;
+      gap: 0.5rem;
       position: relative;
     }
     .ss-chip.tooltip {
@@ -881,6 +893,8 @@
     }
     .ss-chip .tooltip-text {
       left: 0;
+      /* the strip's top padding and border, then a 0.4rem gap */
+      bottom: calc(100% + 0.95rem + 1px);
       transform: none;
     }
   }
