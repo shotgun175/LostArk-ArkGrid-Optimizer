@@ -125,7 +125,10 @@ describe('parseLoadout (lostark.bible gem-id families)', () => {
   ];
   const gemLiteral = (id: string, e1: number, e2: number) =>
     `{id:${id},idx:0,costReduc:0,corePoints:5,opts:[{id:${e1},level:5},{id:${e2},level:5}]}`;
-  const page = (gems: string[]) => `arkGridCores:[{id:673001226,base:10002,gems:[${gems.join(',')}]}]`;
+  // No core base, so these cases exercise the id-digit and override-table fallback on their own.
+  const page = (gems: string[]) => `arkGridCores:[{id:673001226,gems:[${gems.join(',')}]}]`;
+  const inCore = (base: number, gems: string[]) =>
+    `arkGridCores:[{id:673001226,base:${base},gems:[${gems.join(',')}]}]`;
 
   it('reads every known id (674 family + the 2026-09-16 event gems) at the cost and type lostark.bible draws', () => {
     const r = parseLoadout(page(CASES.map(([id, e1, e2]) => gemLiteral(id, e1, e2))))!;
@@ -184,6 +187,43 @@ describe('parseLoadout (lostark.bible gem-id families)', () => {
       expect.stringContaining('99909000 is not in the known 674xxxxx format'),
       'gem id 99909000 reads as 8-cost, but no single pool holds Boss Damage + Ally Attack Enh.; cost left as derived',
     ]);
+  });
+
+  it('takes the side from the core that holds the gem (a new id family the digits read as Chaos)', () => {
+    const order = parseLoadout(inCore(10001, [gemLiteral('40621112', ATK, ALLYD)]))!;
+    expect(order.gems.length).toBe(1);
+    expect(order.gems[0].gemAttr).toBe('Order');
+    expect(order.gems[0].name).toMatch(/^Order /);
+    const chaos = parseLoadout(inCore(10004, [gemLiteral('40621114', ATK, ALLYD)]))!;
+    expect(chaos.gems.length).toBe(1);
+    expect(chaos.gems[0].gemAttr).toBe('Chaos');
+  });
+
+  it('keeps a known-table gem in a matching core at its single table note', () => {
+    const r = parseLoadout(inCore(10005, [gemLiteral('40621175', ATK, ADD)]))!;
+    expect(r.gems.length).toBe(1);
+    expect(r.gems[0].gemAttr).toBe('Chaos');
+    expect(r.notes.length).toBe(1);
+    expect(r.notes[0]).toContain('40621175');
+  });
+
+  it('skips a gem with implausible values, one warning each', () => {
+    const gem = (costReduc: number, corePoints: number, level: number) =>
+      `{id:67401025,idx:0,costReduc:${costReduc},corePoints:${corePoints},opts:[{id:${ADD},level:${level}},{id:${ATK},level:5}]}`;
+    for (const bad of [gem(5, 99, 5), gem(5, 0, 5), gem(-40, 5, 5), gem(5, 5, 9)]) {
+      const r = parseLoadout(page([bad]))!;
+      expect(r.gems, bad).toEqual([]);
+      expect(r.warnings.length, bad).toBe(1);
+    }
+  });
+
+  it('skips a lopec.kr gem with implausible values with a warning', () => {
+    const r = parseLoadout(
+      '{"icon":"use_13_202.png","requiredWillpower":7,"orderChaosPoint":99,' +
+        '"effects":[{"name":"공격력","level":5},{"name":"추가 피해","level":3}]}'
+    )!;
+    expect(r.gems).toEqual([]);
+    expect(r.warnings.length).toBe(1);
   });
 
   it('skips a gem whose id has no cost digit with a warning, not a note', () => {
