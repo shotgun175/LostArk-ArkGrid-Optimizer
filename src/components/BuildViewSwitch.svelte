@@ -19,6 +19,7 @@
       <button
         class="seg-btn"
         class:active={profile.activeBuild === 'dps'}
+        aria-pressed={profile.activeBuild === 'dps'}
         onclick={() => setActiveBuild('dps')}
       >
         {LDealer[locale]}
@@ -26,6 +27,7 @@
       <button
         class="seg-btn"
         class:active={profile.activeBuild === 'support'}
+        aria-pressed={profile.activeBuild === 'support'}
         onclick={() => setActiveBuild('support')}
       >
         {LSupporter[locale]}

@@ -204,10 +204,11 @@
       watching = true;
     } catch (e) {
       const name = (e as DOMException)?.name;
+      if (name !== 'NotAllowedError') console.error('Cut Advisor: screen share failed', e);
       error =
         name === 'NotAllowedError'
           ? 'Screen sharing was denied.'
-          : String((e as Error)?.message ?? e);
+          : "Screen sharing didn't start. Try again, or upload a screenshot instead.";
       watching = false;
     }
   }
@@ -241,7 +242,8 @@
         engaged = true; // an uploaded read counts as engaging, so market changes re-rank it afterwards
       }
     } catch (e) {
-      error = String((e as Error)?.message ?? e);
+      console.error('Cut Advisor: screenshot read failed', e);
+      error = "Couldn't read that file. Upload a PNG or JPG screenshot of the Processing window.";
     } finally {
       parsing = false;
     }

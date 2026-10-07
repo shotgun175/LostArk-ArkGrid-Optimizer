@@ -88,6 +88,7 @@
         type="button"
         class="slider-tick"
         class:active={g === baseline}
+        aria-pressed={g === baseline}
         onclick={() => updateBaselineOverride(g)}>{rankFromGrade(g, role)}</button
       >
     {/each}

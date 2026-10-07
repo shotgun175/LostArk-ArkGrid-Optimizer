@@ -628,13 +628,13 @@
       {#if pop.kind === 'identity'}
         <h4>Gem type</h4>
         <div class="opts">
-          <button type="button" class="opt" class:on={edit.gemType === 'order'} onclick={() => pick(() => (edit.gemType = 'order'), true)}>Order</button>
-          <button type="button" class="opt" class:on={edit.gemType === 'chaos'} onclick={() => pick(() => (edit.gemType = 'chaos'), true)}>Chaos</button>
+          <button type="button" class="opt" class:on={edit.gemType === 'order'} aria-pressed={edit.gemType === 'order'} onclick={() => pick(() => (edit.gemType = 'order'), true)}>Order</button>
+          <button type="button" class="opt" class:on={edit.gemType === 'chaos'} aria-pressed={edit.gemType === 'chaos'} onclick={() => pick(() => (edit.gemType = 'chaos'), true)}>Chaos</button>
         </div>
         <h4>Gem</h4>
         <div class="opts col">
           {#each BASE_COSTS as bc (bc)}
-            <button type="button" class="opt" class:on={edit.baseCost === bc} onclick={() => pick(() => (edit.baseCost = bc), true)}>
+            <button type="button" class="opt" class:on={edit.baseCost === bc} aria-pressed={edit.baseCost === bc} onclick={() => pick(() => (edit.baseCost = bc), true)}>
               {GEM_NAMES[bc][edit.gemType === 'chaos' ? 'chaos' : 'order']} ({bc}-cost)
             </button>
           {/each}
@@ -642,7 +642,7 @@
         <h4>Rarity</h4>
         <div class="opts">
           {#each RARITIES as r (r)}
-            <button type="button" class="opt" class:on={edit.rarity === r} onclick={() => pick(() => (edit.rarity = r), true)}>
+            <button type="button" class="opt" class:on={edit.rarity === r} aria-pressed={edit.rarity === r} onclick={() => pick(() => (edit.rarity = r), true)}>
               {r[0].toUpperCase() + r.slice(1)} - {RARITY_TURNS[r]} turns
             </button>
           {/each}
@@ -652,7 +652,7 @@
         <div class="opts">
           {#each LEVELS as lv (lv)}
             {@const field = pop.field}
-            <button type="button" class="opt" class:on={edit[field] === lv} onclick={() => pick(() => (edit[field] = lv))}>{lv}</button>
+            <button type="button" class="opt" class:on={edit[field] === lv} aria-pressed={edit[field] === lv} onclick={() => pick(() => (edit[field] = lv))}>{lv}</button>
           {/each}
         </div>
       {:else if pop.kind === 'effect'}
@@ -660,7 +660,7 @@
         <h4>{which === 'effect1' ? 'Effect 1 (left)' : 'Effect 2 (right)'}</h4>
         <div class="opts col">
           {#each EFFECT_POOLS[edit.baseCost] ?? [] as e (e)}
-            <button type="button" class="opt" class:on={edit[which] === e} disabled={effectDisabled(which, e)} onclick={() => pick(() => (edit[which] = e), true)}>
+            <button type="button" class="opt" class:on={edit[which] === e} aria-pressed={edit[which] === e} disabled={effectDisabled(which, e)} onclick={() => pick(() => (edit[which] = e), true)}>
               {abbr(e)}{effectDisabled(which, e) ? ' (other slot)' : ''}
             </button>
           {/each}
@@ -669,35 +669,35 @@
         <div class="opts">
           {#each LEVELS as lv (lv)}
             {@const lf = (which + 'Level') as 'effect1Level' | 'effect2Level'}
-            <button type="button" class="opt" class:on={edit[lf] === lv} onclick={() => pick(() => (edit[lf] = lv), true)}>{lv}</button>
+            <button type="button" class="opt" class:on={edit[lf] === lv} aria-pressed={edit[lf] === lv} onclick={() => pick(() => (edit[lf] = lv), true)}>{lv}</button>
           {/each}
         </div>
       {:else if pop.kind === 'turn'}
         <h4>Attempts remaining (Process x/{maxTurns})</h4>
         <div class="opts">
           {#each Array.from({ length: maxTurns }, (_, k) => maxTurns - k) as x (x)}
-            <button type="button" class="opt" class:on={attemptsShown === x} onclick={() => pick(() => (edit.currentTurn = maxTurns - x + 1))}>{x}/{maxTurns}</button>
+            <button type="button" class="opt" class:on={attemptsShown === x} aria-pressed={attemptsShown === x} onclick={() => pick(() => (edit.currentTurn = maxTurns - x + 1))}>{x}/{maxTurns}</button>
           {/each}
         </div>
       {:else if pop.kind === 'rerolls'}
         <h4>Free rerolls left</h4>
         <div class="opts">
           {#each Array.from({ length: RARITY_REROLLS[edit.rarity] ?? 3 }, (_, k) => k) as fr (fr)}
-            <button type="button" class="opt" class:on={edit.rerollFree === fr} onclick={() => pick(() => (edit.rerollFree = fr))}>{fr}</button>
+            <button type="button" class="opt" class:on={edit.rerollFree === fr} aria-pressed={edit.rerollFree === fr} onclick={() => pick(() => (edit.rerollFree = fr))}>{fr}</button>
           {/each}
         </div>
       {:else if pop.kind === 'cost'}
         <h4>Processing cost</h4>
         <div class="opts">
-          <button type="button" class="opt" class:on={edit.costMult === 0} onclick={() => pick(() => (edit.costMult = 0))}>900</button>
-          <button type="button" class="opt" class:on={edit.costMult === 100} onclick={() => pick(() => (edit.costMult = 100))}>1,800 (+100%)</button>
-          <button type="button" class="opt" class:on={edit.costMult === -100} onclick={() => pick(() => (edit.costMult = -100))}>0 (−100%)</button>
+          <button type="button" class="opt" class:on={edit.costMult === 0} aria-pressed={edit.costMult === 0} onclick={() => pick(() => (edit.costMult = 0))}>900</button>
+          <button type="button" class="opt" class:on={edit.costMult === 100} aria-pressed={edit.costMult === 100} onclick={() => pick(() => (edit.costMult = 100))}>1,800 (+100%)</button>
+          <button type="button" class="opt" class:on={edit.costMult === -100} aria-pressed={edit.costMult === -100} onclick={() => pick(() => (edit.costMult = -100))}>0 (−100%)</button>
         </div>
       {:else if pop.kind === 'reset'}
         <h4>Reset counter</h4>
         <div class="opts">
-          <button type="button" class="opt" class:on={edit.resetAvail === 1} onclick={() => pick(() => (edit.resetAvail = 1))}>Available (1/1)</button>
-          <button type="button" class="opt" class:on={edit.resetAvail === 0} onclick={() => pick(() => (edit.resetAvail = 0))}>Used (0/1)</button>
+          <button type="button" class="opt" class:on={edit.resetAvail === 1} aria-pressed={edit.resetAvail === 1} onclick={() => pick(() => (edit.resetAvail = 1))}>Available (1/1)</button>
+          <button type="button" class="opt" class:on={edit.resetAvail === 0} aria-pressed={edit.resetAvail === 0} onclick={() => pick(() => (edit.resetAvail = 0))}>Used (0/1)</button>
         </div>
       {:else if pop.kind === 'outcome'}
         {@const i = pop.i}
