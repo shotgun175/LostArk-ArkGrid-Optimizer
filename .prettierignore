@@ -17,6 +17,10 @@ node_modules
 dist
 build
 
+# Vendored third-party code, which carries marked LOCAL PATCH changes: do not reformat, so the
+# local patches stay reviewable against upstream re-syncs
+src/lib/advisor/vendor/
+
 # Generated, minified data modules — keep them compact, don't reformat
 src/lib/cutplan/pipeline.json
 

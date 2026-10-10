@@ -34,10 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: 22 # matches the Deploy workflow's build runtime
+          node-version: 24 # matches the Deploy workflow's build runtime
           cache: npm
       - run: npm ci
       - run: npm run check

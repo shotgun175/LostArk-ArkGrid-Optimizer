@@ -21,9 +21,7 @@ import type {
   Verdict,
 } from './types';
 import { gradeRows } from '../scoring/gemScore';
-import { COSTS, GOLD_PER_DAMAGE, RARITIES } from './types';
-
-export { GOLD_PER_DAMAGE };
+import { COSTS, RARITIES } from './types';
 
 // Economy constant that OVERRIDES the baked legacy meta (shizukaziye's pipeline.js CONST block does
 // the same: the committed bake still carries his old deployed-page bands, this is the current one).
