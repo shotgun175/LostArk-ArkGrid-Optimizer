@@ -281,7 +281,7 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-main().catch((e) => {
+await main().catch((e) => {
   console.error('cv-accuracy crashed:', e);
   process.exit(1);
 });
