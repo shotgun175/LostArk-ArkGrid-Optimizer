@@ -13,6 +13,16 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # @types/node tracks the Node runtime CI and Deploy use (node-version: 24); a newer major
+      # would type APIs the build does not run on. Raise it together with node-version.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # prettier-plugin-svelte 4 cannot install yet: @trivago/prettier-plugin-sort-imports declares a
+      # peerOptional prettier-plugin-svelte 3.x, so npm ci fails with ERESOLVE. Drop this once
+      # sort-imports accepts 4.x.
+      - dependency-name: "prettier-plugin-svelte"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

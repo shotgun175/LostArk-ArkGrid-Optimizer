@@ -51,6 +51,8 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 
 ## Running locally
 
+Requires Node 24 (the version CI and the Deploy workflow build with).
+
 ```bash
 npm install
 npm run dev        # dev server with hot reload
