@@ -111,7 +111,7 @@ async function main(): Promise<void> {
   process.exit(failed === 0 ? 0 : 1);
 }
 
-main().catch((e) => {
+await main().catch((e) => {
   console.error('cv-tests crashed:', e);
   process.exit(1);
 });

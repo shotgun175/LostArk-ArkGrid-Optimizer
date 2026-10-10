@@ -28,6 +28,11 @@ updates:
       # with the test:cv-ocr and test:cv-accuracy checks before and after.
       - dependency-name: "tesseract.js"
         update-types: ["version-update:semver-major"]
+      # OpenCV 5 changed how the runtime starts (the default export became a Promise),
+      # so #55 as written hung recognition while CI stayed green. A major must be done
+      # deliberately with test:cv, test:cv-accuracy and test:cv-ocr before and after.
+      - dependency-name: "@techstark/opencv-js"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
