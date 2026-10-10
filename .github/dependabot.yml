@@ -23,6 +23,11 @@ updates:
       # sort-imports accepts 4.x.
       - dependency-name: "prettier-plugin-svelte"
         update-types: ["version-update:semver-major"]
+      # A tesseract.js major changes the self-hosted worker, core and model files
+      # (scripts/copy-tesseract.cjs) and OCR behavior, so it must be done deliberately,
+      # with the test:cv-ocr and test:cv-accuracy checks before and after.
+      - dependency-name: "tesseract.js"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
