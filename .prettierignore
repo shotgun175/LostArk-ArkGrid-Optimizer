@@ -17,8 +17,8 @@ node_modules
 dist
 build
 
-# Frozen third-party vendor code: must stay byte-identical to upstream (see the vendored-code rule),
-# so `npm run format` must never rewrite it
+# Vendored third-party code, which carries marked LOCAL PATCH changes: do not reformat, so the
+# local patches stay reviewable against upstream re-syncs
 src/lib/advisor/vendor/
 
 # Generated, minified data modules — keep them compact, don't reformat
