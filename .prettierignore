@@ -17,6 +17,10 @@ node_modules
 dist
 build
 
+# Frozen third-party vendor code: must stay byte-identical to upstream (see the vendored-code rule),
+# so `npm run format` must never rewrite it
+src/lib/advisor/vendor/
+
 # Generated, minified data modules — keep them compact, don't reformat
 src/lib/cutplan/pipeline.json
 
