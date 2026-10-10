@@ -27,7 +27,7 @@ import type { CvMat } from '../src/lib/cv/types';
 import type { ArkGridGem } from '../src/lib/models/arkGridGems';
 
 // jpeg-js and pngjs are CommonJS; load them via require so Node's ESM↔CJS named-export interop
-// can't bite at runtime. jpeg-js ships types (typeof import); pngjs 3.x doesn't, so shape it inline.
+// can't bite at runtime. jpeg-js ships types (typeof import); pngjs doesn't, so shape it inline.
 const requireCjs = createRequire(import.meta.url);
 const jpeg = requireCjs('jpeg-js') as typeof import('jpeg-js');
 const { PNG } = requireCjs('pngjs') as {
