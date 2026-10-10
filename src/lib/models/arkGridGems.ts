@@ -8,18 +8,11 @@ export {
   ArkGridGemOptionNames,
   ArkGridGemOptionTypes,
   ArkGridGemSpecs,
-  // Grade + gem-equality logic live in the Vite-free specs module so node-side tooling can
-  // import them; re-exported here so existing `from '../models/arkGridGems'` importers keep working.
+  // Grade logic lives in the Vite-free specs module so node-side tooling can import it;
+  // re-exported here so existing `from '../models/arkGridGems'` importers keep working.
   determineGemGrade,
-  determineGemGradeByGem,
-  isSameArkGridGem,
 } from './arkGridGemSpecs';
-export type {
-  ArkGridGemName,
-  ArkGridGemOptionName,
-  ArkGridGemOptionType,
-  ArkGridGemSpec,
-} from './arkGridGemSpecs';
+export type { ArkGridGemName, ArkGridGemOptionName } from './arkGridGemSpecs';
 
 export type ArkGridGemOption = {
   optionType: ArkGridGemOptionName;
