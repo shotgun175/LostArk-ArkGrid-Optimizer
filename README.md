@@ -79,6 +79,11 @@ npm run lint       # ESLint (CI gate)
 npm run knip       # reports orphaned exports / files / dependencies; must exit clean (CI gate)
 ```
 
+Two more harnesses, `npm run test:cv-accuracy` (template matching) and `npm run test:cv-ocr`
+(screenshot OCR), score recognition against real screenshots kept under the untracked
+`Reference Projects/` folder. They skip when those fixtures are absent, so they are not part of
+`npm test` or CI; run them before and after any change to recognition or its dependencies.
+
 ## Data generators
 
 Some data modules are generated at build time and committed:
@@ -113,6 +118,22 @@ dependency bump plus a re-check of OCR accuracy, with no files to re-copy by han
 point tesseract at these files through `src/lib/cv/tesseractAssets.ts`. Only the two LSTM cores are
 copied because both call sites run tesseract in LSTM-only mode (OEM 1); tesseract picks the SIMD or
 non-SIMD one itself.
+
+## Dependency updates
+
+Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml)) opens one grouped pull request a
+month for npm minor and patch updates and one for GitHub Actions, each waiting 7 days after a
+release before proposing it. Security fixes open right away through the repository's Dependabot
+security updates. Some major versions are held and must be upgraded by hand:
+
+- `@types/node`: tracks the Node version CI and Deploy use (24); raise both together.
+- `prettier-plugin-svelte`: 4.x conflicts with the import-sort plugin's peer range, so `npm ci` fails.
+- `tesseract.js`: a major changes the self-hosted OCR files and OCR behavior.
+- `@techstark/opencv-js`: 5.x changed how the runtime starts, so recognition hangs without a code
+  change.
+
+For the two recognition libraries, run `npm run test:cv`, `test:cv-accuracy` and `test:cv-ocr`
+before and after the upgrade. Dependency pull requests go through the same CI check as any other.
 
 ## Deployment
 
