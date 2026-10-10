@@ -8,7 +8,16 @@ export default [
     // TS-recommended rules would fight them for no gain. Reference Projects/
     // is gitignored third-party material, not ours to lint. The advisor vendor/
     // dir is frozen third-party UMD (shizukaziye's DP + scoring core), likewise.
-    ignores: ['dist/', 'node_modules/', '**/*.cjs', 'Reference Projects/', 'src/lib/**/vendor/**'],
+    // public/tesseract/ holds tesseract.js runtime files copied from node_modules
+    // (scripts/copy-tesseract.cjs), also third-party.
+    ignores: [
+      'dist/',
+      'node_modules/',
+      '**/*.cjs',
+      'Reference Projects/',
+      'src/lib/**/vendor/**',
+      'public/tesseract/',
+    ],
   },
 
   // typescript-eslint recommended set — catches, among others, the

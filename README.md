@@ -44,8 +44,9 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 - **Solver (internal):** custom backtracking with upper-bound pruning (TypeScript); it no longer has
   its own UI section and instead supplies the evidence behind Gem Triage and the Cutting Plan
 - **Image processing:** OpenCV (template matching) in a Web Worker; screenshot upload and the Cut
-  Advisor both add tesseract.js, whose engine + English data are fetched from a CDN (jsdelivr) on
-  first use. Those are the only assets not served from the app's own origin
+  Advisor both add tesseract.js OCR. Its worker, wasm engine and English model are served from the
+  app's own origin (no CDN), copied at build time from the exact package versions in
+  `package-lock.json` (see "Self-hosted OCR files" below)
 - **Deployment:** GitHub Pages (client-side; no backend or SSR)
 
 ## Running locally
@@ -56,6 +57,10 @@ npm run dev        # dev server with hot reload
 npm run build      # production build to dist/
 npm run preview    # serve the production build
 ```
+
+`npm run dev` and `npm run build` first run `scripts/copy-tesseract.cjs` (the `predev` / `prebuild`
+hooks), which fills `public/tesseract/`. If you start Vite some other way, run
+`node scripts/copy-tesseract.cjs` once first, or OCR will fail to load.
 
 Open the URL the dev/preview server prints (it includes the `/LostArk-ArkGrid-Optimizer/` base path).
 Note: opening `dist/index.html` directly from disk won't work: the app uses ES-module workers and absolute
@@ -87,6 +92,25 @@ under `Reference Projects/`, third-party content that is deliberately **not** tr
 only runs on a machine that has it. The committed `pipeline.json` (his exact Bellman-DP over the
 2026-08 roster-bound grading model, used with attribution) carries a `_provenance` block (each
 source's sha256 + date) so it stays auditable.
+
+## Self-hosted OCR files
+
+The browser OCR (screenshot upload and the Cut Advisor) never contacts a CDN. Before every dev
+server start and build, `scripts/copy-tesseract.cjs` copies four files into `public/tesseract/`,
+which Vite then serves under the app's base path:
+
+| File | From package |
+| --- | --- |
+| `worker.min.js` | `tesseract.js` (`dist/`) |
+| `tesseract-core-simd-lstm.wasm.js`, `tesseract-core-lstm.wasm.js` | `tesseract.js-core` (the version `tesseract.js` depends on) |
+| `eng.traineddata.gz` | `@tesseract.js-data/eng` (`4.0.0_best_int/`), an exact-pinned devDependency |
+
+`public/tesseract/` is gitignored, so the repository holds none of these bytes; the versions are
+whatever `package-lock.json` pins. Upgrading tesseract.js (or the English model) is therefore a
+dependency bump plus a re-check of OCR accuracy, with no files to re-copy by hand. Both OCR workers
+point tesseract at these files through `src/lib/cv/tesseractAssets.ts`. Only the two LSTM cores are
+copied because both call sites run tesseract in LSTM-only mode (OEM 1); tesseract picks the SIMD or
+non-SIMD one itself.
 
 ## Deployment
 

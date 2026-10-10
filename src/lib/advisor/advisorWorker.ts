@@ -15,6 +15,7 @@
 // load-bearing: astrogem (Astrogem) first, then engine / layout / tesseract-engine / glyphs /
 // level-refs / level-model / name-model / tile-model (the three GENERATED trained models his
 // 2026-07 OCR rounds added), then structural-engine which reads all of them off `self`.
+import { tesseractAssetOptions } from '../cv/tesseractAssets';
 import type { ParsedAdvisorState } from './advisorController';
 import { type PanelRect, isGreyCharge } from './chargeDetect';
 import { type ApplyOutcomeFn, type FusionPrior, fuse, seedFromParse } from './fusion';
@@ -110,7 +111,7 @@ let _tessParams = '';
 async function getTess() {
   if (_tess) return _tess;
   const T = await import('tesseract.js');
-  _tess = await T.createWorker('eng', 1, { logger: () => {} });
+  _tess = await T.createWorker('eng', 1, { ...tesseractAssetOptions(), logger: () => {} });
   return _tess;
 }
 async function ocrFn(raster: Raster, opts: OcrOpts): Promise<{ text: string; conf: number }> {

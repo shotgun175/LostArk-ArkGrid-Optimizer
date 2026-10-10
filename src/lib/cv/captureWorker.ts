@@ -20,6 +20,7 @@ import {
   buildScaleLadder,
   seedGeomScaleFromHeight,
 } from './scaleDetection';
+import { tesseractAssetOptions } from './tesseractAssets';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, CvMat } from './types';
 
 /**
@@ -43,6 +44,7 @@ class BrowserOcrRunner implements OcrRunner {
         const T = await import('tesseract.js');
         this.psmMap = { 6: T.PSM.SINGLE_BLOCK, 7: T.PSM.SINGLE_LINE, 10: T.PSM.SINGLE_CHAR };
         this.worker = await T.createWorker('eng', 1, {
+          ...tesseractAssetOptions(),
           logger: (m: { status?: string; progress?: number }) => {
             if (m.status === 'recognizing text' && typeof m.progress === 'number')
               this.onProgress?.(m.progress);
@@ -53,7 +55,7 @@ class BrowserOcrRunner implements OcrRunner {
     try {
       await this.initPromise;
     } catch (e) {
-      // Forget a failed load (blocked CDN, stale chunk) so the next upload retries instead of
+      // Forget a failed load (network error, stale chunk) so the next upload retries instead of
       // failing instantly until reload. Mirrors FrameProcessor.init.
       this.initPromise = null;
       throw e;
