@@ -4,7 +4,9 @@
   "version": "0.3.17",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-tesseract.cjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-tesseract.cjs",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@tesseract.js-data/eng": "1.0.0",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@tsconfig/svelte": "^5.0.5",
     "@types/dom-mediacapture-transform": "^0.1.11",

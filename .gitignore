@@ -36,3 +36,7 @@ src/harness.ts
 
 # tesseract.js Node cache (downloaded on demand by the OCR harness)
 *.traineddata
+
+# tesseract.js runtime files (worker, wasm cores, English model), copied from node_modules by
+# scripts/copy-tesseract.cjs before dev/build so the app self-hosts them.
+public/tesseract/
