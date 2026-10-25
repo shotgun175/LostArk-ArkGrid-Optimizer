@@ -1,7 +1,7 @@
 {
   "name": "lostark-arkgrid-optimizer",
   "private": true,
-  "version": "0.3.21",
+  "version": "0.3.22",
   "type": "module",
   "scripts": {
     "predev": "node scripts/copy-tesseract.cjs",
@@ -41,7 +41,7 @@
     "svelte-check": "^4.7.6",
     "tsx": "^4.23.15",
     "typescript": "~5.9.3",
-    "vite": "^7.1.12",
+    "vite": "^7.3.7",
     "vitest": "^5.0.3"
   },
   "dependencies": {
