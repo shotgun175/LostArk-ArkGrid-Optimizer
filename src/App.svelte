@@ -68,9 +68,11 @@
   <SvelteToast options={{ reversed: true, intro: { y: 192 } }} />
   <ConfirmDialog />
   <div class="contents">
-    <DeprecationBanner />
-    <div class="title">{LTitle[locale]}</div>
     <div class="layout">
+      <div class="page-header">
+        <DeprecationBanner />
+        <div class="title">{LTitle[locale]}</div>
+      </div>
       <SectionNav />
       <AppConfiguration></AppConfiguration>
       <div class="profile-row" id="sec-profile"><ProfileEditor></ProfileEditor></div>
@@ -86,42 +88,68 @@
   <BackToTop />
 </main>
 <footer>
-  <Assumptions />
-  <Footer></Footer>
+  <div class="footer-column">
+    <Assumptions />
+    <Footer></Footer>
+  </div>
 </footer>
 
 <style>
-  .contents {
+  .contents,
+  footer {
     --nav-width: 13rem;
     --content-max: 87.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: var(--global-gap);
     /* 20px padding when wide; gradually narrows past 960px (vertical layout) */
-    padding: clamp(8px, 2.083vw, 20px);
+    --page-padding: clamp(8px, 2.083vw, 20px);
   }
-  /* Center the content column; the nav floats in the left margin. Row 1 = config/Dark Mode
-     (right-aligned), row 2 = profile bar, row 3 = sections + nav. Everything in column 2 aligns,
-     and the nav sits in column 1 on the sections row so it starts level with the first panel. */
-  .layout {
+  .contents {
+    padding: var(--page-padding);
+  }
+  /* Center the content column; the nav floats in the left margin. Row 1 = page title (with the
+     retirement notice above it when shown), row 2 = config/Dark Mode (right-aligned), row 3 =
+     profile bar, row 4 = sections + nav. Everything in column 2 aligns, and the nav sits in column
+     1 on the sections row so it starts level with the first panel.
+     The footer sits outside .contents but repeats its side padding and columns, so the Assumptions
+     panel and footer links line up with the sections at every width. Column 1's minimum is the nav
+     width: in .layout the nav already forces it, and the footer (no nav) needs it stated to get the
+     same tracks. */
+  .layout,
+  footer {
     display: grid;
-    grid-template-columns: 1fr minmax(0, var(--content-max)) 1fr;
+    grid-template-columns: minmax(var(--nav-width), 1fr) minmax(0, var(--content-max)) 1fr;
     column-gap: var(--global-gap);
+  }
+  .layout {
     row-gap: var(--global-gap);
     align-items: start;
   }
-  :global(.layout > .buttons) {
+  footer {
+    padding-inline: var(--page-padding);
+  }
+  .footer-column {
+    grid-column: 2;
+    min-width: 0;
+  }
+  .page-header {
     grid-column: 2;
     grid-row: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--global-gap);
+  }
+  :global(.layout > .buttons) {
+    grid-column: 2;
+    grid-row: 2;
   }
   .profile-row {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 3;
     min-width: 0;
   }
   .sections {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 4;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -129,12 +157,13 @@
   }
   :global(.section-nav) {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 4;
     justify-self: end;
   }
   /* Not enough room in the left margin for the nav to float — put it inline at the left instead. */
   @media (max-width: 117.5rem) {
-    .layout {
+    .layout,
+    footer {
       grid-template-columns: var(--nav-width) minmax(0, 1fr);
     }
     :global(.layout > .buttons),
@@ -148,18 +177,22 @@
     }
   }
   @media (max-width: 960px) {
-    .layout {
+    .layout,
+    footer {
       grid-template-columns: minmax(0, 1fr);
     }
+    .page-header,
     :global(.layout > .buttons),
     .profile-row,
-    .sections {
+    .sections,
+    .footer-column {
       grid-column: 1;
     }
   }
   @media (max-width: 767px) {
-    .contents {
-      padding: 0rem;
+    .contents,
+    footer {
+      --page-padding: 0rem;
     }
   }
   /* The fixed Sections / Back-to-top buttons sit at 1.5rem + safe-area from the bottom. Reserve
