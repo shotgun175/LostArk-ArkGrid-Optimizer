@@ -92,8 +92,7 @@
 
 <style>
   .assumptions {
-    max-width: 48rem;
-    margin: 0 auto 1.5rem;
+    margin: 0 0 1.5rem;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--card);
@@ -129,6 +128,12 @@
     font-size: 0.72rem;
     opacity: 0.6;
     font-weight: 400;
+  }
+  /* The card spans the content column to line up with the sections; the lists keep a 48rem
+     measure so each value stays near its label on wide screens. */
+  dl,
+  .cols {
+    max-width: 48rem;
   }
   .cols {
     display: grid;
