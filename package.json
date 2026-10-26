@@ -1,7 +1,7 @@
 {
   "name": "lostark-arkgrid-optimizer",
   "private": true,
-  "version": "0.3.24",
+  "version": "0.3.25",
   "type": "module",
   "scripts": {
     "predev": "node scripts/copy-tesseract.cjs",
