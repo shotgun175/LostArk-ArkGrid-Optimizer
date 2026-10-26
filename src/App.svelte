@@ -220,4 +220,16 @@
     --toastContainerBottom: 8rem;
     --toastContainerLeft: calc(50vw - 8rem);
   }
+  /* While the nav sits beside the sections, center toasts on the sections column instead of the
+     window: shift right by half of the nav width (13rem, --nav-width) plus the column gap. */
+  @media (max-width: 117.5rem) {
+    :root {
+      --toastContainerLeft: calc(50vw + (13rem + var(--global-gap)) / 2 - 8rem);
+    }
+  }
+  @media (max-width: 960px) {
+    :root {
+      --toastContainerLeft: calc(50vw - 8rem);
+    }
+  }
 </style>
