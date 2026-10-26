@@ -11,7 +11,9 @@ export default [
     // is gitignored third-party material, not ours to lint. The advisor vendor/
     // dir is frozen third-party UMD (shizukaziye's DP + scoring core), likewise.
     // public/tesseract/ holds tesseract.js runtime files copied from node_modules
-    // (scripts/copy-tesseract.cjs), also third-party.
+    // (scripts/copy-tesseract.cjs), also third-party. .claude/ is gitignored
+    // local session state; agent worktrees there are full copies of the repo,
+    // which the root-relative patterns above would not catch.
     ignores: [
       'dist/',
       'node_modules/',
@@ -19,6 +21,7 @@ export default [
       'Reference Projects/',
       'src/lib/**/vendor/**',
       'public/tesseract/',
+      '.claude/',
     ],
   },
 
