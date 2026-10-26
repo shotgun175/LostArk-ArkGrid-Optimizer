@@ -19,7 +19,7 @@
   let showDeleteButton = $state(false);
 
   $effect(() => {
-    gems;
+    void gems; // dependency read: hide the delete buttons whenever the gem pool changes
     showDeleteButton = false;
   });
 
@@ -76,7 +76,10 @@
   );
   const LGemTotalCount = $derived(
     {
-      en_us: `Astrogems Owned: ${gems.orderGems.length + gems.chaosGems.length} / 100<br>(Order ${gems.orderGems.length}, Chaos ${gems.chaosGems.length} owned)`,
+      en_us: [
+        `Astrogems Owned: ${gems.orderGems.length + gems.chaosGems.length} / 100`,
+        `(Order ${gems.orderGems.length}, Chaos ${gems.chaosGems.length} owned)`,
+      ],
     }[locale]
   );
   const LEmpty = $derived(
@@ -131,7 +134,7 @@
     emptyDescription={LEmpty}
   ></ArkGridGemList>
   <div class="gem-count">
-    {@html LGemTotalCount}
+    {LGemTotalCount[0]}<br />{LGemTotalCount[1]}
   </div>
   <div class="buttons">
     <div class="left">
