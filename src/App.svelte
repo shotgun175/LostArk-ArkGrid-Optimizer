@@ -27,6 +27,9 @@
   const LTitle: LocalizationName = {
     en_us: 'ArkGrid Optimizer',
   };
+  // getCurrentProfile() can switch to or create the Default profile, and state writes are not
+  // allowed inside $derived (state_unsafe_mutation, blank page), so this stays $state + $effect.
+  // eslint-disable-next-line svelte/prefer-writable-derived
   let currentProfile = $state<CharacterProfile>(getCurrentProfile());
   $effect(() => {
     currentProfile = getCurrentProfile();

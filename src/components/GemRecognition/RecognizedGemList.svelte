@@ -52,7 +52,10 @@
   let scrollPositions = $state<number[]>([0, 0]);
 
   const LGemTotalCount = $derived({
-    en_us: `Astrogems Owned: ${orderGems.length + chaosGems.length} / 100<br>(Order ${orderGems.length}, Chaos ${chaosGems.length} owned)`,
+    en_us: [
+      `Astrogems Owned: ${orderGems.length + chaosGems.length} / 100`,
+      `(Order ${orderGems.length}, Chaos ${chaosGems.length} owned)`,
+    ],
   });
 
   // Count-checksum footer (multi-file upload). Shows captured-vs-target per attribute with an
@@ -171,7 +174,7 @@
           </div>
         {/if}
       {:else}
-        {@html LGemTotalCount[locale]}
+        {LGemTotalCount[locale][0]}<br />{LGemTotalCount[locale][1]}
       {/if}
     </div>
     <div class="buttons">

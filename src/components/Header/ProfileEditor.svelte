@@ -217,7 +217,7 @@
                 // Name collision: replace the existing same-name profile with the imported one.
                 if (overwriteProfile(data)) currentProfileName.current = data.characterName;
               }
-            } catch (err) {
+            } catch {
               await alertDialog({ message: LImportProfileFailedMsgWrongFormat });
             }
           };

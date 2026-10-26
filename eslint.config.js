@@ -1,6 +1,8 @@
 // eslint.config.js
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
+import svelte from 'eslint-plugin-svelte';
+import svelteConfig from './svelte.config.js';
 
 export default [
   {
@@ -42,6 +44,29 @@ export default [
       // inherently `any`-shaped; forcing annotations there adds noise, not
       // safety. The rest of the recommended set stays on.
       '@typescript-eslint/no-explicit-any': 'off'
+    }
+  },
+
+  // Svelte components and rune modules. Must come after the TS block above,
+  // which also matches *.svelte.ts and would otherwise reset its parser.
+  ...svelte.configs.recommended,
+
+  {
+    files: ['**/*.svelte', '**/*.svelte.ts'],
+    languageOptions: {
+      parserOptions: {
+        parser: tsParser,
+        extraFileExtensions: ['.svelte'],
+        svelteConfig
+      }
+    },
+    rules: {
+      '@typescript-eslint/no-unused-expressions': 'error',
+      '@typescript-eslint/no-explicit-any': 'off',
+      // Keys only matter for lists that reorder or animate; the one that does
+      // (ArkGridGemList) is already keyed, and the rest iterate fixed option
+      // lists or short rows of stateless buttons and text.
+      'svelte/require-each-key': 'off'
     }
   },
 
