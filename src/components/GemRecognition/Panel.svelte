@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toast } from '@zerodevx/svelte-toast';
   import { onDestroy, onMount } from 'svelte';
 
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
@@ -119,6 +120,9 @@
   let importMsg = $state<string | null>(null);
   // One line per gem the last import had to correct or could not fully trust (listed under the message).
   let importNotes = $state<string[]>([]);
+  // Combat power from the last import, staged with its gems: it reaches the profile only when the
+  // user applies them (to whichever profile that is), and a reset drops it.
+  let pendingCombatPower = $state<number | null>(null);
   let bookmarklet = $state<string>('');
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
@@ -247,6 +251,19 @@
     totalChaosGems = [];
     detectedOwned = null;
     _prevGem = null;
+    pendingCombatPower = null;
+  }
+
+  // The staged gems were just applied to the current profile: record the import's combat power with
+  // them. recordCombatPower sets the gold bracket ONLY when the profile never saved one; otherwise the
+  // bracket selects show a hint.
+  function onGemsApplied() {
+    if (pendingCombatPower == null) return;
+    const cp = pendingCombatPower;
+    pendingCombatPower = null;
+    const applied = recordCombatPower(cp);
+    if (applied)
+      toast.push(`Gold / 1% damage set to ${bracketLabel(applied)} from combat power ${formatCombatPower(cp)}.`);
   }
 
   // Merge an imported loadout into the working gem lists (same store recognition fills), deduping
@@ -291,15 +308,11 @@
       ? `${result.name}${result.region ? ` (${result.region})` : ''}`
       : result.source;
     const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
-    // Combat power is character metadata, not a gem, so it goes straight onto the current profile
-    // (the gems above are only staged here until the user applies them). recordCombatPower sets the
-    // gold bracket ONLY when the profile never saved one; otherwise the bracket selects show a hint.
-    const applied = recordCombatPower(result.combatPower);
-    const bracketMsg =
-      applied && result.combatPower != null
-        ? ` Gold / 1% damage set to ${bracketLabel(applied)} from combat power ${formatCombatPower(result.combatPower)}.`
-        : '';
-    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}${bracketMsg}`;
+    // Staged with the gems (see onGemsApplied); an import without one keeps the earlier reading.
+    if (result.combatPower != null) pendingCombatPower = result.combatPower;
+    const cpMsg =
+      result.combatPower != null ? ` Combat power ${formatCombatPower(result.combatPower)}.` : '';
+    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}${cpMsg}`;
     importNotes = result.notes;
   }
 
@@ -713,6 +726,7 @@
         }}
         assembly={{ order: orderAssembly, chaos: chaosAssembly }}
         onReset={resetUploads}
+        onApplied={onGemsApplied}
         bind:this={gemListElem}
       />
     </div>

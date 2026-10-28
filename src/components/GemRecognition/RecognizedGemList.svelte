@@ -21,9 +21,11 @@
     /** Per-attr count-checksum from the multi-file upload assembler (null on live/import paths). */
     assembly?: { order: AssemblyResult | null; chaos: AssemblyResult | null };
     onReset?: () => void;
+    /** Called after the gems were applied to the current profile. */
+    onApplied?: () => void;
   }
 
-  let { gems, assembly, onReset }: Props = $props();
+  let { gems, assembly, onReset, onApplied }: Props = $props();
 
   let locale = $derived(appLocale.current);
   const LTitle: LocalizationName = {
@@ -204,7 +206,10 @@
               // Cancel aborts: recognition captures the whole inventory, so appending would only duplicate it.
               if (!overwrite) return;
             }
-            if (applyGemList()) toast.push(LConfirm[locale]);
+            if (applyGemList()) {
+              toast.push(LConfirm[locale]);
+              onApplied?.();
+            }
           }}
         >
           ✅ {LApply[locale]}
