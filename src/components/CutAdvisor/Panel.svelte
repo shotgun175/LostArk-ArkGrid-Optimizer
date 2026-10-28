@@ -11,6 +11,7 @@
     parsedToEdited,
   } from '../../lib/advisor/advisorController';
   import { standingAgainst } from '../../lib/advisor/outcomePreview';
+  import { requestUpdateCheck } from '../../lib/updateCheck';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
   import type { ArkGridGem } from '../../lib/models/arkGridGems';
@@ -243,8 +244,10 @@
     try {
       const bitmap = await createImageBitmap(file);
       const res = await getController().parseImage(bitmap, inputs);
-      if (!res) error = 'Could not read a Processing window from that image.';
-      else {
+      if (!res) {
+        error = 'Could not read a Processing window from that image.';
+        requestUpdateCheck(); // the reader's own files may be gone after a deploy
+      } else {
         result = res;
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
@@ -253,6 +256,7 @@
       }
     } catch (e) {
       console.error('Cut Advisor: screenshot read failed', e);
+      requestUpdateCheck();
       error = "Couldn't read that file. Upload a PNG or JPG screenshot of the Processing window.";
     } finally {
       parsing = false;

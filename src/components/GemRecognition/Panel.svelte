@@ -26,6 +26,7 @@
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
   import { recordCombatPower } from '../../lib/state/profile.state.svelte';
+  import { requestUpdateCheck } from '../../lib/updateCheck';
   import Icon from '../shared/Icon.svelte';
   import GemRecognitionGuide from './Guide.svelte';
   import RecognizedGemList from './RecognizedGemList.svelte';
@@ -164,6 +165,7 @@
     if (result.changed) {
       if (gemAttr === 'Order') totalOrderGems = result.gems;
       else totalChaosGems = result.gems;
+      pendingCombatPower = null; // the staged gems now come from the screen, not the import
       gemListElem?.selectTab(gemAttr === 'Order' ? 0 : 1);
       if (result.scroll) gemListElem?.scroll(result.scroll);
     }
@@ -181,6 +183,9 @@
       chaosAssembly = assembleScreenshots(chaosShots, chaosTarget);
       totalChaosGems = chaosAssembly.gems;
     }
+    // Uploaded screenshots replaced staged gems, so an imported combat power no longer describes
+    // what Apply would save (it could be another character's).
+    if (orderShots.length > 0 || chaosShots.length > 0) pendingCombatPower = null;
   }
 
   // Recognize one screenshot into the raw per-attr shot list + update both footer targets (the
@@ -213,7 +218,9 @@
         try {
           if (await recognizeIntoShots(images[i])) recognized++;
         } catch {
-          // skip an unreadable file; the rest still process
+          // skip an unreadable file; the rest still process. A failure can also be a reader file
+          // that a deploy replaced, so ask whether a newer build is live.
+          requestUpdateCheck();
         }
         uploadProg = { frac: (i + 1) / images.length, index: i, total: images.length };
       }
@@ -308,10 +315,12 @@
       ? `${result.name}${result.region ? ` (${result.region})` : ''}`
       : result.source;
     const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
-    // Staged with the gems (see onGemsApplied); an import without one keeps the earlier reading.
-    if (result.combatPower != null) pendingCombatPower = result.combatPower;
+    // Staged with the gems (see onGemsApplied). Each import replaces it with its own reading, kept
+    // only when it is a usable positive number, so a page without one never inherits another's.
+    const cp = result.combatPower;
+    pendingCombatPower = cp != null && Number.isFinite(cp) && cp > 0 ? cp : null;
     const cpMsg =
-      result.combatPower != null ? ` Combat power ${formatCombatPower(result.combatPower)}.` : '';
+      pendingCombatPower != null ? ` Combat power ${formatCombatPower(pendingCombatPower)}.` : '';
     importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}${cpMsg}`;
     importNotes = result.notes;
   }

@@ -1,20 +1,23 @@
 <script lang="ts">
   // "A new version is available" bar; lib/state/update.state.svelte.ts decides when it shows. It sits
-  // at the top so it never covers the floating Sections / Back to top buttons on phones.
+  // at the top so it never covers the floating Sections / Back to top buttons on phones. The status
+  // region is always mounted and only its content changes, which is what screen readers announce.
   import { updateNotice } from '../lib/state/update.state.svelte';
 </script>
 
-{#if updateNotice.available && !updateNotice.dismissed}
-  <div class="update-notice" role="status">
-    <span class="un-text">A new version of ArkGrid Optimizer is available. Reload to use it.</span>
-    <span class="un-actions">
-      <button type="button" class="un-reload" onclick={() => location.reload()}>Reload</button>
-      <button type="button" class="un-later" onclick={() => (updateNotice.dismissed = true)}>
-        Later
-      </button>
-    </span>
-  </div>
-{/if}
+<div role="status">
+  {#if updateNotice.available && !updateNotice.dismissed}
+    <div class="update-notice">
+      <span class="un-text">A new version of ArkGrid Optimizer is available. Reload to use it.</span>
+      <span class="un-actions">
+        <button type="button" class="un-reload" onclick={() => location.reload()}>Reload</button>
+        <button type="button" class="un-later" onclick={() => (updateNotice.dismissed = true)}>
+          Later
+        </button>
+      </span>
+    </div>
+  {/if}
+</div>
 
 <style>
   .update-notice {

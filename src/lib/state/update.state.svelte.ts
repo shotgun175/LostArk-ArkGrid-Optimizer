@@ -37,8 +37,13 @@ export function startUpdateWatch(): () => void {
     lastFocus = Date.now();
     void check();
   };
-  // A worker or lazily loaded file failed: check right away (a deploy is the usual cause).
+  // A worker or lazily loaded file failed: check right away (a deploy is the usual cause). When a
+  // newer build is already known, bring back a notice the user put off: this is the failure it meant.
   const onFailure = () => {
+    if (updateNotice.available) {
+      updateNotice.dismissed = false;
+      return;
+    }
     if (Date.now() - lastFailure < FAILURE_GAP_MS) return;
     lastFailure = Date.now();
     void check();
