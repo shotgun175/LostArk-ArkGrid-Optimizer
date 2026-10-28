@@ -18,7 +18,9 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 - **On-screen gem recognition**: reads your astrogem inventory from uploaded screenshots (tesseract
   OCR) or a live screen share (OpenCV template matching), in a Web Worker; resolution-flexible.
 - **Loadout import**: brings in your character's equipped gems from lostark.bible or lopec.kr via a
-  one-click bookmarklet, a dropped saved `.html` of the character page, or its pasted source.
+  one-click bookmarklet, a dropped saved `.html` of the character page, or its pasted source. A
+  lostark.bible import also suggests your gold per 1% damage bracket from the character's combat
+  power: it is set for you if you have never picked one, otherwise the bracket selects offer it.
 - **Gem Triage**: scores every owned gem (additive quality model), gives it a letter rank (S+ to F-),
   and marks each gem **Equipped / Upgrade / Keep / Remove** from what the solves of your current grid
   and a fully maxed (all-Ancient) grid actually slot. Works for DPS and Support.

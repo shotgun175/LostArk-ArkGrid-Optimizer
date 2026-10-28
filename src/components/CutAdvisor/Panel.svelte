@@ -26,6 +26,7 @@
   import BaselineControl from '../BaselineControl.svelte';
   import BuildViewSwitch from '../BuildViewSwitch.svelte';
   import RankBadge from '../RankBadge.svelte';
+  import GoldBracketHint from '../shared/GoldBracketHint.svelte';
   import ProcessingWindow from './ProcessingWindow.svelte';
 
   interface Props {
@@ -412,6 +413,8 @@
                 {#each GOLD_BRACKETS as b (b)}<option value={b}>{bracketLabel(b)}</option>{/each}
               </select>
             </label>
+            <!-- Suggests (never forces) a bracket from imported combat power; renders nothing otherwise. -->
+            <GoldBracketHint {profile} {bracket} />
             <div class="market-row">
               <span class="mk-label">Processing gold</span>
               <button
@@ -774,6 +777,9 @@
   }
   .market-row:last-child {
     margin-bottom: 0;
+  }
+  .side-panel :global(.gb-hint) {
+    margin: -0.15rem 0 0.5rem;
   }
   .mk-label {
     font-size: 0.85rem;

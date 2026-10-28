@@ -32,6 +32,11 @@ export interface ImportResult {
   warnings: string[];
   /** Gems that WERE imported but whose cost/type had to be corrected or guessed, one line each. */
   notes: string[];
+  /**
+   * The page's headline Combat Power (lostark.bible only; null on lopec.kr and when the page carries
+   * none). Unvalidated parseFloat output: callers check it is finite and positive before using it.
+   */
+  combatPower: number | null;
 }
 
 // lostark.bible effect id -> our option enum.
@@ -423,6 +428,21 @@ function parseMeta(html: string, isKR: boolean): { itemLevel: number | null; cla
   return { itemLevel, className };
 }
 
+// The page's HEADLINE Combat Power, mirrored exactly from shizukaziye's loastuff
+// (loa-astrogem-calc/worker/astrogem-bible.js parseCombatPower). The headline figure is
+// estimatedMaxCombatPower, the estimated RAID loadout; the plain combatPower field is only the
+// last-seen equipped snapshot and can sit far below it when the character was last seen in a
+// stripped or chaos build. Characters without an estimate fall back to the plain field; the
+// [^A-Za-z] guard keeps the fallback from matching inside max/estimatedMaxCombatPower. The
+// bookmarklet embeds these same two patterns (via their .source), so keep them in one place.
+const ESTIMATED_CP_RE = /estimatedMaxCombatPower:\{id:\d+,score:([\d.]+)\}/;
+const PLAIN_CP_RE = /[^A-Za-z]combatPower:\{id:\d+,score:([\d.]+)\}/;
+function parseCombatPower(html: string): number | null {
+  let m = html.match(ESTIMATED_CP_RE);
+  if (!m) m = html.match(PLAIN_CP_RE);
+  return m ? parseFloat(m[1]) : null;
+}
+
 // Best-effort region/name from a dropped/pasted page that carries no explicit hint.
 function regionNameFromHtml(html: string): { region: string | null; name: string | null } {
   let m = html.match(/(?:<title>|og:title"\s+content=")\s*([^()|<]+?)\s*\(([A-Za-z]{2,4})\)/);
@@ -458,12 +478,14 @@ function regionNameFromHtml(html: string): { region: string | null; name: string
 
 /**
  * Parse a lostark.bible / lopec.kr page source (or the bookmarklet's arkGridCores slice) into
- * our ArkGridGem list. `hint` is an optional { region, name } the bookmarklet reads from the URL.
- * Returns null only when the text is neither a recognized bible nor lopec page.
+ * our ArkGridGem list. `hint` is an optional { region, name } the bookmarklet reads from the URL,
+ * plus the combat power it read off the full page (its slice no longer carries it). Combat power
+ * found in `text` itself wins over the hint. Returns null only when the text is neither a
+ * recognized bible nor lopec page.
  */
 export function parseLoadout(
   text: string,
-  hint?: { region?: string | null; name?: string | null }
+  hint?: { region?: string | null; name?: string | null; combatPower?: number | null }
 ): ImportResult | null {
   if (!text || typeof text !== 'string') return null;
   const isKR = /use_13_\d+\.png/.test(text) && text.indexOf('requiredWillpower') !== -1;
@@ -499,20 +521,33 @@ export function parseLoadout(
     gems,
     warnings,
     notes,
+    // lopec.kr's payload has no combat power we can read (upstream returns null for KR too).
+    combatPower: isKrPage ? null : (parseCombatPower(text) ?? hint?.combatPower ?? null),
   };
 }
 
 const IMPORT_HASH_PREFIX = '#import=';
 
-/** Decode a `#import=<encoded {src,region,name}>` hash (set by the bookmarklet). */
-export function parseImportHash(
-  hash: string
-): { src: string; region: string | null; name: string | null } | null {
+type ImportHash = { src: string; region: string | null; name: string | null; combatPower?: number };
+
+/**
+ * Decode a `#import=<encoded {src,region,name,cp?}>` hash (set by the bookmarklet).
+ *
+ * The payload is a shared contract with bookmarklets users already saved, which send only
+ * {src,region,name}. `cp` (the page's combat power) is optional and newer: a payload without it, or
+ * with anything but a finite positive number in it, decodes exactly as before, with no
+ * `combatPower` key at all.
+ */
+export function parseImportHash(hash: string): ImportHash | null {
   if (!hash || !hash.startsWith(IMPORT_HASH_PREFIX)) return null;
   try {
     const obj = JSON.parse(decodeURIComponent(hash.slice(IMPORT_HASH_PREFIX.length)));
     if (!obj || typeof obj.src !== 'string') return null;
-    return { src: obj.src, region: obj.region ?? null, name: obj.name ?? null };
+    const out: ImportHash = { src: obj.src, region: obj.region ?? null, name: obj.name ?? null };
+    if (typeof obj.cp === 'number' && Number.isFinite(obj.cp) && obj.cp > 0) {
+      out.combatPower = obj.cp;
+    }
+    return out;
   } catch {
     return null;
   }
@@ -540,7 +575,10 @@ export function pickArkGridCoresSlice(html: string): string | null {
  * correct, the bookmarklet instead:
  *   1. reads the character identity from the URL path (/character/REGION/NAME — the source of truth),
  *   2. re-fetches that exact URL (same-origin, fresh SSR for THAT character), and
- *   3. scrapes the populated `arkGridCores` from the fetched HTML, then hands off via our #import= hash.
+ *   3. scrapes the populated `arkGridCores` from the fetched HTML, plus the headline combat power
+ *      (the same two patterns as parseCombatPower), then hands off via our #import= hash. `cp` is
+ *      left undefined when the page has none, so JSON.stringify drops it and the payload keeps the
+ *      old {src,region,name} shape.
  * Data and name are both anchored to the same URL, so a mismatch is impossible. No refresh needed.
  * (KR / lopec.kr users use paste or drop instead.)
  */
@@ -558,9 +596,15 @@ export function buildBookmarklet(appUrl: string): string {
     "var s=a+k.length-1,p=0,e=-1;for(var i=s;i<h.length;i++){var c=h[i];if(c=='[')p++;else if(c==']'){p--;if(!p){e=i+1;break;}}}" +
     'if(e<0)break;var sl=h.slice(s,e);if(sl.length>best.length)best=sl;f=e;}' +
     "if(best.length<=2){alert('No Ark Grid is equipped for '+name+' on lostark.bible. Open a character that has one and click again.');return;}" +
+    // Same lookup as parseCombatPower: the estimate first, then the guarded plain field.
+    'var cm=h.match(new RegExp(' +
+    JSON.stringify(ESTIMATED_CP_RE.source) +
+    '))||h.match(new RegExp(' +
+    JSON.stringify(PLAIN_CP_RE.source) +
+    '));var cp=cm?parseFloat(cm[1]):undefined;' +
     'var u=' +
     target +
-    ";location.href=u+encodeURIComponent(JSON.stringify({src:'arkGridCores:'+best,region:region,name:name}));" +
+    ";location.href=u+encodeURIComponent(JSON.stringify({src:'arkGridCores:'+best,region:region,name:name,cp:cp}));" +
     "}).catch(function(err){alert('Could not read the lostark.bible page: '+err);});" +
     '})();';
   return 'javascript:' + body;

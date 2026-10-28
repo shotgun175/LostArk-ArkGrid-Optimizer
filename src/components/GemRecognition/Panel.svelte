@@ -3,6 +3,8 @@
 
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
+  import { bracketLabel } from '../../lib/cutplan/cutPlan';
+  import { formatCombatPower } from '../../lib/cutplan/goldBracket';
   import { mergeScrolledGems } from '../../lib/cv/liveScrollMerge';
   import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';
   import type { OwnedCount } from '../../lib/cv/types';
@@ -22,6 +24,7 @@
     toggleUI,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
+  import { recordCombatPower } from '../../lib/state/profile.state.svelte';
   import Icon from '../shared/Icon.svelte';
   import GemRecognitionGuide from './Guide.svelte';
   import RecognizedGemList from './RecognizedGemList.svelte';
@@ -266,7 +269,10 @@
   }
 
   // Parse a pasted/dropped/bookmarklet-supplied page source and apply the gems it contains.
-  function importFromText(text: string, hint?: { region?: string | null; name?: string | null }) {
+  function importFromText(
+    text: string,
+    hint?: { region?: string | null; name?: string | null; combatPower?: number | null }
+  ) {
     const result = parseLoadout(text, hint);
     if (!result) {
       window.alert(
@@ -285,7 +291,15 @@
       ? `${result.name}${result.region ? ` (${result.region})` : ''}`
       : result.source;
     const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
-    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}`;
+    // Combat power is character metadata, not a gem, so it goes straight onto the current profile
+    // (the gems above are only staged here until the user applies them). recordCombatPower sets the
+    // gold bracket ONLY when the profile never saved one; otherwise the bracket selects show a hint.
+    const applied = recordCombatPower(result.combatPower);
+    const bracketMsg =
+      applied && result.combatPower != null
+        ? ` Gold / 1% damage set to ${bracketLabel(applied)} from combat power ${formatCombatPower(result.combatPower)}.`
+        : '';
+    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}${bracketMsg}`;
     importNotes = result.notes;
   }
 
@@ -396,7 +410,11 @@
     if (fromHash) {
       mode = 'import';
       setSection('showGemRecognitionPanel', true);
-      importFromText(fromHash.src, { region: fromHash.region, name: fromHash.name });
+      importFromText(fromHash.src, {
+        region: fromHash.region,
+        name: fromHash.name,
+        combatPower: fromHash.combatPower,
+      });
       // Clear the hash so a refresh doesn't re-import.
       history.replaceState(null, '', location.pathname + location.search);
     }
