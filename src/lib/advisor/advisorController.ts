@@ -2,6 +2,7 @@
 // init, and exposes a single-image parse (upload / paste / one screen-share frame). The parser stack
 // lives entirely in the worker; this class is the main-thread message shell with a worker-crash
 // backstop, mirroring CaptureController and SolverController.
+import { requestUpdateCheck } from '../updateCheck';
 import type { FusionPrior, FusionStatus } from './fusion';
 
 export interface AdvisorConfig {
@@ -269,10 +270,12 @@ export class AdvisorController {
     for (const cb of this.pending.values()) cb(null);
     this.pending.clear();
     // A worker that never initialized (e.g. its chunk failed to load after a redeploy) drops every
-    // later message, so discard it and let the next call load a fresh one.
+    // later message, so discard it and let the next call load a fresh one. If a deploy is the cause,
+    // the next try fails the same way (the old file name is baked in), so ask for an update check.
     if (!this.initialized) {
       this.worker?.terminate();
       this.worker = null;
+      requestUpdateCheck();
     }
   }
 

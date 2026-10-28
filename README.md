@@ -145,6 +145,12 @@ Deployment is automated by GitHub Actions ([`.github/workflows/deploy.yml`](.git
 every push to `main` builds the app from a fresh checkout and publishes `dist/` to GitHub Pages. It can
 also be triggered on demand from the repository's **Actions** tab. There is no manual publish step.
 
+Each deploy replaces the hashed files the app loads on demand (the Cut Advisor and gem recognition
+workers), so a tab left open across a deploy could not load them. Open tabs check `index.html` when
+they regain focus (at most every 5 minutes), every 30 minutes while visible, and right after an
+on-demand file fails to load. When a newer build is live they show a "new version available" notice
+with a Reload button. The check is off on the dev server.
+
 The Vite `base` is `/LostArk-ArkGrid-Optimizer/` and must match the GitHub repository name, otherwise the
 published assets 404.
 
