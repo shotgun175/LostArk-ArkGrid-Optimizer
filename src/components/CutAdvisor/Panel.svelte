@@ -10,11 +10,11 @@
     countUnconfirmed,
     parsedToEdited,
   } from '../../lib/advisor/advisorController';
-  import { gradeConfig } from '../../lib/advisor/outcomePreview';
+  import { standingAgainst } from '../../lib/advisor/outcomePreview';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
   import type { ArkGridGem } from '../../lib/models/arkGridGems';
-  import { type GemRole, rankFromGrade } from '../../lib/scoring/gemScore';
+  import { type GemRole } from '../../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../../lib/state/appConfig.state.svelte';
   import {
@@ -329,13 +329,10 @@
   );
   // Where the gem on the window stands against the baseline the advice weighs (the line its "above
   // baseline" odds are measured against). Local and instant from the gem the window last emitted, so
-  // it never waits on the DP; shown alongside the ranked actions, never for the untouched placeholder.
-  let standing = $derived.by(() => {
-    const now = gradeConfig(lastEdited.config, role);
-    if (!now) return null;
-    const gap = Math.round((now.grade - baselineGrade) * 10) / 10;
-    return { now, baselineRank: rankFromGrade(baselineGrade, role), gap };
-  });
+  // it never waits on the DP. Shown with the ranked actions or while an edit is being ranked, never
+  // during a screen read: until the read lands, lastEdited is still the previous gem (or the
+  // placeholder on a first read).
+  let standing = $derived(standingAgainst(lastEdited.config, baselineGrade, role));
   // Fusion lost the thread of the cut (gem switch, missed frames, an off-screen action):
   // this frame was read fresh, so it may carry more amber flags than usual.
   let fusionDesync = $derived(watching && result?.fusion?.status === 'desync');
@@ -422,22 +419,18 @@
           <!-- 2. recommended action -->
           <div class="side-panel actions-panel" data-testid="advisor-advice">
             <div class="side-title">Recommended action</div>
-            {#if standing && (hasAdvice || computing)}
+            {#if standing && (hasAdvice || advising)}
               <div class="rec-standing" data-testid="advisor-standing">
                 <span class="st-item">
                   This gem <RankBadge rank={standing.now.rank} />
                   <b>{standing.now.grade.toFixed(1)}</b>
                 </span>
                 <span class="st-item">
-                  Baseline <RankBadge rank={standing.baselineRank} />
-                  <b>{baselineGrade.toFixed(1)}</b>
+                  Baseline <RankBadge rank={standing.baseline.rank} />
+                  <b>{standing.baseline.grade.toFixed(1)}</b>
                 </span>
-                <span class="st-gap" class:good={standing.gap > 0} class:bad={standing.gap < 0}>
-                  {standing.gap > 0
-                    ? `${standing.gap.toFixed(1)} above baseline`
-                    : standing.gap < 0
-                      ? `${(-standing.gap).toFixed(1)} below baseline`
-                      : 'at baseline'}
+                <span class="st-gap" class:good={standing.dir === 'up'} class:bad={standing.dir === 'down'}>
+                  {standing.text}
                 </span>
               </div>
             {/if}

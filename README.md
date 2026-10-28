@@ -37,9 +37,9 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
   stay put. When Reset is on the table it also prices every side-effect pair a reset could re-roll
   into, so you can see what you would actually be paying for. Each of the four possible outcomes
   shows the grade the gem would land on if that outcome is the one applied, green when it raises the
-  gem, red when it lowers it, grey when it changes nothing (an Effect Changed outcome shows both
-  grades it can roll into). Above the ranked actions, the gem's current grade is shown against your
-  baseline tier, with the gap between them.
+  gem, red when it lowers it, grey when it changes nothing (an Effect Changed outcome shows the grade
+  for each effect it can roll into, or one grade when both land the same). Above the ranked actions,
+  the gem's current grade is shown against your baseline tier, with the gap between them.
 - **Multiple character profiles** with local persistence.
 
 ## Tech stack

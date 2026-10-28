@@ -15,7 +15,7 @@
     EditedAdvisorState,
     ParsedAdvisorState,
   } from '../../lib/advisor/advisorController';
-  import { gradeConfig, previewOutcome } from '../../lib/advisor/outcomePreview';
+  import { tilePreview } from '../../lib/advisor/outcomePreview';
   import type { ArkGridGemName } from '../../lib/models/arkGridGemSpecs';
   import { getGemImage } from '../../lib/models/arkGridGems';
   import type { GemRole } from '../../lib/scoring/gemScore';
@@ -122,6 +122,13 @@
     e.rerollFree = Math.max(0, Math.min((RARITY_REROLLS[e.rarity] ?? 3) - 1, e.rerollFree));
     e.costMult = e.costMult >= 50 ? 100 : e.costMult <= -50 ? -100 : 0;
     e.resetAvail = e.resetAvail === 0 ? 0 : 1;
+    // Outcomes as the advice reads them (the vendored snapOutcome): a lower is always exactly -1, and
+    // an Effect Changed names a side effect. Switching a tile's type in the dropdowns can otherwise
+    // leave a raise's amount or target behind, and the tile, its grade preview and the DP disagree.
+    for (const o of e.outcomes) {
+      if (o.type === 'lower_effect') o.amount = 1;
+      else if (o.type === 'change_side_option' && o.target !== 'effect2') o.target = 'effect1';
+    }
   }
 
   // Confidence flags are LOCAL: seeded from the parse, cleared once you start hand-setting the gem.
@@ -332,62 +339,9 @@
     effect2: edit.effect2,
     effect2Level: edit.effect2Level,
   });
-  let gradeNow = $derived(gradeConfig(gemConfig, role));
-  type Dir = 'up' | 'down' | 'same';
-  type PreviewView =
-    | { kind: 'grade'; rank: string; grade: string; dir: Dir; label: string }
-    | { kind: 'split'; values: { grade: string; dir: Dir }[]; label: string }
-    | { kind: 'unchanged'; label: string };
-  const dirOf = (delta: number): Dir => (delta > 0 ? 'up' : delta < 0 ? 'down' : 'same');
-  const change = (delta: number) =>
-    delta > 0 ? `up ${delta.toFixed(1)}` : delta < 0 ? `down ${(-delta).toFixed(1)}` : 'no change';
-  // A raise on a line already at 5 (or a lower at 1) is clamped by the game, so it changes nothing.
-  const atLimit = (o: AdvisorOutcome) =>
-    (o.type === 'raise_effect' && levelOf(o.target ?? '') >= 5) ||
-    (o.type === 'lower_effect' && levelOf(o.target ?? '') <= 1);
-  function previewView(o: Edit['outcomes'][number]): PreviewView | null {
-    const now = gradeNow;
-    if (!now) return null;
-    const raw = rawOutcome(o);
-    const pv = previewOutcome(gemConfig, raw, role);
-    const nowText = `${now.grade.toFixed(1)} (${now.rank})`;
-    switch (pv.kind) {
-      case 'grade': {
-        const label =
-          pv.delta !== 0
-            ? `If this lands: ${pv.grade.toFixed(1)} (${pv.rank}), ${change(pv.delta)} from ${nowText}.`
-            : `No change: the gem stays ${nowText}, ${atLimit(raw) ? 'that line is already at its limit' : `that line does not count for ${role === 'support' ? 'Support' : 'DPS'}`}.`;
-        return { kind: 'grade', rank: pv.rank, grade: pv.grade.toFixed(1), dir: dirOf(pv.delta), label };
-      }
-      case 'split': {
-        const first = pv.landings[0];
-        if (pv.landings.every((l) => l.grade === first.grade))
-          return {
-            kind: 'grade',
-            rank: first.rank,
-            grade: first.grade.toFixed(1),
-            dir: dirOf(first.delta),
-            label: `The new effect is random, and either one (${pv.landings.map((l) => l.effect).join(' or ')}) lands ${first.grade.toFixed(1)} (${first.rank}): ${change(first.delta)} from ${nowText}.`,
-          };
-        const each = pv.landings.map(
-          (l) => `${l.effect} lands ${l.grade.toFixed(1)} (${l.rank}, ${change(l.delta)})`
-        );
-        return {
-          kind: 'split',
-          values: pv.landings.map((l) => ({ grade: l.grade.toFixed(1), dir: dirOf(l.delta) })),
-          label: `The new effect is random (even odds): ${each.join('; ')}. Now ${nowText}.`,
-        };
-      }
-      case 'unchanged':
-        return {
-          kind: 'unchanged',
-          label: `${raw.type === 'change_gold_cost' ? 'Changes the processing cost' : 'Adds rerolls'}, not the gem: it stays ${nowText}.`,
-        };
-      default:
-        return null;
-    }
-  }
-  let outcomePreviews = $derived(edit.outcomes.map(previewView));
+  let outcomePreviews = $derived(
+    edit.outcomes.map((o) => tilePreview(gemConfig, rawOutcome(o), role))
+  );
 
   const OUTCOME_KINDS = [
     { type: 'raise_effect', label: 'Raise' },
@@ -938,7 +892,7 @@
                     {#each OUT_TARGETS as t (t)}<option value={t}>{targetLabel(t)}</option>{/each}
                   </select>
                   <select class="lv" bind:value={o.amount} onchange={commit}>
-                    {#each [1, 2, 3, 4] as a (a)}<option value={a}>{o.type === 'raise_effect' ? '+' : '-'}{a}</option>{/each}
+                    {#each o.type === 'raise_effect' ? [1, 2, 3, 4] : [1] as a (a)}<option value={a}>{o.type === 'raise_effect' ? '+' : '-'}{a}</option>{/each}
                   </select>
                 {:else if o.type === 'change_side_option'}
                   <select bind:value={o.target} onchange={commit}>
