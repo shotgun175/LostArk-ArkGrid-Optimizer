@@ -1,6 +1,7 @@
 import { persistedState } from 'svelte-persisted-state';
 
 import { type ArkGridAttr, ArkGridAttrs, DEFAULT_PROFILE_NAME } from '../constants/enums';
+import { suggestGoldBracket } from '../cutplan/goldBracket';
 import { type ArkGridCoreType, ArkGridCoreTypes, createCore } from '../models/arkGridCores';
 import { type ArkGridGem, determineGemGrade } from '../models/arkGridGems';
 import { BASELINE_MIN_GRADE, baselineMaxGrade, gradeRows } from '../scoring/gemScore';
@@ -45,8 +46,14 @@ export interface CharacterProfile {
   characterName: string;
   gems: AllGems;
   weapon?: WeaponInfo;
-  /** Cutting Plan: gold-per-1%-damage bracket (Phase 2b). Underscore form, e.g. '2_5M'. */
+  /**
+   * Cutting Plan: gold-per-1%-damage bracket (Phase 2b). Underscore form, e.g. '2_5M'. Undefined
+   * means the user never saved one (the UI reads '2_5M'); that is the only state in which an import
+   * may set it from combat power, so no migration may ever backfill it.
+   */
   goldPer1Pct?: import('../cutplan/types').GoldBracket;
+  /** Headline combat power from the last lostark.bible import that carried one. Absent = unknown. */
+  combatPower?: number;
   /** Cutting Plan: NRB/RB binding mode (Phase 2b). */
   bindingMode?: import('../cutplan/types').BindingMode;
   /**
@@ -353,6 +360,28 @@ export function updateBaselineOverride(baseline: number | undefined) {
 
 export function updateGoldPer1Pct(bracket: import('../cutplan/types').GoldBracket) {
   getCurrentProfile().goldPer1Pct = bracket;
+}
+
+/**
+ * Record an imported combat power on the current profile. Ignored unless it is a finite positive
+ * number, so an import without one (lopec.kr, an old bookmarklet) keeps the last known value.
+ *
+ * Behaviour rule: the bracket suggested from it is AUTO-APPLIED only when the profile has never
+ * saved a bracket (`goldPer1Pct` undefined). A bracket the user picked, or one an earlier import
+ * set, is never overridden; the bracket selects show a hint with an apply button instead.
+ *
+ * Returns the bracket it applied, or null when it applied none.
+ */
+export function recordCombatPower(
+  cp: number | null | undefined
+): import('../cutplan/types').GoldBracket | null {
+  if (cp == null || !Number.isFinite(cp) || cp <= 0) return null;
+  const profile = getCurrentProfile();
+  profile.combatPower = cp;
+  if (profile.goldPer1Pct !== undefined) return null;
+  const suggested = suggestGoldBracket(cp);
+  if (suggested) profile.goldPer1Pct = suggested;
+  return suggested;
 }
 
 export function updateAdvisorRosterBound(on: boolean) {

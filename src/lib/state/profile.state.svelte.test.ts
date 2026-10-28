@@ -9,7 +9,9 @@ import {
   initNewProfile,
   isImportableProfile,
   migrateProfile,
+  recordCombatPower,
   setCurrentProfileName,
+  updateGoldPer1Pct,
   updateProfileCharacterName,
 } from './profile.state.svelte';
 
@@ -250,5 +252,64 @@ describe('isImportableProfile (profile file import guard)', () => {
       option2: { optionType: 'AddDamage', value: 5 },
     });
     expect(imported(JSON.parse(JSON.stringify(exported)))).toBe(true);
+  });
+});
+
+describe('combat power on the profile', () => {
+  it('migrateProfile loads a profile saved before combatPower existed unchanged (no field, no bracket)', () => {
+    // A current-shape saved profile from before this field: no combatPower and no saved bracket.
+    // The auto-apply rule depends on goldPer1Pct staying undefined, so no migration may backfill it.
+    const saved = JSON.parse(JSON.stringify(initNewProfile('Legacy')));
+    const before = JSON.parse(JSON.stringify(saved));
+    migrateProfile(saved);
+    expect(saved).toStrictEqual(before);
+    expect('combatPower' in saved).toBe(false);
+    expect(saved.goldPer1Pct).toBeUndefined();
+
+    // A saved bracket rides through untouched too.
+    const picked = { ...JSON.parse(JSON.stringify(initNewProfile('Picked'))), goldPer1Pct: '3_5M' };
+    migrateProfile(picked);
+    expect(picked.goldPer1Pct).toBe('3_5M');
+    expect('combatPower' in picked).toBe(false);
+  });
+
+  it('auto-applies the suggested bracket only while the profile has never saved one', () => {
+    addNewProfile(initNewProfile('CpFresh'));
+    setCurrentProfileName('CpFresh');
+    const p = getProfile('CpFresh')!;
+    expect(p.goldPer1Pct).toBeUndefined();
+
+    expect(recordCombatPower(7957.4)).toBe('5M');
+    expect(p.combatPower).toBe(7957.4);
+    expect(p.goldPer1Pct).toBe('5M');
+
+    // A later import never overrides the bracket now saved; it only refreshes the combat power.
+    expect(recordCombatPower(3000)).toBeNull();
+    expect(p.combatPower).toBe(3000);
+    expect(p.goldPer1Pct).toBe('5M');
+  });
+
+  it('never overrides a bracket the user picked', () => {
+    addNewProfile(initNewProfile('CpPicked'));
+    setCurrentProfileName('CpPicked');
+    updateGoldPer1Pct('1M');
+    expect(recordCombatPower(7957.4)).toBeNull();
+    const p = getProfile('CpPicked')!;
+    expect(p.goldPer1Pct).toBe('1M');
+    expect(p.combatPower).toBe(7957.4);
+  });
+
+  it('ignores a missing or nonsense combat power and keeps the last known one', () => {
+    addNewProfile(initNewProfile('CpKeep'));
+    setCurrentProfileName('CpKeep');
+    const p = getProfile('CpKeep')!;
+    for (const bad of [null, undefined, NaN, Infinity, 0, -5]) {
+      expect(recordCombatPower(bad)).toBeNull();
+    }
+    expect(p.combatPower).toBeUndefined();
+    expect(p.goldPer1Pct).toBeUndefined();
+    recordCombatPower(5000);
+    recordCombatPower(null);
+    expect(p.combatPower).toBe(5000);
   });
 });

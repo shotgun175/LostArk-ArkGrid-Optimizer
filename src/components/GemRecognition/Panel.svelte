@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { toast } from '@zerodevx/svelte-toast';
   import { onDestroy, onMount } from 'svelte';
 
   import { type ArkGridAttr, type LocalizationName } from '../../lib/constants/enums';
   import { CaptureController } from '../../lib/cv/captureController';
+  import { bracketLabel } from '../../lib/cutplan/cutPlan';
+  import { formatCombatPower } from '../../lib/cutplan/goldBracket';
   import { mergeScrolledGems } from '../../lib/cv/liveScrollMerge';
   import { type AssemblyResult, assembleScreenshots } from '../../lib/cv/stitch';
   import type { OwnedCount } from '../../lib/cv/types';
@@ -22,6 +25,8 @@
     toggleUI,
   } from '../../lib/state/appConfig.state.svelte';
   import { appLocale } from '../../lib/state/locale.state.svelte';
+  import { recordCombatPower } from '../../lib/state/profile.state.svelte';
+  import { requestUpdateCheck } from '../../lib/updateCheck';
   import Icon from '../shared/Icon.svelte';
   import GemRecognitionGuide from './Guide.svelte';
   import RecognizedGemList from './RecognizedGemList.svelte';
@@ -116,6 +121,9 @@
   let importMsg = $state<string | null>(null);
   // One line per gem the last import had to correct or could not fully trust (listed under the message).
   let importNotes = $state<string[]>([]);
+  // Combat power from the last import, staged with its gems: it reaches the profile only when the
+  // user applies them (to whichever profile that is), and a reset drops it.
+  let pendingCombatPower = $state<number | null>(null);
   let bookmarklet = $state<string>('');
   let totalOrderGems = $state<ArkGridGem[]>([]);
   let totalChaosGems = $state<ArkGridGem[]>([]);
@@ -157,6 +165,7 @@
     if (result.changed) {
       if (gemAttr === 'Order') totalOrderGems = result.gems;
       else totalChaosGems = result.gems;
+      pendingCombatPower = null; // the staged gems now come from the screen, not the import
       gemListElem?.selectTab(gemAttr === 'Order' ? 0 : 1);
       if (result.scroll) gemListElem?.scroll(result.scroll);
     }
@@ -174,6 +183,9 @@
       chaosAssembly = assembleScreenshots(chaosShots, chaosTarget);
       totalChaosGems = chaosAssembly.gems;
     }
+    // Uploaded screenshots replaced staged gems, so an imported combat power no longer describes
+    // what Apply would save (it could be another character's).
+    if (orderShots.length > 0 || chaosShots.length > 0) pendingCombatPower = null;
   }
 
   // Recognize one screenshot into the raw per-attr shot list + update both footer targets (the
@@ -206,7 +218,9 @@
         try {
           if (await recognizeIntoShots(images[i])) recognized++;
         } catch {
-          // skip an unreadable file; the rest still process
+          // skip an unreadable file; the rest still process. A failure can also be a reader file
+          // that a deploy replaced, so ask whether a newer build is live.
+          requestUpdateCheck();
         }
         uploadProg = { frac: (i + 1) / images.length, index: i, total: images.length };
       }
@@ -244,6 +258,19 @@
     totalChaosGems = [];
     detectedOwned = null;
     _prevGem = null;
+    pendingCombatPower = null;
+  }
+
+  // The staged gems were just applied to the current profile: record the import's combat power with
+  // them. recordCombatPower sets the gold bracket ONLY when the profile never saved one; otherwise the
+  // bracket selects show a hint.
+  function onGemsApplied() {
+    if (pendingCombatPower == null) return;
+    const cp = pendingCombatPower;
+    pendingCombatPower = null;
+    const applied = recordCombatPower(cp);
+    if (applied)
+      toast.push(`Gold / 1% damage set to ${bracketLabel(applied)} from combat power ${formatCombatPower(cp)}.`);
   }
 
   // Merge an imported loadout into the working gem lists (same store recognition fills), deduping
@@ -266,7 +293,10 @@
   }
 
   // Parse a pasted/dropped/bookmarklet-supplied page source and apply the gems it contains.
-  function importFromText(text: string, hint?: { region?: string | null; name?: string | null }) {
+  function importFromText(
+    text: string,
+    hint?: { region?: string | null; name?: string | null; combatPower?: number | null }
+  ) {
     const result = parseLoadout(text, hint);
     if (!result) {
       window.alert(
@@ -285,7 +315,13 @@
       ? `${result.name}${result.region ? ` (${result.region})` : ''}`
       : result.source;
     const skipped = result.warnings.length ? ` ${result.warnings.length} skipped.` : '';
-    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}`;
+    // Staged with the gems (see onGemsApplied). Each import replaces it with its own reading, kept
+    // only when it is a usable positive number, so a page without one never inherits another's.
+    const cp = result.combatPower;
+    pendingCombatPower = cp != null && Number.isFinite(cp) && cp > 0 ? cp : null;
+    const cpMsg =
+      pendingCombatPower != null ? ` Combat power ${formatCombatPower(pendingCombatPower)}.` : '';
+    importMsg = `Imported ${added} gem${added === 1 ? '' : 's'} from ${who}.${skipped}${cpMsg}`;
     importNotes = result.notes;
   }
 
@@ -396,7 +432,11 @@
     if (fromHash) {
       mode = 'import';
       setSection('showGemRecognitionPanel', true);
-      importFromText(fromHash.src, { region: fromHash.region, name: fromHash.name });
+      importFromText(fromHash.src, {
+        region: fromHash.region,
+        name: fromHash.name,
+        combatPower: fromHash.combatPower,
+      });
       // Clear the hash so a refresh doesn't re-import.
       history.replaceState(null, '', location.pathname + location.search);
     }
@@ -695,6 +735,7 @@
         }}
         assembly={{ order: orderAssembly, chaos: chaosAssembly }}
         onReset={resetUploads}
+        onApplied={onGemsApplied}
         bind:this={gemListElem}
       />
     </div>

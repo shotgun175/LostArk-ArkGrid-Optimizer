@@ -10,6 +10,8 @@
     countUnconfirmed,
     parsedToEdited,
   } from '../../lib/advisor/advisorController';
+  import { standingAgainst } from '../../lib/advisor/outcomePreview';
+  import { requestUpdateCheck } from '../../lib/updateCheck';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
   import type { ArkGridGem } from '../../lib/models/arkGridGems';
@@ -24,6 +26,8 @@
   } from '../../lib/state/profile.state.svelte';
   import BaselineControl from '../BaselineControl.svelte';
   import BuildViewSwitch from '../BuildViewSwitch.svelte';
+  import RankBadge from '../RankBadge.svelte';
+  import GoldBracketHint from '../shared/GoldBracketHint.svelte';
   import ProcessingWindow from './ProcessingWindow.svelte';
 
   interface Props {
@@ -70,6 +74,7 @@
         result = res;
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
+        handEdited = false;
         error = null;
         engaged = true; // a live read counts as engaging, so market changes re-rank it afterwards
       }
@@ -81,6 +86,7 @@
     controller.onPartial = (res) => {
       result = res;
       lastEdited = parsedToEdited(res.parsed);
+      handEdited = false;
       error = null;
       engaged = true;
       stateLanded = true; // the screen is read; what remains is the DP
@@ -164,6 +170,10 @@
   let frameMsgTimer: ReturnType<typeof setTimeout>;
   // The gem currently shown (default / parsed / hand-edited); re-advised when the market inputs change.
   let lastEdited = $state<EditedAdvisorState>(DEFAULT_EDITED);
+  // True while lastEdited is a hand edit on the window rather than a screen read. The window keeps
+  // hand edits in its own state, so a re-mount (collapsing and re-expanding the section) would fall
+  // back to the last read while the advice still describes the edit; this hands the edit back to it.
+  let handEdited = $state(false);
 
   // Keep the running watch loop's advice inputs in sync with the active build.
   $effect(() => {
@@ -234,15 +244,19 @@
     try {
       const bitmap = await createImageBitmap(file);
       const res = await getController().parseImage(bitmap, inputs);
-      if (!res) error = 'Could not read a Processing window from that image.';
-      else {
+      if (!res) {
+        error = 'Could not read a Processing window from that image.';
+        requestUpdateCheck(); // the reader's own files may be gone after a deploy
+      } else {
         result = res;
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
+        handEdited = false;
         engaged = true; // an uploaded read counts as engaging, so market changes re-rank it afterwards
       }
     } catch (e) {
       console.error('Cut Advisor: screenshot read failed', e);
+      requestUpdateCheck();
       error = "Couldn't read that file. Upload a PNG or JPG screenshot of the Processing window.";
     } finally {
       parsing = false;
@@ -274,6 +288,7 @@
   ) {
     engaged = true; // an edit (or a market change on an already-read gem) counts as engaging
     lastEdited = edited;
+    if (adoptMemory) handEdited = true; // a market replay keeps whatever the gem already was
     advisePending++;
     try {
       // $state.snapshot strips Svelte reactive proxies; a raw proxy throws DataCloneError in the
@@ -325,6 +340,12 @@
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
+  // Where the gem on the window stands against the baseline the advice weighs (the line its "above
+  // baseline" odds are measured against). Local and instant from the gem the window last emitted, so
+  // it never waits on the DP. Shown with the ranked actions or while an edit is being ranked, never
+  // during a screen read: until the read lands, lastEdited is still the previous gem (or the
+  // placeholder on a first read).
+  let standing = $derived(standingAgainst(lastEdited.config, baselineGrade, role));
   // Fusion lost the thread of the cut (gem switch, missed frames, an off-screen action):
   // this frame was read fresh, so it may carry more amber flags than usual.
   let fusionDesync = $derived(watching && result?.fusion?.status === 'desync');
@@ -369,7 +390,12 @@
       <div class="advisor-layout" onpointerenter={engage} onfocusin={engage}>
         <!-- LEFT: the interactive visualizer -->
         <div class="advisor-window">
-          <ProcessingWindow parsed={result.parsed} onEdit={onManualEdit} />
+          <ProcessingWindow
+            parsed={result.parsed}
+            {role}
+            restore={handEdited ? lastEdited : null}
+            onEdit={onManualEdit}
+          />
         </div>
 
         <!-- RIGHT: capture -> market -> recommended action -->
@@ -391,6 +417,8 @@
                 {#each GOLD_BRACKETS as b (b)}<option value={b}>{bracketLabel(b)}</option>{/each}
               </select>
             </label>
+            <!-- Suggests (never forces) a bracket from imported combat power; renders nothing otherwise. -->
+            <GoldBracketHint {profile} {bracket} />
             <div class="market-row">
               <span class="mk-label">Processing gold</span>
               <button
@@ -411,6 +439,21 @@
           <!-- 2. recommended action -->
           <div class="side-panel actions-panel" data-testid="advisor-advice">
             <div class="side-title">Recommended action</div>
+            {#if standing && (hasAdvice || advising)}
+              <div class="rec-standing" data-testid="advisor-standing">
+                <span class="st-item">
+                  This gem <RankBadge rank={standing.now.rank} />
+                  <b>{standing.now.grade.toFixed(1)}</b>
+                </span>
+                <span class="st-item">
+                  Baseline <RankBadge rank={standing.baseline.rank} />
+                  <b>{standing.baseline.grade.toFixed(1)}</b>
+                </span>
+                <span class="st-gap" class:good={standing.dir === 'up'} class:bad={standing.dir === 'down'}>
+                  {standing.text}
+                </span>
+              </div>
+            {/if}
             {#if computing}
               <div class="rec-reading" role="status" aria-live="polite">
                 <span>{readingScreen ? 'Reading screen…' : 'Updating advice…'}</span>
@@ -739,6 +782,9 @@
   .market-row:last-child {
     margin-bottom: 0;
   }
+  .side-panel :global(.gb-hint) {
+    margin: -0.15rem 0 0.5rem;
+  }
   .mk-label {
     font-size: 0.85rem;
     color: #b9c2d0;
@@ -894,6 +940,34 @@
     margin-top: 0.2rem;
     font-size: 0.78rem;
     opacity: 0.7;
+  }
+  /* The gem's grade against the baseline, above the action cards. */
+  .rec-standing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.8rem;
+    margin-bottom: 0.55rem;
+    font-size: 0.85rem;
+    color: #b9c2d0;
+  }
+  .st-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .st-item b {
+    color: #eef2f8;
+    font-variant-numeric: tabular-nums;
+  }
+  .st-gap {
+    font-weight: 600;
+  }
+  .st-gap.good {
+    color: #5fc94f;
+  }
+  .st-gap.bad {
+    color: #ff7b6b; /* lighter than the cards' #e0533f: 7.4:1 on the panel, not 4.0:1 */
   }
   /* Rule-of-thumb margin line under the action cards. */
   .rec-margin {

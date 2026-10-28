@@ -88,4 +88,11 @@ describe('an appConfig saved by v0.3.12', () => {
     expect(letters('dps')).toBe('kkeekeekrerkekkeeeerkekkeker');
     expect(letters('support')).toBe('kkkkkekkrerkkkkeekkrkkkkekkr');
   });
+
+  it('loads with no combat power and no saved gold bracket (so an import may still auto-apply one)', () => {
+    for (const p of appConfig.current.characterProfiles) {
+      expect('combatPower' in p).toBe(false);
+      expect(p.goldPer1Pct).toBeUndefined();
+    }
+  });
 });

@@ -301,11 +301,88 @@ describe('parseLoadout (rejects)', () => {
   });
 });
 
+// Combat power as lostark.bible embeds it. No real page source is committed in the repo, so these
+// are synthetic strings in the `{id:N,score:X}` shape upstream's parser matches.
+describe('parseLoadout (combat power)', () => {
+  const cores = REAL_NA_SLICE;
+
+  it('prefers the headline estimatedMaxCombatPower over the plain last-seen combatPower', () => {
+    const src =
+      'data:{combatPower:{id:11,score:2284.76},' +
+      'estimatedMaxCombatPower:{id:12,score:5466.3}},' +
+      cores;
+    expect(parseLoadout(src)!.combatPower).toBe(5466.3);
+  });
+
+  it('falls back to the plain field, and its guard skips a combatPower glued to a longer key', () => {
+    const src =
+      'data:{pvpcombatPower:{id:9,score:9999},maxCombatPower:{id:8,score:8888},' +
+      'combatPower:{id:11,score:2284.76}},' +
+      cores;
+    expect(parseLoadout(src)!.combatPower).toBe(2284.76);
+  });
+
+  it('is null when the page carries none, and on lopec.kr', () => {
+    expect(parseLoadout(cores)!.combatPower).toBeNull();
+    expect(parseLoadout(LOPEC_SRC)!.combatPower).toBeNull();
+    // lopec.kr ignores a hint as well: upstream reads no KR combat power, and neither do we.
+    expect(parseLoadout(LOPEC_SRC, { combatPower: 7000 })!.combatPower).toBeNull();
+  });
+
+  it('takes the bookmarklet hint when the slice has none, and the page value over the hint', () => {
+    expect(
+      parseLoadout(cores, { region: 'NA', name: 'Foo', combatPower: 7957.4 })!.combatPower
+    ).toBe(7957.4);
+    const src = 'estimatedMaxCombatPower:{id:1,score:6000},' + cores;
+    expect(parseLoadout(src, { combatPower: 7957.4 })!.combatPower).toBe(6000);
+  });
+});
+
 describe('parseImportHash', () => {
+  const hashOf = (payload: unknown) => '#import=' + encodeURIComponent(JSON.stringify(payload));
+
   it('decodes a #import= payload to { src, region, name }', () => {
     const payload = { src: 'arkGridCores:[]', region: 'NA', name: 'Foo' };
     const hash = '#import=' + encodeURIComponent(JSON.stringify(payload));
     expect(parseImportHash(hash)).toEqual(payload);
+  });
+
+  it('decodes a payload from an already-saved (pre-combat-power) bookmarklet exactly as before', () => {
+    const payload = { src: REAL_NA_SLICE, region: 'NA', name: 'Foo' };
+    // toStrictEqual: no extra `combatPower` key, not even an undefined one.
+    expect(parseImportHash(hashOf(payload))).toStrictEqual(payload);
+    expect(parseImportHash(hashOf({ src: 'arkGridCores:[]' }))).toStrictEqual({
+      src: 'arkGridCores:[]',
+      region: null,
+      name: null,
+    });
+  });
+
+  it('reads the optional cp field a newer bookmarklet sends', () => {
+    const decoded = parseImportHash(
+      hashOf({ src: REAL_NA_SLICE, region: 'NA', name: 'Foo', cp: 7957.4 })
+    );
+    expect(decoded).toStrictEqual({
+      src: REAL_NA_SLICE,
+      region: 'NA',
+      name: 'Foo',
+      combatPower: 7957.4,
+    });
+    const r = parseLoadout(decoded!.src, decoded!)!;
+    expect(r.combatPower).toBe(7957.4);
+    expect(r.gems.length).toBe(8);
+  });
+
+  it('drops a cp that is not a finite positive number, decoding the rest as before', () => {
+    for (const cp of [null, 'abc', '7000', 0, -3, {}]) {
+      expect(
+        parseImportHash(hashOf({ src: 'arkGridCores:[]', region: 'NA', name: 'Foo', cp }))
+      ).toStrictEqual({
+        src: 'arkGridCores:[]',
+        region: 'NA',
+        name: 'Foo',
+      });
+    }
   });
   it('returns null for an unrelated or malformed hash', () => {
     expect(parseImportHash('#section=triage')).toBeNull();
@@ -322,5 +399,54 @@ describe('buildBookmarklet', () => {
     expect(bm).toContain('fetch(location.href');
     expect(bm).toContain('arkGridCores:[');
     expect(bm).toContain('https://example.com/app/#import=');
+    expect(bm).toContain('estimatedMaxCombatPower');
+  });
+
+  // Run the real bookmarklet against a stubbed lostark.bible page and decode the hash it hands off.
+  async function runBookmarklet(html: string): Promise<string> {
+    const bm = buildBookmarklet('https://example.com/app/');
+    const location = {
+      pathname: '/character/NA/Foo',
+      href: 'https://lostark.bible/character/NA/Foo',
+    };
+    const fetch = () => Promise.resolve({ text: () => Promise.resolve(html) });
+    const alert = (msg: string) => {
+      throw new Error('bookmarklet alerted: ' + msg);
+    };
+    new Function('location', 'fetch', 'alert', bm.slice('javascript:'.length))(
+      location,
+      fetch,
+      alert
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(location.href.startsWith('https://example.com/app/#import=')).toBe(true);
+    return location.href.slice(location.href.indexOf('#'));
+  }
+
+  it('hands off the headline combat power with the cores slice (estimate first, then the guarded field)', async () => {
+    const page =
+      '<html>combatPower:{id:11,score:2284.76},estimatedMaxCombatPower:{id:12,score:7957.4},' +
+      'arkGridCores:[],type:"ark_passive" ' +
+      REAL_NA_SLICE +
+      '</html>';
+    expect(parseImportHash(await runBookmarklet(page))).toStrictEqual({
+      src: REAL_NA_SLICE,
+      region: 'NA',
+      name: 'Foo',
+      combatPower: 7957.4,
+    });
+
+    const plainOnly =
+      '<html>pvpcombatPower:{id:9,score:9999},combatPower:{id:11,score:2284.76},' + REAL_NA_SLICE;
+    expect(parseImportHash(await runBookmarklet(plainOnly))!.combatPower).toBe(2284.76);
+  });
+
+  it('sends the old {src,region,name} payload when the page has no combat power', async () => {
+    const hash = await runBookmarklet('<html>' + REAL_NA_SLICE + '</html>');
+    expect(JSON.parse(decodeURIComponent(hash.slice('#import='.length)))).toStrictEqual({
+      src: REAL_NA_SLICE,
+      region: 'NA',
+      name: 'Foo',
+    });
   });
 });

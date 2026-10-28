@@ -1,5 +1,6 @@
 import type { ArkGridAttr } from '../constants/enums';
 import { type ArkGridGem } from '../models/arkGridGems';
+import { requestUpdateCheck } from '../updateCheck';
 import type { CaptureWorkerRequest, CaptureWorkerResponse, OwnedCount } from './types';
 
 /** What recognizeImage resolves with: the gems plus the footer owned-count checksum. */
@@ -176,10 +177,12 @@ export class CaptureController {
     }
     this.initRound = null;
     // A worker that never initialized (e.g. its chunk failed to load after a redeploy) drops every
-    // later message, so discard it and let the next call load a fresh one.
+    // later message, so discard it and let the next call load a fresh one. If a deploy is the cause,
+    // the next try fails the same way (the old file name is baked in), so ask for an update check.
     if (!this.workerInitialized) {
       this.worker?.terminate();
       this.worker = null;
+      requestUpdateCheck();
     }
     if (this.awaitImageCompletion) {
       this.awaitImageCompletion(null);

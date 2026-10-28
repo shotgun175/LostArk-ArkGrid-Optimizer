@@ -10,7 +10,6 @@ import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
 import type { ArkGridGem } from '../models/arkGridGems';
-import type { ArkGridGemOptionName } from '../models/arkGridGemSpecs';
 import pipeline from '../cutplan/pipeline.json';
 import {
   type GemRole,
@@ -20,20 +19,11 @@ import {
   sPlusCut,
 } from '../scoring/gemScore';
 import { DP_FIXTURES } from './advisorDp.fixtures';
+import { EFFECT_NAME_TO_KEY as NAME_TO_KEY } from './outcomePreview';
 
 const require = createRequire(import.meta.url);
 const A = require('./vendor/model/astrogem.js');
 const DP = require('./vendor/model/dp.js');
-
-// His effect names <-> our option-type keys.
-const NAME_TO_KEY: Record<string, ArkGridGemOptionName> = {
-  'Attack Power': 'AtkPower',
-  'Additional Damage': 'AddDamage',
-  'Boss Damage': 'BossDamage',
-  'Brand Power': 'BrandPower',
-  'Ally Damage Enh.': 'AllyDamageEnh',
-  'Ally Attack Enh.': 'AllyAttackEnh',
-};
 
 interface HisConfig {
   baseCost: number;

@@ -18,7 +18,9 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
 - **On-screen gem recognition**: reads your astrogem inventory from uploaded screenshots (tesseract
   OCR) or a live screen share (OpenCV template matching), in a Web Worker; resolution-flexible.
 - **Loadout import**: brings in your character's equipped gems from lostark.bible or lopec.kr via a
-  one-click bookmarklet, a dropped saved `.html` of the character page, or its pasted source.
+  one-click bookmarklet, a dropped saved `.html` of the character page, or its pasted source. A
+  lostark.bible import also suggests your gold per 1% damage bracket from the character's combat
+  power: it is set for you if you have never picked one, otherwise the bracket selects offer it.
 - **Gem Triage**: scores every owned gem (additive quality model), gives it a letter rank (S+ to F-),
   and marks each gem **Equipped / Upgrade / Keep / Remove** from what the solves of your current grid
   and a fully maxed (all-Ancient) grid actually slot. Works for DPS and Support.
@@ -35,7 +37,11 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
   recommends the best cutting move each turn. While watching, it remembers the cut in progress and
   checks each new frame against the game's legal moves, so misreads get caught and confirmed values
   stay put. When Reset is on the table it also prices every side-effect pair a reset could re-roll
-  into, so you can see what you would actually be paying for.
+  into, so you can see what you would actually be paying for. Each of the four possible outcomes
+  shows the grade the gem would land on if that outcome is the one applied, green when it raises the
+  gem, red when it lowers it, grey when it changes nothing (an Effect Changed outcome shows the grade
+  for each effect it can roll into, or one grade when both land the same). Above the ranked actions,
+  the gem's current grade is shown against your baseline tier, with the gap between them.
 - **Multiple character profiles** with local persistence.
 
 ## Tech stack
@@ -140,6 +146,12 @@ before and after the upgrade. Dependency pull requests go through the same CI ch
 Deployment is automated by GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
 every push to `main` builds the app from a fresh checkout and publishes `dist/` to GitHub Pages. It can
 also be triggered on demand from the repository's **Actions** tab. There is no manual publish step.
+
+Each deploy replaces the hashed files the app loads on demand (the Cut Advisor and gem recognition
+workers), so a tab left open across a deploy could not load them. Open tabs check `index.html` when
+they regain focus (at most every 5 minutes), every 30 minutes while visible, and right after an
+on-demand file fails to load. When a newer build is live they show a "new version available" notice
+with a Reload button. The check is off on the dev server.
 
 The Vite `base` is `/LostArk-ArkGrid-Optimizer/` and must match the GitHub repository name, otherwise the
 published assets 404.

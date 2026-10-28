@@ -46,6 +46,7 @@
   import BuildViewSwitch from './BuildViewSwitch.svelte';
   import CutplanBreakdown from './CutplanBreakdown.svelte';
   import Popover from './Popover.svelte';
+  import GoldBracketHint from './shared/GoldBracketHint.svelte';
 
   interface Props {
     profile: CharacterProfile;
@@ -371,6 +372,8 @@
             {binding === 'nrb' ? 'Non-Roster-Bound' : 'Roster-Bound'}
           </button>
         </div>
+        <!-- Suggests (never forces) a bracket from imported combat power; renders nothing otherwise. -->
+        <GoldBracketHint {profile} {bracket} />
         <div class="baseline-group">
           <BaselineControl {profile} />
         </div>
@@ -825,6 +828,11 @@
   }
   .baseline-group {
     flex: 1 1 100%;
+  }
+  /* The gold-bracket hint takes its own line under the selects. */
+  .controls :global(.gb-hint) {
+    flex: 1 1 100%;
+    margin-top: -0.75rem;
   }
 
   /* Per-cost "still worth cutting?" verdict chips. */

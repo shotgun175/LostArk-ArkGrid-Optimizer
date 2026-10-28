@@ -10,18 +10,29 @@
   // A comprehensive dropdown editor lives below as the manual backup. Both drive the same `edit` model.
   import { onMount, untrack } from 'svelte';
   import type {
+    AdvisorConfig,
     AdvisorOutcome,
     EditedAdvisorState,
     ParsedAdvisorState,
   } from '../../lib/advisor/advisorController';
+  import { tilePreview } from '../../lib/advisor/outcomePreview';
   import type { ArkGridGemName } from '../../lib/models/arkGridGemSpecs';
   import { getGemImage } from '../../lib/models/arkGridGems';
+  import type { GemRole } from '../../lib/scoring/gemScore';
+  import RankBadge from '../RankBadge.svelte';
 
   interface Props {
     parsed: ParsedAdvisorState;
+    /** The axis the advice is weighing; the per-outcome grade previews grade on it. */
+    role: GemRole;
+    /**
+     * The gem as last hand-edited, read once at mount: collapsing and re-expanding the section
+     * re-mounts the window, and this restores the edit instead of the last screen read.
+     */
+    restore?: EditedAdvisorState | null;
     onEdit?: (edited: EditedAdvisorState) => void;
   }
-  let { parsed, onEdit }: Props = $props();
+  let { parsed, role, restore = null, onEdit }: Props = $props();
 
   // ---- game constants (mirror of shizukaziye's frozen vendored model) ----------------------------
   const GEM_NAMES: Record<number, { order: string; chaos: string }> = {
@@ -74,7 +85,31 @@
     outcomes: { type: string; target: string; amount: number; change: number }[];
   };
   let editing = $state(false);
-  let edit = $state<Edit>(seedEdit(untrack(() => parsed)));
+  let edit = $state<Edit>(untrack(() => (restore ? editFromEdited(restore) : seedEdit(parsed))));
+  // The window's own emit() shape back into the edit model (a restore after a re-mount).
+  function editFromEdited(e: EditedAdvisorState): Edit {
+    return {
+      gemType: e.config.gemType,
+      baseCost: e.config.baseCost,
+      rarity: e.rarity,
+      willpowerLevel: e.config.willpowerLevel,
+      orderLevel: e.config.orderLevel,
+      effect1: e.config.effect1,
+      effect1Level: e.config.effect1Level,
+      effect2: e.config.effect2,
+      effect2Level: e.config.effect2Level,
+      currentTurn: e.state.currentTurn,
+      rerollFree: e.state.rerollsShownFree ?? 0,
+      resetAvail: e.state.resetsRemaining === 0 ? 0 : 1,
+      costMult: e.state.processCostMultiplier ?? 0,
+      outcomes: e.outcomes.map((o) => ({
+        type: o.type,
+        target: o.target ?? 'willpower',
+        amount: o.amount ?? 1,
+        change: o.change ?? (o.type === 'change_gold_cost' ? -100 : 1),
+      })),
+    };
+  }
   function seedEdit(p: ParsedAdvisorState): Edit {
     const rr = p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic');
     return {
@@ -116,6 +151,17 @@
     e.rerollFree = Math.max(0, Math.min((RARITY_REROLLS[e.rarity] ?? 3) - 1, e.rerollFree));
     e.costMult = e.costMult >= 50 ? 100 : e.costMult <= -50 ? -100 : 0;
     e.resetAvail = e.resetAvail === 0 ? 0 : 1;
+    // Outcomes as the advice reads them (the vendored snapOutcome): a lower is always exactly -1, and
+    // an Effect Changed names a side effect. Switching a tile's type in the dropdowns can otherwise
+    // leave a raise's amount or target behind, and the tile, its grade preview and the DP disagree.
+    // Cost and reroll values snap the way rawOutcome sends them (+-100%; +1 or +2), so a value carried
+    // over from another type (a +100% cost switched to rerolls) never shows as "+100 times".
+    for (const o of e.outcomes) {
+      if (o.type === 'lower_effect') o.amount = 1;
+      else if (o.type === 'change_side_option' && o.target !== 'effect2') o.target = 'effect1';
+      else if (o.type === 'change_gold_cost') o.change = o.change >= 0 ? 100 : -100;
+      else if (o.type === 'reroll_increase') o.change = o.change >= 2 ? 2 : 1;
+    }
   }
 
   // Confidence flags are LOCAL: seeded from the parse, cleared once you start hand-setting the gem.
@@ -134,15 +180,21 @@
     if ((cf?.state?.processCostMultiplier ?? 1) < 0.8) u['state.cost'] = true;
     return u;
   }
-  let unconfirmed = $state<Record<string, true>>(seedUnconfirmed(untrack(() => parsed)));
+  // A restored hand edit carries no "verify me" flags: editing by hand already cleared them.
+  let unconfirmed = $state<Record<string, true>>(
+    untrack(() => (restore ? {} : seedUnconfirmed(parsed)))
+  );
   const lowConfig = (f: string) => !!unconfirmed['config.' + f];
   const lowOutcome = (i: number) => !!unconfirmed['outcomes.' + i];
   const lowCost = () => !!unconfirmed['state.cost'];
 
   // A fresh parse (upload / live frame / default) reseeds; an advice echo does NOT, the Panel keeps
-  // the `parsed` prop stable across manual edits, so hand-set values are never stomped.
+  // the `parsed` prop stable across manual edits, so hand-set values are never stomped. The mount
+  // already seeded (from this parse, or a restored edit), so only a NEW parse reseeds.
+  let seededFrom = untrack(() => parsed);
   $effect(() => {
-    void parsed;
+    if (parsed === seededFrom) return;
+    seededFrom = parsed;
     edit = seedEdit(parsed);
     unconfirmed = seedUnconfirmed(parsed);
   });
@@ -312,6 +364,24 @@
   }
   let outcomeViews = $derived(edit.outcomes.map((o, i) => outcomeView(o, i)));
 
+  // ---- per-outcome grade previews: where the gem's grade lands if THIS tile is the one applied ----
+  // Graded on the advice's axis from the same local `edit` the window renders, so they move with every
+  // click instead of waiting on the DP. Colored by the change from now, not by the tile's own arrow: a
+  // raise on a line the axis does not value is a green arrow in game but no change to the gem.
+  let gemConfig = $derived<AdvisorConfig>({
+    baseCost: edit.baseCost,
+    gemType: edit.gemType,
+    willpowerLevel: edit.willpowerLevel,
+    orderLevel: edit.orderLevel,
+    effect1: edit.effect1,
+    effect1Level: edit.effect1Level,
+    effect2: edit.effect2,
+    effect2Level: edit.effect2Level,
+  });
+  let outcomePreviews = $derived(
+    edit.outcomes.map((o) => tilePreview(gemConfig, rawOutcome(o), role))
+  );
+
   const OUTCOME_KINDS = [
     { type: 'raise_effect', label: 'Raise' },
     { type: 'lower_effect', label: 'Lower' },
@@ -440,6 +510,9 @@
     void import('@fontsource/eb-garamond/latin-400.css');
     const ro = new ResizeObserver(fit);
     ro.observe(stageEl!);
+    // The panel too: it grows after mount without the stage resizing (outcome labels wrap to more
+    // lines, grade previews appear), and a stale stage height clips the Process buttons.
+    ro.observe(panelEl!);
     requestAnimationFrame(fit);
     const t = setTimeout(fit, 400);
     const onScroll = () => closePop();
@@ -566,6 +639,7 @@
         <div class="pw-outcomerow">
           <div class="pw-outcomes">
             {#each outcomeViews as o, i (i)}
+              {@const pv = outcomePreviews[i]}
               <button type="button" class="pw-oc pw-edit" class:flag={o.flag} title="Click to set this outcome" onclick={(e) => openPop({ kind: 'outcome', i }, e)}>
                 <span class="oc-diamond">
                   {#each CORNERS as corner (corner)}
@@ -580,6 +654,25 @@
                     {#if o.arrow}<span class="oc-arrow" style="color:{o.arrowColor};">{o.arrow}</span>{/if}
                   </span>
                 </span>
+                {#if pv}
+                  <span class="oc-preview" title={pv.label} data-testid="outcome-preview">
+                    <span class="oc-pv" aria-hidden="true">
+                      <svg class="oc-to" viewBox="0 0 14 8"><path d="M1 4h11M9 1l3 3-3 3" /></svg>
+                      {#if pv.kind === 'grade'}
+                        <RankBadge rank={pv.rank} />
+                        <span class="oc-g {pv.dir}">{pv.grade}</span>
+                      {:else if pv.kind === 'split'}
+                        {#each pv.values as v, k (k)}
+                          {#if k > 0}<span class="oc-or">or</span>{/if}
+                          <span class="oc-g {v.dir}">{v.grade}</span>
+                        {/each}
+                      {:else}
+                        <span class="oc-g same">no change</span>
+                      {/if}
+                    </span>
+                    <span class="pw-sr">{pv.label}</span>
+                  </span>
+                {/if}
               </button>
             {/each}
           </div>
@@ -838,7 +931,7 @@
                     {#each OUT_TARGETS as t (t)}<option value={t}>{targetLabel(t)}</option>{/each}
                   </select>
                   <select class="lv" bind:value={o.amount} onchange={commit}>
-                    {#each [1, 2, 3, 4] as a (a)}<option value={a}>{o.type === 'raise_effect' ? '+' : '-'}{a}</option>{/each}
+                    {#each o.type === 'raise_effect' ? [1, 2, 3, 4] : [1] as a (a)}<option value={a}>{o.type === 'raise_effect' ? '+' : '-'}{a}</option>{/each}
                   </select>
                 {:else if o.type === 'change_side_option'}
                   <select bind:value={o.target} onchange={commit}>
@@ -1297,7 +1390,7 @@
     flex: 1;
     display: flex;
     justify-content: space-around;
-    align-items: flex-start;
+    align-items: stretch; /* equal-height tiles, so the four grade previews share one line */
   }
   .pw-oc {
     width: 118px;
@@ -1383,6 +1476,60 @@
   }
   .oc-arrow {
     font-size: 11px;
+  }
+  /* The grade the gem lands on if this tile is applied; pinned to the tile's foot so all four line
+     up under labels of one, two or three lines. */
+  .oc-preview {
+    margin-top: auto;
+    padding-top: 2px;
+  }
+  .oc-pv {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: #a9b1c1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  }
+  /* Drawn, not a text arrow: a font's arrow glyph sits on its baseline, below the badge and digits. */
+  .oc-to {
+    flex: none;
+    width: 14px;
+    height: 8px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .oc-or {
+    font-family: 'EB Garamond', Georgia, serif;
+    font-weight: 400;
+    font-style: italic;
+  }
+  .oc-g.up {
+    color: #7be07f;
+  }
+  .oc-g.down {
+    color: #ff8270;
+  }
+  .oc-g.same {
+    color: #a9b1c1;
+  }
+  .pw-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .pw-reroll {
     width: 104px;

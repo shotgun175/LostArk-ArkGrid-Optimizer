@@ -15,10 +15,12 @@
   import SectionNav from './components/SectionNav.svelte';
   import ConfirmDialog from './components/shared/ConfirmDialog.svelte';
   import DeprecationBanner from './components/shared/DeprecationBanner.svelte';
+  import UpdateNotice from './components/UpdateNotice.svelte';
   import { type LocalizationName } from './lib/constants/enums';
   import { appConfig, applyOsThemePreference, toggleUI } from './lib/state/appConfig.state.svelte';
   import { appLocale, setLocale } from './lib/state/locale.state.svelte';
   import { type CharacterProfile, getCurrentProfile } from './lib/state/profile.state.svelte';
+  import { startUpdateWatch } from './lib/state/update.state.svelte';
   import { initTooltipModal } from './lib/ui/tooltipModal';
 
   let locale = $derived(appLocale.current);
@@ -53,8 +55,14 @@
     // English-only UI.
     setLocale('en_us');
 
+    // Tell a tab left open across a deploy that a newer build is live (its on-demand files are gone).
+    const stopUpdateWatch = startUpdateWatch();
     // Mobile tooltips: dimmed/blurred backdrop + tap-outside / Escape dismissal.
-    return initTooltipModal();
+    const stopTooltips = initTooltipModal();
+    return () => {
+      stopUpdateWatch();
+      stopTooltips();
+    };
   });
   const pageTitle = $derived(
     {
@@ -69,6 +77,7 @@
 
 <main>
   <SvelteToast options={{ reversed: true, intro: { y: 192 } }} />
+  <UpdateNotice />
   <ConfirmDialog />
   <div class="contents">
     <div class="layout">
