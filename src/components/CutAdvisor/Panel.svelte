@@ -10,10 +10,11 @@
     countUnconfirmed,
     parsedToEdited,
   } from '../../lib/advisor/advisorController';
+  import { gradeConfig } from '../../lib/advisor/outcomePreview';
   import { bracketLabel } from '../../lib/cutplan/cutPlan';
   import { GOLD_BRACKETS, GOLD_PER_DAMAGE, type GoldBracket } from '../../lib/cutplan/types';
   import type { ArkGridGem } from '../../lib/models/arkGridGems';
-  import { type GemRole } from '../../lib/scoring/gemScore';
+  import { type GemRole, rankFromGrade } from '../../lib/scoring/gemScore';
   import { autoBaselineFromLoadout, effectiveBaseline } from '../../lib/scoring/triage';
   import { sectionUI, toggleSection } from '../../lib/state/appConfig.state.svelte';
   import {
@@ -24,6 +25,7 @@
   } from '../../lib/state/profile.state.svelte';
   import BaselineControl from '../BaselineControl.svelte';
   import BuildViewSwitch from '../BuildViewSwitch.svelte';
+  import RankBadge from '../RankBadge.svelte';
   import ProcessingWindow from './ProcessingWindow.svelte';
 
   interface Props {
@@ -325,6 +327,15 @@
   let hasAdvice = $derived(
     !!liveAdvice && (liveAdvice.allActions ?? []).some((a) => isFinite(a.value))
   );
+  // Where the gem on the window stands against the baseline the advice weighs (the line its "above
+  // baseline" odds are measured against). Local and instant from the gem the window last emitted, so
+  // it never waits on the DP; shown alongside the ranked actions, never for the untouched placeholder.
+  let standing = $derived.by(() => {
+    const now = gradeConfig(lastEdited.config, role);
+    if (!now) return null;
+    const gap = Math.round((now.grade - baselineGrade) * 10) / 10;
+    return { now, baselineRank: rankFromGrade(baselineGrade, role), gap };
+  });
   // Fusion lost the thread of the cut (gem switch, missed frames, an off-screen action):
   // this frame was read fresh, so it may carry more amber flags than usual.
   let fusionDesync = $derived(watching && result?.fusion?.status === 'desync');
@@ -369,7 +380,7 @@
       <div class="advisor-layout" onpointerenter={engage} onfocusin={engage}>
         <!-- LEFT: the interactive visualizer -->
         <div class="advisor-window">
-          <ProcessingWindow parsed={result.parsed} onEdit={onManualEdit} />
+          <ProcessingWindow parsed={result.parsed} {role} onEdit={onManualEdit} />
         </div>
 
         <!-- RIGHT: capture -> market -> recommended action -->
@@ -411,6 +422,25 @@
           <!-- 2. recommended action -->
           <div class="side-panel actions-panel" data-testid="advisor-advice">
             <div class="side-title">Recommended action</div>
+            {#if standing && (hasAdvice || computing)}
+              <div class="rec-standing" data-testid="advisor-standing">
+                <span class="st-item">
+                  This gem <RankBadge rank={standing.now.rank} />
+                  <b>{standing.now.grade.toFixed(1)}</b>
+                </span>
+                <span class="st-item">
+                  Baseline <RankBadge rank={standing.baselineRank} />
+                  <b>{baselineGrade.toFixed(1)}</b>
+                </span>
+                <span class="st-gap" class:good={standing.gap > 0} class:bad={standing.gap < 0}>
+                  {standing.gap > 0
+                    ? `${standing.gap.toFixed(1)} above baseline`
+                    : standing.gap < 0
+                      ? `${(-standing.gap).toFixed(1)} below baseline`
+                      : 'at baseline'}
+                </span>
+              </div>
+            {/if}
             {#if computing}
               <div class="rec-reading" role="status" aria-live="polite">
                 <span>{readingScreen ? 'Reading screen…' : 'Updating advice…'}</span>
@@ -894,6 +924,34 @@
     margin-top: 0.2rem;
     font-size: 0.78rem;
     opacity: 0.7;
+  }
+  /* The gem's grade against the baseline, above the action cards. */
+  .rec-standing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.8rem;
+    margin-bottom: 0.55rem;
+    font-size: 0.85rem;
+    color: #b9c2d0;
+  }
+  .st-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .st-item b {
+    color: #eef2f8;
+    font-variant-numeric: tabular-nums;
+  }
+  .st-gap {
+    font-weight: 600;
+  }
+  .st-gap.good {
+    color: #5fc94f;
+  }
+  .st-gap.bad {
+    color: #ff7b6b; /* lighter than the cards' #e0533f: 7.4:1 on the panel, not 4.0:1 */
   }
   /* Rule-of-thumb margin line under the action cards. */
   .rec-margin {

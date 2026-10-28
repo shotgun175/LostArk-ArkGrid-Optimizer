@@ -35,7 +35,11 @@ evidence: verdicts reflect what your current grid and a fully maxed grid would a
   recommends the best cutting move each turn. While watching, it remembers the cut in progress and
   checks each new frame against the game's legal moves, so misreads get caught and confirmed values
   stay put. When Reset is on the table it also prices every side-effect pair a reset could re-roll
-  into, so you can see what you would actually be paying for.
+  into, so you can see what you would actually be paying for. Each of the four possible outcomes
+  shows the grade the gem would land on if that outcome is the one applied, green when it raises the
+  gem, red when it lowers it, grey when it changes nothing (an Effect Changed outcome shows both
+  grades it can roll into). Above the ranked actions, the gem's current grade is shown against your
+  baseline tier, with the gap between them.
 - **Multiple character profiles** with local persistence.
 
 ## Tech stack

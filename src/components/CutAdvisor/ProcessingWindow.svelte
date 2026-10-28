@@ -10,18 +10,24 @@
   // A comprehensive dropdown editor lives below as the manual backup. Both drive the same `edit` model.
   import { onMount, untrack } from 'svelte';
   import type {
+    AdvisorConfig,
     AdvisorOutcome,
     EditedAdvisorState,
     ParsedAdvisorState,
   } from '../../lib/advisor/advisorController';
+  import { gradeConfig, previewOutcome } from '../../lib/advisor/outcomePreview';
   import type { ArkGridGemName } from '../../lib/models/arkGridGemSpecs';
   import { getGemImage } from '../../lib/models/arkGridGems';
+  import type { GemRole } from '../../lib/scoring/gemScore';
+  import RankBadge from '../RankBadge.svelte';
 
   interface Props {
     parsed: ParsedAdvisorState;
+    /** The axis the advice is weighing; the per-outcome grade previews grade on it. */
+    role: GemRole;
     onEdit?: (edited: EditedAdvisorState) => void;
   }
-  let { parsed, onEdit }: Props = $props();
+  let { parsed, role, onEdit }: Props = $props();
 
   // ---- game constants (mirror of shizukaziye's frozen vendored model) ----------------------------
   const GEM_NAMES: Record<number, { order: string; chaos: string }> = {
@@ -312,6 +318,77 @@
   }
   let outcomeViews = $derived(edit.outcomes.map((o, i) => outcomeView(o, i)));
 
+  // ---- per-outcome grade previews: where the gem's grade lands if THIS tile is the one applied ----
+  // Graded on the advice's axis from the same local `edit` the window renders, so they move with every
+  // click instead of waiting on the DP. Colored by the change from now, not by the tile's own arrow: a
+  // raise on a line the axis does not value is a green arrow in game but no change to the gem.
+  let gemConfig = $derived<AdvisorConfig>({
+    baseCost: edit.baseCost,
+    gemType: edit.gemType,
+    willpowerLevel: edit.willpowerLevel,
+    orderLevel: edit.orderLevel,
+    effect1: edit.effect1,
+    effect1Level: edit.effect1Level,
+    effect2: edit.effect2,
+    effect2Level: edit.effect2Level,
+  });
+  let gradeNow = $derived(gradeConfig(gemConfig, role));
+  type Dir = 'up' | 'down' | 'same';
+  type PreviewView =
+    | { kind: 'grade'; rank: string; grade: string; dir: Dir; label: string }
+    | { kind: 'split'; values: { grade: string; dir: Dir }[]; label: string }
+    | { kind: 'unchanged'; label: string };
+  const dirOf = (delta: number): Dir => (delta > 0 ? 'up' : delta < 0 ? 'down' : 'same');
+  const change = (delta: number) =>
+    delta > 0 ? `up ${delta.toFixed(1)}` : delta < 0 ? `down ${(-delta).toFixed(1)}` : 'no change';
+  // A raise on a line already at 5 (or a lower at 1) is clamped by the game, so it changes nothing.
+  const atLimit = (o: AdvisorOutcome) =>
+    (o.type === 'raise_effect' && levelOf(o.target ?? '') >= 5) ||
+    (o.type === 'lower_effect' && levelOf(o.target ?? '') <= 1);
+  function previewView(o: Edit['outcomes'][number]): PreviewView | null {
+    const now = gradeNow;
+    if (!now) return null;
+    const raw = rawOutcome(o);
+    const pv = previewOutcome(gemConfig, raw, role);
+    const nowText = `${now.grade.toFixed(1)} (${now.rank})`;
+    switch (pv.kind) {
+      case 'grade': {
+        const label =
+          pv.delta !== 0
+            ? `If this lands: ${pv.grade.toFixed(1)} (${pv.rank}), ${change(pv.delta)} from ${nowText}.`
+            : `No change: the gem stays ${nowText}, ${atLimit(raw) ? 'that line is already at its limit' : `that line does not count for ${role === 'support' ? 'Support' : 'DPS'}`}.`;
+        return { kind: 'grade', rank: pv.rank, grade: pv.grade.toFixed(1), dir: dirOf(pv.delta), label };
+      }
+      case 'split': {
+        const first = pv.landings[0];
+        if (pv.landings.every((l) => l.grade === first.grade))
+          return {
+            kind: 'grade',
+            rank: first.rank,
+            grade: first.grade.toFixed(1),
+            dir: dirOf(first.delta),
+            label: `The new effect is random, and either one (${pv.landings.map((l) => l.effect).join(' or ')}) lands ${first.grade.toFixed(1)} (${first.rank}): ${change(first.delta)} from ${nowText}.`,
+          };
+        const each = pv.landings.map(
+          (l) => `${l.effect} lands ${l.grade.toFixed(1)} (${l.rank}, ${change(l.delta)})`
+        );
+        return {
+          kind: 'split',
+          values: pv.landings.map((l) => ({ grade: l.grade.toFixed(1), dir: dirOf(l.delta) })),
+          label: `The new effect is random (even odds): ${each.join('; ')}. Now ${nowText}.`,
+        };
+      }
+      case 'unchanged':
+        return {
+          kind: 'unchanged',
+          label: `${raw.type === 'change_gold_cost' ? 'Changes the processing cost' : 'Adds rerolls'}, not the gem: it stays ${nowText}.`,
+        };
+      default:
+        return null;
+    }
+  }
+  let outcomePreviews = $derived(edit.outcomes.map(previewView));
+
   const OUTCOME_KINDS = [
     { type: 'raise_effect', label: 'Raise' },
     { type: 'lower_effect', label: 'Lower' },
@@ -440,6 +517,9 @@
     void import('@fontsource/eb-garamond/latin-400.css');
     const ro = new ResizeObserver(fit);
     ro.observe(stageEl!);
+    // The panel too: it grows after mount without the stage resizing (outcome labels wrap to more
+    // lines, grade previews appear), and a stale stage height clips the Process buttons.
+    ro.observe(panelEl!);
     requestAnimationFrame(fit);
     const t = setTimeout(fit, 400);
     const onScroll = () => closePop();
@@ -566,6 +646,7 @@
         <div class="pw-outcomerow">
           <div class="pw-outcomes">
             {#each outcomeViews as o, i (i)}
+              {@const pv = outcomePreviews[i]}
               <button type="button" class="pw-oc pw-edit" class:flag={o.flag} title="Click to set this outcome" onclick={(e) => openPop({ kind: 'outcome', i }, e)}>
                 <span class="oc-diamond">
                   {#each CORNERS as corner (corner)}
@@ -580,6 +661,25 @@
                     {#if o.arrow}<span class="oc-arrow" style="color:{o.arrowColor};">{o.arrow}</span>{/if}
                   </span>
                 </span>
+                {#if pv}
+                  <span class="oc-preview" title={pv.label} data-testid="outcome-preview">
+                    <span class="oc-pv" aria-hidden="true">
+                      <svg class="oc-to" viewBox="0 0 14 8"><path d="M1 4h11M9 1l3 3-3 3" /></svg>
+                      {#if pv.kind === 'grade'}
+                        <RankBadge rank={pv.rank} />
+                        <span class="oc-g {pv.dir}">{pv.grade}</span>
+                      {:else if pv.kind === 'split'}
+                        {#each pv.values as v, k (k)}
+                          {#if k > 0}<span class="oc-or">or</span>{/if}
+                          <span class="oc-g {v.dir}">{v.grade}</span>
+                        {/each}
+                      {:else}
+                        <span class="oc-g same">no change</span>
+                      {/if}
+                    </span>
+                    <span class="pw-sr">{pv.label}</span>
+                  </span>
+                {/if}
               </button>
             {/each}
           </div>
@@ -1297,7 +1397,7 @@
     flex: 1;
     display: flex;
     justify-content: space-around;
-    align-items: flex-start;
+    align-items: stretch; /* equal-height tiles, so the four grade previews share one line */
   }
   .pw-oc {
     width: 118px;
@@ -1383,6 +1483,60 @@
   }
   .oc-arrow {
     font-size: 11px;
+  }
+  /* The grade the gem lands on if this tile is applied; pinned to the tile's foot so all four line
+     up under labels of one, two or three lines. */
+  .oc-preview {
+    margin-top: auto;
+    padding-top: 2px;
+  }
+  .oc-pv {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: #a9b1c1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  }
+  /* Drawn, not a text arrow: a font's arrow glyph sits on its baseline, below the badge and digits. */
+  .oc-to {
+    flex: none;
+    width: 14px;
+    height: 8px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .oc-or {
+    font-family: 'EB Garamond', Georgia, serif;
+    font-weight: 400;
+    font-style: italic;
+  }
+  .oc-g.up {
+    color: #7be07f;
+  }
+  .oc-g.down {
+    color: #ff8270;
+  }
+  .oc-g.same {
+    color: #a9b1c1;
+  }
+  .pw-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .pw-reroll {
     width: 104px;
