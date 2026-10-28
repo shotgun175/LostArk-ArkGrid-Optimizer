@@ -25,9 +25,14 @@
     parsed: ParsedAdvisorState;
     /** The axis the advice is weighing; the per-outcome grade previews grade on it. */
     role: GemRole;
+    /**
+     * The gem as last hand-edited, read once at mount: collapsing and re-expanding the section
+     * re-mounts the window, and this restores the edit instead of the last screen read.
+     */
+    restore?: EditedAdvisorState | null;
     onEdit?: (edited: EditedAdvisorState) => void;
   }
-  let { parsed, role, onEdit }: Props = $props();
+  let { parsed, role, restore = null, onEdit }: Props = $props();
 
   // ---- game constants (mirror of shizukaziye's frozen vendored model) ----------------------------
   const GEM_NAMES: Record<number, { order: string; chaos: string }> = {
@@ -80,7 +85,31 @@
     outcomes: { type: string; target: string; amount: number; change: number }[];
   };
   let editing = $state(false);
-  let edit = $state<Edit>(seedEdit(untrack(() => parsed)));
+  let edit = $state<Edit>(untrack(() => (restore ? editFromEdited(restore) : seedEdit(parsed))));
+  // The window's own emit() shape back into the edit model (a restore after a re-mount).
+  function editFromEdited(e: EditedAdvisorState): Edit {
+    return {
+      gemType: e.config.gemType,
+      baseCost: e.config.baseCost,
+      rarity: e.rarity,
+      willpowerLevel: e.config.willpowerLevel,
+      orderLevel: e.config.orderLevel,
+      effect1: e.config.effect1,
+      effect1Level: e.config.effect1Level,
+      effect2: e.config.effect2,
+      effect2Level: e.config.effect2Level,
+      currentTurn: e.state.currentTurn,
+      rerollFree: e.state.rerollsShownFree ?? 0,
+      resetAvail: e.state.resetsRemaining === 0 ? 0 : 1,
+      costMult: e.state.processCostMultiplier ?? 0,
+      outcomes: e.outcomes.map((o) => ({
+        type: o.type,
+        target: o.target ?? 'willpower',
+        amount: o.amount ?? 1,
+        change: o.change ?? (o.type === 'change_gold_cost' ? -100 : 1),
+      })),
+    };
+  }
   function seedEdit(p: ParsedAdvisorState): Edit {
     const rr = p.rarity ?? (p.state.maxTurns <= 5 ? 'uncommon' : p.state.maxTurns <= 7 ? 'rare' : 'epic');
     return {
@@ -125,9 +154,13 @@
     // Outcomes as the advice reads them (the vendored snapOutcome): a lower is always exactly -1, and
     // an Effect Changed names a side effect. Switching a tile's type in the dropdowns can otherwise
     // leave a raise's amount or target behind, and the tile, its grade preview and the DP disagree.
+    // Cost and reroll values snap the way rawOutcome sends them (+-100%; +1 or +2), so a value carried
+    // over from another type (a +100% cost switched to rerolls) never shows as "+100 times".
     for (const o of e.outcomes) {
       if (o.type === 'lower_effect') o.amount = 1;
       else if (o.type === 'change_side_option' && o.target !== 'effect2') o.target = 'effect1';
+      else if (o.type === 'change_gold_cost') o.change = o.change >= 0 ? 100 : -100;
+      else if (o.type === 'reroll_increase') o.change = o.change >= 2 ? 2 : 1;
     }
   }
 
@@ -147,15 +180,21 @@
     if ((cf?.state?.processCostMultiplier ?? 1) < 0.8) u['state.cost'] = true;
     return u;
   }
-  let unconfirmed = $state<Record<string, true>>(seedUnconfirmed(untrack(() => parsed)));
+  // A restored hand edit carries no "verify me" flags: editing by hand already cleared them.
+  let unconfirmed = $state<Record<string, true>>(
+    untrack(() => (restore ? {} : seedUnconfirmed(parsed)))
+  );
   const lowConfig = (f: string) => !!unconfirmed['config.' + f];
   const lowOutcome = (i: number) => !!unconfirmed['outcomes.' + i];
   const lowCost = () => !!unconfirmed['state.cost'];
 
   // A fresh parse (upload / live frame / default) reseeds; an advice echo does NOT, the Panel keeps
-  // the `parsed` prop stable across manual edits, so hand-set values are never stomped.
+  // the `parsed` prop stable across manual edits, so hand-set values are never stomped. The mount
+  // already seeded (from this parse, or a restored edit), so only a NEW parse reseeds.
+  let seededFrom = untrack(() => parsed);
   $effect(() => {
-    void parsed;
+    if (parsed === seededFrom) return;
+    seededFrom = parsed;
     edit = seedEdit(parsed);
     unconfirmed = seedUnconfirmed(parsed);
   });

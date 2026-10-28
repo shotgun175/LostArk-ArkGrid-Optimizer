@@ -838,16 +838,16 @@
     background: #6f747a; /* default: F / D */
   }
   .rank[data-rank^='C'] {
-    background: #4f9d5d;
+    background: #41824d;
   }
   .rank[data-rank^='B'] {
-    background: #3b7fd0;
+    background: #3076c9;
   }
   .rank[data-rank^='A'] {
     background: #7e5cc0;
   }
   .rank[data-rank^='S'] {
-    background: #c95f85;
+    background: #c24b76;
   }
   .action {
     font-weight: 700;

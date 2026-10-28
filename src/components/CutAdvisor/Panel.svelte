@@ -72,6 +72,7 @@
         result = res;
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
+        handEdited = false;
         error = null;
         engaged = true; // a live read counts as engaging, so market changes re-rank it afterwards
       }
@@ -83,6 +84,7 @@
     controller.onPartial = (res) => {
       result = res;
       lastEdited = parsedToEdited(res.parsed);
+      handEdited = false;
       error = null;
       engaged = true;
       stateLanded = true; // the screen is read; what remains is the DP
@@ -166,6 +168,10 @@
   let frameMsgTimer: ReturnType<typeof setTimeout>;
   // The gem currently shown (default / parsed / hand-edited); re-advised when the market inputs change.
   let lastEdited = $state<EditedAdvisorState>(DEFAULT_EDITED);
+  // True while lastEdited is a hand edit on the window rather than a screen read. The window keeps
+  // hand edits in its own state, so a re-mount (collapsing and re-expanding the section) would fall
+  // back to the last read while the advice still describes the edit; this hands the edit back to it.
+  let handEdited = $state(false);
 
   // Keep the running watch loop's advice inputs in sync with the active build.
   $effect(() => {
@@ -241,6 +247,7 @@
         result = res;
         liveAdvice = res.advice;
         lastEdited = parsedToEdited(res.parsed);
+        handEdited = false;
         engaged = true; // an uploaded read counts as engaging, so market changes re-rank it afterwards
       }
     } catch (e) {
@@ -276,6 +283,7 @@
   ) {
     engaged = true; // an edit (or a market change on an already-read gem) counts as engaging
     lastEdited = edited;
+    if (adoptMemory) handEdited = true; // a market replay keeps whatever the gem already was
     advisePending++;
     try {
       // $state.snapshot strips Svelte reactive proxies; a raw proxy throws DataCloneError in the
@@ -377,7 +385,12 @@
       <div class="advisor-layout" onpointerenter={engage} onfocusin={engage}>
         <!-- LEFT: the interactive visualizer -->
         <div class="advisor-window">
-          <ProcessingWindow parsed={result.parsed} {role} onEdit={onManualEdit} />
+          <ProcessingWindow
+            parsed={result.parsed}
+            {role}
+            restore={handEdited ? lastEdited : null}
+            onEdit={onManualEdit}
+          />
         </div>
 
         <!-- RIGHT: capture -> market -> recommended action -->
