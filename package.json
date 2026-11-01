@@ -25,7 +25,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tesseract.js-data/eng": "1.0.0",
-    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@tsconfig/svelte": "^5.0.8",
     "@types/dom-mediacapture-transform": "^0.1.12",
     "@types/node": "^24.19.1",
